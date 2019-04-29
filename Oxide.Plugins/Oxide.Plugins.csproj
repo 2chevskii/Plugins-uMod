@@ -1,10 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>3ceb85f2-204b-4c58-95ad-4580fa908732</ProjectGuid>
+    <ProjectGuid>{3CEB85F2-204B-4C58-95AD-4580FA908732}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Oxide.Plugins</RootNamespace>
@@ -31,24 +31,453 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System"/>
-    
-    <Reference Include="System.Core"/>
-    <Reference Include="System.Xml.Linq"/>
-    <Reference Include="System.Data.DataSetExtensions"/>
-    
-    
-    <Reference Include="Microsoft.CSharp"/>
-    
-    <Reference Include="System.Data"/>
-    
-    <Reference Include="System.Net.Http"/>
-    
-    <Reference Include="System.Xml"/>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RustPlugins\AdvancedRCON.cs" />
+    <Compile Include="RustPlugins\AFKAPI.cs" />
+    <Compile Include="RustPlugins\ChatHead.cs" />
+    <Compile Include="RustPlugins\ComfortModifier.cs" />
+    <Compile Include="RustPlugins\CommentSystem.cs" />
+    <Compile Include="RustPlugins\DisableDamage.cs" />
+    <Compile Include="RustPlugins\DVACHEVSKIIDebugPlugin.cs" />
+    <Compile Include="RustPlugins\EasyAuthorize.cs" />
+    <Compile Include="RustPlugins\EliteRewardSystem.cs" />
+    <Compile Include="RustPlugins\EnhancedCupboard.cs" />
+    <Compile Include="RustPlugins\EnhancedHammer.cs" />
+    <Compile Include="RustPlugins\EventCountdown.cs" />
+    <Compile Include="RustPlugins\GameTipAPI.cs" />
+    <Compile Include="RustPlugins\GodmodeIndicator.cs" />
+    <Compile Include="RustPlugins\HealthBar.cs" />
+    <Compile Include="RustPlugins\HighWallBarricades.cs" />
+    <Compile Include="RustPlugins\IgnoreCollision.cs" />
+    <Compile Include="RustPlugins\IngameClockGUI.cs" />
+    <Compile Include="RustPlugins\LockOnRockets.cs" />
+    <Compile Include="RustPlugins\MapPlus.cs" />
+    <Compile Include="RustPlugins\Newbie.cs" />
+    <Compile Include="RustPlugins\NPCDropGun.cs" />
+    <Compile Include="RustPlugins\NTeleportation.cs" />
+    <Compile Include="RustPlugins\PerformanceUI.cs" />
+    <Compile Include="RustPlugins\PlaneCrash.cs" />
+    <Compile Include="RustPlugins\PlaneSkyfall.cs" />
+    <Compile Include="RustPlugins\PlayerGifts .cs" />
+    <Compile Include="RustPlugins\Remove.cs" />
+    <Compile Include="RustPlugins\RemoveHammer.cs" />
+    <Compile Include="RustPlugins\Replenish.cs" />
+    <Compile Include="RustPlugins\Skins.cs" />
+    <Compile Include="RustPlugins\Stacks.cs" />
+    <Compile Include="RustPlugins\Telekinesis.cs" />
+    <Compile Include="RustPlugins\TeleportGun.cs" />
+    <Compile Include="RustPlugins\TemperatureControl.cs" />
+    <Compile Include="RustPlugins\TransportNoDecay.cs" />
+    <Compile Include="RustPlugins\WeatherToDatabase.cs" />
+    <Compile Include="RustPlugins\ZLevelsRemastered.cs" />
+    <Compile Include="UniversalPlugins\PermissionHelper.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Class1.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Reference Include="Accessibility" />
+    <Reference Include="ApexAI">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\ApexAI.dll</HintPath>
+    </Reference>
+    <Reference Include="ApexSerialization">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\ApexSerialization.dll</HintPath>
+    </Reference>
+    <Reference Include="ApexShared">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\ApexShared.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Assembly-CSharp-firstpass.dll</HintPath>
+    </Reference>
+    <Reference Include="com.unity.postprocessing.Runtime">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\com.unity.postprocessing.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="EasyAntiCheat.Client">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\EasyAntiCheat.Client.dll</HintPath>
+    </Reference>
+    <Reference Include="EasyAntiCheat.Server">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\EasyAntiCheat.Server.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.GoogleSheets">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.GoogleSheets.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Input">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Input.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Network">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Raknet">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Raknet.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Rcon">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Rcon.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Skeleton">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Skeleton.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Sqlite">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Sqlite.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Steamworks">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Steamworks.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Unity">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.Unity.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.UnityEngine">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="GameAnalytics">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\GameAnalytics.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N.CJK">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.CJK.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N.MidEast">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.MidEast.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N.Other">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.Other.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N.Rare">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.Rare.dll</HintPath>
+    </Reference>
+    <Reference Include="I18N.West">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\I18N.West.dll</HintPath>
+    </Reference>
+    <Reference Include="Ionic.Zip.Reduced">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Ionic.Zip.Reduced.dll</HintPath>
+    </Reference>
+    <Reference Include="LZ4">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\LZ4.dll</HintPath>
+    </Reference>
+    <Reference Include="LZ4pn">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\LZ4pn.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Data.Sqlite">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.Data.Sqlite.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Data.Tds">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.Data.Tds.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Messaging">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.Messaging.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Posix">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.Posix.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Security">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.Security.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.WebBrowser">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Mono.WebBrowser.dll</HintPath>
+    </Reference>
+    <Reference Include="MySql.Data">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\MySql.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="NewAssembly">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\NewAssembly.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Novell.Directory.Ldap">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Novell.Directory.Ldap.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.Core">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.CSharp">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.MySql">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.MySql.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.References">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.References.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.Rust">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.Rust.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.SQLite">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.SQLite.dll</HintPath>
+    </Reference>
+    <Reference Include="Oxide.Unity">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.Unity.dll</HintPath>
+    </Reference>
+    <Reference Include="protobuf-net">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\protobuf-net.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Data">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Rust.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Global">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Rust.Global.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.UI">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Rust.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.Workshop">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Rust.Workshop.dll</HintPath>
+    </Reference>
+    <Reference Include="Rust.World">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Rust.World.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Configuration.Install" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Data.SQLite">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\System.Data.SQLite.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Design" />
+    <Reference Include="System.DirectoryServices" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Drawing.Design" />
+    <Reference Include="System.EnterpriseServices" />
+    <Reference Include="System.IdentityModel" />
+    <Reference Include="System.IdentityModel.Selectors" />
+    <Reference Include="System.Messaging" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Runtime.DurableInstancing" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Runtime.Serialization.Formatters.Soap" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.ServiceModel" />
+    <Reference Include="System.ServiceModel.Activation" />
+    <Reference Include="System.ServiceModel.Internals, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\System.ServiceModel.Internals.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Transactions" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Web.ApplicationServices" />
+    <Reference Include="System.Web.Services" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="Unity.Analytics.DataPrivacy">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Unity.Analytics.DataPrivacy.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Analytics.StandardEvents">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Unity.Analytics.StandardEvents.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Analytics.Tracker">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Unity.Analytics.Tracker.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AccessibilityModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.AccessibilityModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.AIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ARModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ARModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.BaselibModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.BaselibModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClothModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ClothModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClusterInputModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ClusterInputModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ClusterRendererModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ClusterRendererModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CrashReportingModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.CrashReportingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.DirectorModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.DirectorModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.FileSystemHttpModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.FileSystemHttpModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GameCenterModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.GameCenterModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GridModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.GridModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.HotReloadModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.HotReloadModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.InputModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.JSONSerializeModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.LocalizationModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.LocalizationModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Networking">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.Networking.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ParticleSystemModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PerformanceReportingModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.PerformanceReportingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.Physics2DModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ProfilerModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ProfilerModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.ScreenCaptureModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SharedInternalsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.SharedInternalsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SpatialTracking">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.SpatialTracking.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SpriteMaskModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.SpriteMaskModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SpriteShapeModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.SpriteShapeModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.StreamingModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.StreamingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.StyleSheetsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.StyleSheetsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.SubstanceModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.SubstanceModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TerrainModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TerrainModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TerrainPhysicsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TerrainPhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TextCoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TilemapModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TilemapModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Timeline">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.Timeline.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TimelineModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TimelineModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TLSModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.TLSModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UIElementsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UmbraModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UmbraModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UNETModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UNETModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityAnalyticsModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityAnalyticsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityConnectModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityConnectModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityTestProtocolModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityTestProtocolModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAssetBundleModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityWebRequestAssetBundleModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestWWWModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VehiclesModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.VehiclesModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VFXModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.VFXModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VideoModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.VideoModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VRModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.VRModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.WindModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.WindModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.XRModule">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\UnityEngine.XRModule.dll</HintPath>
+    </Reference>
+    <Reference Include="websocket-sharp">
+      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\websocket-sharp.dll</HintPath>
+    </Reference>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
- </Project>
+</Project>
