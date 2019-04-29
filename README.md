@@ -8,7 +8,7 @@
 
 ## [RustWorkshop modding marketplace, WIP](https://rustworkshop.space/members/2chevskii.8/)
 
-## Payment systems (WIP on the discord bot with auto-transaction check)
+# Payment systems (WIP on the discord bot with auto-transaction check)
 ### PayPal => prsroman3@gmail.com
 ### DonationAlerts => https://www.donationalerts.com/r/2chevskii
 
