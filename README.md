@@ -4,6 +4,8 @@
 
 ## Discord => 2CHEVSKII#9066
 
+## Discord support server (Temp) => https://discord.gg/376YmWm
+
 ## [uMod](https://umod.org/user/2CHEVSKII)
 
 ## [RustWorkshop modding marketplace, WIP](https://rustworkshop.space/members/2chevskii.8/)
