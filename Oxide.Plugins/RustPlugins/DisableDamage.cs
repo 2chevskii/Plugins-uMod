@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using Oxide.Core;
 
-/* HealthBar -> Public Rust Plugin : https://rustworkshop.space/resources/disable-damage.17/
+/* DisableDamage -> Public Rust Plugin : https://rustworkshop.space/resources/disable-damage.17/
  * Author -> 2CHEVSKII :
  * : https://umod.org/user/2CHEVSKII 
  * : https://github.com/2chevskii/ 
