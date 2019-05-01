@@ -34,13 +34,13 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RustPlugins\AdvancedRCON.cs" />
     <Compile Include="RustPlugins\AFKAPI.cs" />
-    <Compile Include="RustPlugins\ChatHead.cs" />
     <Compile Include="RustPlugins\ComfortModifier.cs" />
     <Compile Include="RustPlugins\CommentSystem.cs" />
     <Compile Include="RustPlugins\DisableDamage.cs" />
     <Compile Include="RustPlugins\DVACHEVSKIIDebugPlugin.cs" />
     <Compile Include="RustPlugins\EasyAuthorize.cs" />
     <Compile Include="RustPlugins\EliteRewardSystem.cs" />
+    <Compile Include="RustPlugins\AutoFPSLimiter.cs" />
     <Compile Include="RustPlugins\EnhancedCupboard.cs" />
     <Compile Include="RustPlugins\EnhancedHammer.cs" />
     <Compile Include="RustPlugins\EventCountdown.cs" />
@@ -50,6 +50,7 @@
     <Compile Include="RustPlugins\HighWallBarricades.cs" />
     <Compile Include="RustPlugins\IgnoreCollision.cs" />
     <Compile Include="RustPlugins\IngameClockGUI.cs" />
+    <Compile Include="RustPlugins\LiveChat.cs" />
     <Compile Include="RustPlugins\LockOnRockets.cs" />
     <Compile Include="RustPlugins\MapPlus.cs" />
     <Compile Include="RustPlugins\Newbie.cs" />
@@ -59,9 +60,11 @@
     <Compile Include="RustPlugins\PlaneCrash.cs" />
     <Compile Include="RustPlugins\PlaneSkyfall.cs" />
     <Compile Include="RustPlugins\PlayerGifts .cs" />
+    <Compile Include="RustPlugins\PluginsInfo.cs" />
     <Compile Include="RustPlugins\Remove.cs" />
     <Compile Include="RustPlugins\RemoveHammer.cs" />
     <Compile Include="RustPlugins\Replenish.cs" />
+    <Compile Include="RustPlugins\Skills.cs" />
     <Compile Include="RustPlugins\Skins.cs" />
     <Compile Include="RustPlugins\Stacks.cs" />
     <Compile Include="RustPlugins\Telekinesis.cs" />
@@ -203,9 +206,6 @@
     </Reference>
     <Reference Include="Oxide.MySql">
       <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.MySql.dll</HintPath>
-    </Reference>
-    <Reference Include="Oxide.References">
-      <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.References.dll</HintPath>
     </Reference>
     <Reference Include="Oxide.Rust">
       <HintPath>..\..\FileTransfer\Rust_DS\RustDedicated_Data\Managed\Oxide.Rust.dll</HintPath>
