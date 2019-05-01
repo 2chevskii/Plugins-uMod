@@ -1,15 +1,24 @@
 ﻿using System.Collections.Generic;
 using Oxide.Core;
 
-/* TODO:
- * Disable damage to entities (barrels etc)
+/* HealthBar -> Public Rust Plugin : https://rustworkshop.space/resources/disable-damage.17/
+ * Author -> 2CHEVSKII :
+ * : https://umod.org/user/2CHEVSKII 
+ * : https://github.com/2chevskii/ 
+ * : https://rustworkshop.space/members/2chevskii.8/ 
+ * : https://www.youtube.com/channel/UCgq5jjofrmIXCagJXqrMG9w 
+ * Changelog:
+ * [0.1.0] - Initial release
+ * [0.2.0] - Added option for barrels
+ *         - Added option for transport (Copters and boats)
+ *         - Added option for helicopter
  * */
 
 namespace Oxide.Plugins
 {
-    [Info("Disable Damage", "2CHEVSKII", "0.1.0")]
+    [Info("Disable Damage", "2CHEVSKII", "0.2.0")]
     [Description("Players with permission can disable damage for other players")]
-    class DisableDamage : RustPlugin
+    internal class DisableDamage : RustPlugin
     {
 
         #region [Fields]
@@ -18,37 +27,40 @@ namespace Oxide.Plugins
         //////////////////////////////////////////
         //// Config variables                 ////
         //////////////////////////////////////////
-        bool displayerdmg = true;
-        bool disNPCdmg = true;
-        bool disStructdmg = true;
-        bool disAnimaldmg = true;
-        bool announceTarget = true;
-        bool announceName = true;
-        bool savedisabled = true;
+        private bool displayerdmg = true;
+        private bool disNPCdmg = true;
+        private bool disStructdmg = true;
+        private bool disAnimaldmg = true;
+        private bool disBarreldmg = true;
+        private bool disHelidmg = true;
+        private bool disTransportdmg = true;
+        private bool announceTarget = true;
+        private bool announceName = true;
+        private bool savedisabled = true;
 
         /// <summary>
         /// Players with disabled damage
         /// </summary>
-        List<ulong> disdmg;
+        private List<ulong> disdmg { get; set; }
 
         /// <summary>
         /// Permission to use the chat command
         /// </summary>
-        const string perm = "disabledamage.use";
+        private const string perm = "disabledamage.use";
 
         //////////////////////////////////////////
         //// Strings                          ////
         //////////////////////////////////////////
-        const string mprefix = "Prefix";
-        const string myourdenabled = "Self damage enabled";
-        const string myourddisabled = "Self damage disabled";
-        const string mplayerdenabled = "Player's damage enabled";
-        const string mplayerddisabled = "Player's damage disabled";
-        const string menby = "Player enabled your damage";
-        const string mdisby = "Player disabled your damage";
-        const string mnoperm = "No permission";
-        const string mnoplayer = "No player found";
-        const string mhelp = "Help message";
+        private const string mprefix = "Prefix";
+        private const string myourdenabled = "Self damage enabled";
+        private const string myourddisabled = "Self damage disabled";
+        private const string mplayerdenabled = "Player's damage enabled";
+        private const string mplayerddisabled = "Player's damage disabled";
+        private const string menby = "Player enabled your damage";
+        private const string mdisby = "Player disabled your damage";
+        private const string mnoperm = "No permission";
+        private const string mnoplayer = "No player found";
+        private const string mhelp = "Help message";
 
 
         #endregion
@@ -56,7 +68,7 @@ namespace Oxide.Plugins
         #region [Configuration]
 
 
-        void CheckConfig<T>(string key, ref T value)
+        private void CheckConfig<T>(string key, ref T value)
         {
             if(Config[key] is T) value = (T)Config[key];
             else Config[key] = value;
@@ -64,7 +76,7 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig() { }
 
-        void LoadConfiguration()
+        private void LoadConfiguration()
         {
             CheckConfig("Save disabled players to data", ref savedisabled);
             CheckConfig("Announce target player", ref announceTarget);
@@ -73,6 +85,9 @@ namespace Oxide.Plugins
             CheckConfig("Disable damage to NPCs", ref disNPCdmg);
             CheckConfig("Disable damage to Buildings and structures", ref disStructdmg);
             CheckConfig("Disable damage to animals", ref disAnimaldmg);
+            CheckConfig("Disable damage to barrels", ref disBarreldmg);
+            CheckConfig("Disable damage to transport", ref disTransportdmg);
+            CheckConfig("Disable damage to helicopter", ref disHelidmg);
             SaveConfig();
         }
 
@@ -84,7 +99,7 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultMessages() => lang.RegisterMessages(defmessages, this, "en");
 
-        void Replier(BasePlayer player, string message, params string[] args) => player.ChatMessage($"{lang.GetMessage(mprefix, this)} {string.Format(lang.GetMessage(message, this), args)}");
+        private void Replier(BasePlayer player, string message, params string[] args) => player.ChatMessage($"{lang.GetMessage(mprefix, this)} {string.Format(lang.GetMessage(message, this), args)}");
 
         Dictionary<string, string> defmessages = new Dictionary<string, string>
         {
@@ -107,7 +122,7 @@ namespace Oxide.Plugins
 
 
         [ChatCommand("dd")]
-        void CmdDD(BasePlayer player, string command, string[] args)
+        private void CmdDD(BasePlayer player, string command, string[] args)
         {
             if(permission.UserHasPermission(player.UserIDString, perm))
             {
@@ -166,7 +181,7 @@ namespace Oxide.Plugins
         #region [Hooks]
 
 
-        void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
         {
             if(info != null && info.InitiatorPlayer != null && entity != null)
             {
@@ -177,7 +192,14 @@ namespace Oxide.Plugins
                         var id = info.InitiatorPlayer.userID;
                         if(disdmg.Contains(id))
                         {
-                            if((entity is BasePlayer && displayerdmg) || (entity is BaseNpc && disNPCdmg) || (entity is BaseAnimalNPC && disAnimaldmg) || (entity is BuildingBlock && disStructdmg) || ((entity.GetComponent<Deployable>() != null) && disStructdmg))
+                            if((entity is BasePlayer && displayerdmg) 
+                                || (entity is BaseNpc && disNPCdmg) 
+                                || (entity is BaseAnimalNPC && disAnimaldmg) 
+                                || (entity is BuildingBlock && disStructdmg) 
+                                || ((entity.GetComponent<Deployable>() != null) && disStructdmg) 
+                                || (entity.PrefabName.Contains("barrel") && disBarreldmg)
+                                || (entity is BaseHelicopter)
+                                || (entity is MiniCopter || entity is MotorBoat) && disTransportdmg)
                             {
                                 info?.damageTypes?.ScaleAll(0);
                             }
@@ -186,8 +208,8 @@ namespace Oxide.Plugins
                 }
             }
         }
-        
-        void Init()
+
+        private void Init()
         {
             permission.RegisterPermission(perm, this);
             LoadConfiguration();
@@ -205,7 +227,7 @@ namespace Oxide.Plugins
             else disdmg = new List<ulong>();
         }
 
-        void Unload() { if(savedisabled) Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(disdmg); }
+        private void Unload() { if(savedisabled) Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(disdmg); }
 
 
         #endregion
