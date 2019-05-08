@@ -12,9 +12,11 @@ using System;
  * Option to log plugin activity
  * */
 
+// Original idea and plugin version => Vlad-00003
+
 namespace Oxide.Plugins
 {
-    [Info("IgnoreCollision", "Vlad-00003 & 2CHEVSKII", "1.1.0")]
+    [Info("IgnoreCollision", "2CHEVSKII", "1.1.0")]
     [Description("This plugin removes collisions between dropped items")]
     class IgnoreCollision : RustPlugin
     {

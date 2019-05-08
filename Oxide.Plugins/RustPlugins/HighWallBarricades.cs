@@ -11,9 +11,11 @@ using Newtonsoft.Json;
  * [-] Make option to upkeep the wall as other building blocks
  */
 
+// Original idea and plugin version => Guilty Spark
+
 namespace Oxide.Plugins
 {
-    [Info("HighWallBarricades", "Guilty Spark & 2CHEVSKII", "2.2.2")]
+    [Info("HighWallBarricades", "2CHEVSKII", "2.2.2")]
     [Description("Makes High External Walls decay.")]
     internal class HighWallBarricades : RustPlugin
     {
