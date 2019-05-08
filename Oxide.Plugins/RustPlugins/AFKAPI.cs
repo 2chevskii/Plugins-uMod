@@ -5,6 +5,17 @@ using UnityEngine;
 using Newtonsoft.Json;
 using System;
 
+/* AFKAPI -> Public Rust Plugin [uMod and RustWorkshop]
+ * Author -> 2CHEVSKII :
+ * : https://umod.org/user/2CHEVSKII 
+ * : https://github.com/2chevskii/ 
+ * : https://rustworkshop.space/members/2chevskii.8/ 
+ * : https://www.youtube.com/channel/UCgq5jjofrmIXCagJXqrMG9w 
+ * Changelog:
+ * [0.1.0] - Initial release
+ * [0.1.1] - Fixes
+ * */
+
 namespace Oxide.Plugins
 {
     [Info("AFK API", "2CHEVSKII", "0.1.1")]

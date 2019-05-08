@@ -26,6 +26,8 @@ namespace Oxide.Plugins
             else Config[key] = value;
         }
 
+
+
         protected enum WarningType
         {
             WrongConfig,
@@ -53,7 +55,6 @@ namespace Oxide.Plugins
         }
 
         bool CanCombineDroppedItem(DroppedItem item, DroppedItem targetItem) => false;
-        
 
         //////////////////////////////////////////
         //// Get item condition
@@ -70,7 +71,51 @@ namespace Oxide.Plugins
             else
                 SendReply(player, "You do not hold any item right now!");
         }
+        
 
+        [ConsoleCommand("rpclist")]
+        void PrintRPCList(ConsoleSystem.Arg arg)
+        {
+            var dic = StringPool.toNumber.Where(x => x.Key.Contains("rpc"));
+            arg.ReplyWith(JsonConvert.SerializeObject(dic, Formatting.Indented));
+        }
+
+        [ConsoleCommand("count")]
+        void PrinTManifest(ConsoleSystem.Arg arg)
+        {
+            int x = 5;
+            int y = 1;
+            float z = y/x;
+            arg.ReplyWith(z.ToString());
+        }
+
+        
+        [ConsoleCommand("gay")]
+        void Gay(ConsoleSystem.Arg arg)
+        {
+            arg.ReplyWith("\u004f\u0072\u0061\u006e\u0067\u0065 \u0069\u0073 \u0067\u0061\u0079");
+        }
+
+        
+
+        void KillMarkers()
+        {
+            foreach(var marker in vmarkers)
+            {
+                marker.Kill();
+                marker.SendNetworkUpdate();
+            }
+            foreach(var marker in gmarkers)
+            {
+                marker.Kill();
+                marker.SendNetworkUpdate();
+            }
+        }
+
+        List<VendingMachineMapMarker> vmarkers = new List<VendingMachineMapMarker>();
+        List<MapMarkerGenericRadius> gmarkers = new List<MapMarkerGenericRadius>();
+        private const string VENDINGPREFAB = "assets/prefabs/deployable/vendingmachine/vending_mapmarker.prefab";
+        private const string GENERICPREFAB = "assets/prefabs/tools/map/genericradiusmarker.prefab";
         //////////////////////////////////////////
         //// Heals player
         //////////////////////////////////////////
@@ -96,7 +141,7 @@ namespace Oxide.Plugins
             {
                 RaycastHit raycastHit;
                 if(Physics.Raycast(player.eyes.HeadRay(), out raycastHit))
-                    SendReply(player, $"{raycastHit.GetEntity()?.GetType().ToString()}");
+                    SendReply(player, $"Prefab: {raycastHit.GetEntity()?.PrefabName}\nType: {raycastHit.GetEntity()?.GetType().ToString()}");
             }
         }
         
@@ -187,6 +232,7 @@ namespace Oxide.Plugins
             Blue,
             NoColor
         }
+        
     }
     
 }

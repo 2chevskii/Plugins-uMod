@@ -45,7 +45,7 @@ namespace Oxide.Plugins
 
         private void Init() => LoadConfiguration();
         
-        private void Loaded()
+        private void OnServerInitialized()
         {
             DefaultFPS = targetFrameRate;
             if(players.Connected.Any())
