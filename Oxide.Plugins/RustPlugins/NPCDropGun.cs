@@ -4,12 +4,12 @@ using Random = UnityEngine.Random;
 using System.Collections.Generic;
 
 /*TODO:
-         * Make configuration [x]
-         * Optimize code a bit [x]
-         * Add new features? [x]
-         * ...?
-         * Maybe some more features? Dunno... [?] 
-         */
+* Make configuration [x]
+* Optimize code a bit [x]
+* Add new features? [x]
+* ...?
+* Maybe some more features? Dunno... [?] 
+*/
 
 /* Changelog
   * [1.3.1] New configuration and option to remove default loot
@@ -17,15 +17,16 @@ using System.Collections.Generic;
   * [1.3.3] Fixed guns were dropped to the invalid position on Cargoship and OilRigs
   * [1.4.0] New drop methods, potential NRE fixes, new config
   * [1.4.1] Code cleanup, BotSpawn NRE fix, code documentation, dropped weapon velocity and rotation tweaked to make them fly more cinematic =)
+  * [1.5.0] Ammo inside dropped weapons now randomized, code cleanup
   */
 
 namespace Oxide.Plugins
 {
-    [Info("NPC Drop Gun", "2CHEVSKII", "1.4.1")]
+    [Info("NPC Drop Gun", "2CHEVSKII", "1.5.0")]
     [Description("Forces NPC to drop used gun and some ammo after death")]
     class NPCDropGun : RustPlugin
     {
-        
+
         #region -Configuration-
 
 
@@ -92,7 +93,7 @@ namespace Oxide.Plugins
 
         #region -Fields-
 
-        
+
         private int ammoType { get; set; }
 
         private string heldWeapon { get; set; }
@@ -141,7 +142,7 @@ namespace Oxide.Plugins
         /// </summary>
         /// <param name="entity"></param>
         /// <param name="info"></param>
-        private void OnEntityDeath(BaseCombatEntity entity, HitInfo info) 
+        private void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
         {
             if(info != null && entity != null)
             {
@@ -167,7 +168,7 @@ namespace Oxide.Plugins
 
         #endregion
 
-        #region -Helpers-
+        #region -Core-
 
 
         /// <summary>
@@ -213,37 +214,37 @@ namespace Oxide.Plugins
         /// <param name="dropRotation"></param>
         private void ItemSpawner(BaseEntity heldEntity, Vector3 dropPosition, Quaternion dropRotation) //Drops gun at npc's pos
         {
-            if(dropPosition != null && heldEntity != null && dropGuns && Random.Range(0f,1f)<=chanceToDropGun && dropRotation != null)
+            if(dropPosition != null && heldEntity != null && dropGuns && Random.Range(0f, 1f) <= chanceToDropGun && dropRotation != null)
             {
                 Item weapon = null;
                 if(heldEntity.GetItem() != null)
                     weapon = ItemManager.CreateByItemID(heldEntity.GetItem().info.itemid);
                 if(weapon != null)
                 {
-                    if(weapon.hasCondition) weapon.conditionNormalized = Random.Range((float)minCondition, (float)maxCondition);
+                    if(weapon.hasCondition)
+                        weapon.conditionNormalized = Random.Range((float)minCondition, (float)maxCondition);
+
+                    var _weapon = weapon.GetHeldEntity()?.GetComponent<BaseProjectile>();
+                    if(_weapon != null)
+                        _weapon.primaryMagazine.contents = Random.Range(0, _weapon.primaryMagazine.capacity);
+
                     if(putGunIntoInv)
                         delayedWeapons.Enqueue(weapon);
                     else
                     {
-                        weapon?.CreateWorldObject(dropPosition, dropRotation);
+                        weapon.CreateWorldObject(dropPosition, dropRotation);
                         if(weapon.GetWorldEntity() != null)
                         {
                             weapon.GetWorldEntity().SetVelocity(new Vector3(Random.Range(-1f, 1f), Random.Range(1f, 2.5f), Random.Range(-1f, 1f)) * Random.Range(0, 2f));
                             weapon.GetWorldEntity().SetAngularVelocity(new Vector3(Random.Range(-10f, 10f) * Random.Range(0, 5f), Random.Range(-10f, 10f) * Random.Range(0, 5f), Random.Range(-10f, 10f)) * Random.Range(0, 5f));
                         }
                     }
-
-
-                    /*ItemContainer container = new ItemContainer(); //Deprecated
-                    container.Insert(weapon);
-                    DropUtil.DropItems(container, dropPosition);*/
-
-
                 }
             }
 
             heldWeapon = heldEntity?.ShortPrefabName;
-            if(heldWeapon != null) AmmoAssigner(heldWeapon);
+            if(heldWeapon != null)
+                AmmoAssigner(heldWeapon);
 
         }
 
@@ -265,7 +266,7 @@ namespace Oxide.Plugins
                 if(dropAmmo && ammoType != 0 && Random.Range(0f, 1f) <= chanceToDropAmmo) //check if it needs to spawn ammunition
                 {
                     int tempAmount = Random.Range(minAmmo, maxAmmo); //amount
-                    if(tempAmount>0)
+                    if(tempAmount > 0)
                         ammo = ItemManager.CreateByItemID(ammoType, tempAmount);
                 }
 
@@ -280,9 +281,10 @@ namespace Oxide.Plugins
 
                 PlayerCorpse corpse = entity.GetComponent<PlayerCorpse>();
 
-                if(corpse != null && corpse.containers !=null && corpse.containers[0] != null && corpse.containers[1] != null && corpse.containers[2] != null)
+                if(corpse != null && corpse.containers != null && corpse.containers[0] != null && corpse.containers[1] != null && corpse.containers[2] != null)
                 {
-                    NextTick(() => { //one tick delay needed
+                    NextTick(() =>
+                    {   //one tick delay needed
                         if(removeDefLoot) corpse.containers[0].Clear();
 
 

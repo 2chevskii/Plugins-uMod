@@ -26,8 +26,7 @@ namespace Oxide.Plugins
             else Config[key] = value;
         }
 
-
-
+        
         protected enum WarningType
         {
             WrongConfig,

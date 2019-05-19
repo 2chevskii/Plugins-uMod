@@ -5,7 +5,7 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.0.0")]
+    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.0.1")]
     [Description("Cleans specified data files on new wipe.")]
     class WipeDataCleaner : CovalencePlugin
     {
@@ -16,7 +16,7 @@ namespace Oxide.Plugins
         }
 
         private PluginSettings Settings { get; set; }
-        
+
         protected override void LoadDefaultConfig()
         {
             Config.Clear();
@@ -31,7 +31,7 @@ namespace Oxide.Plugins
             SaveConfig();
         }
 
-        protected override void SaveConfig() => Config.WriteObject<PluginSettings>(Settings);
+        protected override void SaveConfig() => Config.WriteObject(Settings);
 
         protected override void LoadConfig()
         {
@@ -49,15 +49,16 @@ namespace Oxide.Plugins
         }
 
         private void OnNewSave(string filename) => Wipe(null);
-        
-        [Command("wipe"), Permission("wipedatacleaner.wipe")]
+
+        [Command("wipe"), Permission(nameof(WipeDataCleaner) + ".wipe")]
         private void Wipe(IPlayer executer)
         {
             foreach(var file in Settings.FileNames)
             {
                 if(Interface.Oxide.DataFileSystem.ExistsDatafile(file))
                 {
-                    Interface.Oxide.DataFileSystem.GetFile(file).WriteObject(string.Empty);
+                    Interface.Oxide.DataFileSystem.GetFile(file).Clear();
+                    Interface.Oxide.DataFileSystem.GetFile(file).Save();
                     executer?.Message($"Wiped \"{file}.json\"");
                 }
             }
