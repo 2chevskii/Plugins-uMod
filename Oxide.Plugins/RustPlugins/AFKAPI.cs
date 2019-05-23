@@ -9,16 +9,18 @@ using System;
  * Author -> 2CHEVSKII :
  * : https://umod.org/user/2CHEVSKII 
  * : https://github.com/2chevskii/ 
- * : https://rustworkshop.space/members/2chevskii.8/ 
- * : https://www.youtube.com/channel/UCgq5jjofrmIXCagJXqrMG9w 
+ * : No RWS link to avoid advertizing
+ * : No YT link to avoid advertizing
  * Changelog:
  * [0.1.0] - Initial release
  * [0.1.1] - Fixes
+ * [0.1.2] - More fixes
  * */
 
 namespace Oxide.Plugins
 {
-    [Info("AFK API", "2CHEVSKII", "0.1.1")]
+    //For reviewer: I think people can handle reading the title AND the description to avoid mixing-up two different plugins
+    [Info("AFK API", "2CHEVSKII", "0.1.2")]
     [Description("API to check, if player is AFK")]
     public class AFKAPI : RustPlugin
     {
@@ -330,13 +332,13 @@ namespace Oxide.Plugins
 #endif
         }
 
-        private void Loaded()
+        private void OnServerInitialized()
         {
             foreach(var player in BasePlayer.activePlayerList)
                 TrackedPlayers.Add(player.userID, new AFKPlayer(player));
             InitializeTimer();
         }
-
+        
         private void Unload() => Instance = null;
 
         private void OnPlayerInit(BasePlayer player) => TrackedPlayers.Add(player.userID, new AFKPlayer(player));
