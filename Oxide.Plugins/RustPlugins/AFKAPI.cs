@@ -1,4 +1,4 @@
-﻿//#define DEBUGCOMPILE //Uncomment this line to get debug information (Or useless console spam, depends on POV)
+﻿#define DEBUG //Uncomment this line to get debug information (Or useless console spam, depends on POV)
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -24,7 +24,7 @@ namespace Oxide.Plugins
     {
 
         #region -Fields-
-        
+
         #region [Permissions]
 
 
@@ -37,18 +37,18 @@ namespace Oxide.Plugins
             PermissionKick = Name.ToLower() + ".kick";
             permission.RegisterPermission(PermissionUse, this);
             permission.RegisterPermission(PermissionKick, this);
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts($"Permissions are registered successfully! ({PermissionUse}, {PermissionKick})");
 #endif
         }
 
 
-#endregion
+        #endregion
 
         #region [Storage]
 
 
-        private List<AFKPlayer> TrackedPlayers { get; set; }
+        private Dictionary<ulong, AFKPlayer> TrackedPlayers { get; set; }
         private List<BasePlayer> AFKPlayers { get; set; }
         private Timer AFKTimer { get; set; }
         private static AFKAPI Instance { get; set; }
@@ -56,7 +56,7 @@ namespace Oxide.Plugins
 
 
         #endregion
-        
+
         #endregion
 
         #region -Configuration-
@@ -64,7 +64,7 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig()
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts("LoadDefaultConfig called...");
 #endif
             Config.Clear();
@@ -77,7 +77,7 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts("LoadConfig called...");
 #endif
             base.LoadConfig();
@@ -89,7 +89,7 @@ namespace Oxide.Plugins
             }
             catch
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Exception thrown in LoadConfig...");
 #endif
                 LoadDefaultConfig();
@@ -98,7 +98,7 @@ namespace Oxide.Plugins
 
         private PluginSettings GetDefaultSettings()
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts("Default config object generated...");
 #endif
             return new PluginSettings
@@ -124,24 +124,25 @@ namespace Oxide.Plugins
                 }
             };
         }
-        
+
 
         #endregion
 
         #region -Localization-
-        
+
 
         //Dictionary keys
-        private const string mprefix = "Plugin prefix";
-        private const string mplayerafk = "Player AFK status";
-        private const string merrornoargs = "No valid arguments error";
-        private const string moffline = "Offline status";
-        private const string misafk = "Is AFK status";
-        private const string misnotafk = "Is not AFK status";
-        private const string mafkplayerlist = "AFK player list";
-        private const string mnoafkplayers = "No players AFK atm";
-        private const string mnotify = "Notification for AFK player";
-        private const string mnoperm = "No permission";
+        private const string mprefix = "Plugin prefix",
+            mplayerafk = "Player AFK status",
+            merrornoargs = "No valid arguments error",
+            moffline = "Offline status",
+            misafk = "Is AFK status",
+            misnotafk = "Is not AFK status",
+            mafkplayerlist = "AFK player list",
+            mnoafkplayers = "No players AFK atm",
+            mnotify = "Notification for AFK player",
+            mnoperm = "No permission",
+            mkickreason = "AFK";
 
         private readonly Dictionary<string, string> defmessages = new Dictionary<string, string>
         {
@@ -158,41 +159,40 @@ namespace Oxide.Plugins
         };
 
         protected override void LoadDefaultMessages() => lang.RegisterMessages(defmessages, this, "en");
-        
+
         private void Messenger(BasePlayer player, bool prefix, string message, params string[] args) => covalence.Players.FindPlayerById(player.UserIDString).Message(lang.GetMessage(message, this, player.UserIDString), prefix ? lang.GetMessage(mprefix, this, player.UserIDString) + " " : string.Empty, args);
 
 
         #endregion
 
         #region -API-
-        
+
 
         private bool IsPlayerAFK(ulong id)
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts($"IsPlayerAFK API method called with id:{id.ToString()}, {AFKPlayers.Any(p => p.userID == id)} returned...");
 #endif
             return AFKPlayers.Any(p => p.userID == id);
         }
-        
+
         private long GetPlayerAFKTime(ulong id)
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts($"AFK time called for id:{id.ToString()}");
 #endif
-            var targetPlayer = TrackedPlayers.Find(t => t.Player.userID == id);
-            if(targetPlayer != null) return targetPlayer.TimeAFK;
+            if(TrackedPlayers.ContainsKey(id)) return TrackedPlayers[id].TimeAFK;
             else return -1L;
         }
-        
+
         private List<BasePlayer> GetAFKPlayers()
         {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts("AFK player list called...");
 #endif
             return AFKPlayers;
         }
-        
+
         private bool AFKAPI_Setup(string newSettings, bool needToSave = false)
         {
             if(!Settings.GeneralSettings.AllowSetupThroughAPI) return false;
@@ -206,7 +206,7 @@ namespace Oxide.Plugins
                     if(needToSave) SaveConfig();
                     CheckHookSubscriptions();
                     InitializeTimer();
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                     Puts("New settings were given through API...");
 #endif
                     return true;
@@ -229,54 +229,54 @@ namespace Oxide.Plugins
         {
             if(!Settings.CompareSettings.CompareBuild)
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Build hooks unsubscribed...");
 #endif
-                Unsubscribe("CanBuild");
+                Unsubscribe(nameof(CanBuild));
 
             }
             else
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Build hooks subscribed...");
 #endif
-                Subscribe("CanBuild");
+                Subscribe(nameof(CanBuild));
             }
             if(!Settings.CompareSettings.CompareCommunication)
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Communication hooks unsubscribed...");
 #endif
-                Unsubscribe("OnPlayerChat");
-                Unsubscribe("OnPlayerVoice");
+                Unsubscribe(nameof(OnPlayerChat));
+                Unsubscribe(nameof(OnPlayerVoice));
             }
             else
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Communication hooks subscribed...");
 #endif
-                Subscribe("OnPlayerChat");
-                Subscribe("OnPlayerVoice");
+                Subscribe(nameof(OnPlayerChat));
+                Subscribe(nameof(OnPlayerVoice));
             }
             if(!Settings.CompareSettings.CompareItemActions)
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Item hooks unsubscribed...");
 #endif
-                Unsubscribe("CanCraft");
-                Unsubscribe("OnPlayerActiveItemChanged");
-                Unsubscribe("OnItemAction");
-                Unsubscribe("CanMoveItem");
+                Unsubscribe(nameof(CanCraft));
+                Unsubscribe(nameof(OnPlayerActiveItemChanged));
+                Unsubscribe(nameof(OnItemAction));
+                Unsubscribe(nameof(CanMoveItem));
             }
             else
             {
-#if(DEBUGCOMPILE)
+#if(DEBUG)
                 Puts("Item hooks subscribed...");
 #endif
-                Subscribe("CanCraft");
-                Subscribe("OnPlayerActiveItemChanged");
-                Subscribe("OnItemAction");
-                Subscribe("CanMoveItem");
+                Subscribe(nameof(CanCraft));
+                Subscribe(nameof(OnPlayerActiveItemChanged));
+                Subscribe(nameof(OnItemAction));
+                Subscribe(nameof(CanMoveItem));
             }
         }
 
@@ -285,7 +285,7 @@ namespace Oxide.Plugins
             if(AFKTimer != null && !AFKTimer.Destroyed) AFKTimer.Destroy();
             AFKTimer = timer.Every(Settings.GeneralSettings.StatusRefreshInterval, () =>
             {
-                foreach(var trackedPlayer in TrackedPlayers)
+                foreach(var trackedPlayer in TrackedPlayers.Values)
                 {
                     trackedPlayer.CheckPosition(Settings.CompareSettings.CompareRotation);
                     if(trackedPlayer.TimeAFK >= Settings.GeneralSettings.SecondsToAFKStatus && !AFKPlayers.Contains(trackedPlayer.Player))
@@ -305,7 +305,7 @@ namespace Oxide.Plugins
                     }
                 }
             });
-#if(DEBUGCOMPILE)
+#if(DEBUG)
             Puts($"New timer initialized with {Settings.GeneralSettings.StatusRefreshInterval.ToString()} interval. " +
                 $"Notifications are {(Settings.NotificationSettings.NotifyPlayer ? "ON" : "OFF")}. " +
                 $"Sounds are {(Settings.NotificationSettings.NotifyPlayerSound ? "ON" : "OFF")}...");
@@ -322,67 +322,64 @@ namespace Oxide.Plugins
         {
             Instance = this;
             RegisterPermissions();
-            TrackedPlayers = new List<AFKPlayer>();
+            TrackedPlayers = new Dictionary<ulong, AFKPlayer>();
             AFKPlayers = new List<BasePlayer>();
-#if(DEBUGCOMPILE)
+            CheckHookSubscriptions();
+#if(DEBUG)
             PrintWarning("Debug mode is active...");
 #endif
         }
 
         private void Loaded()
         {
-            CheckHookSubscriptions();
             foreach(var player in BasePlayer.activePlayerList)
-                TrackedPlayers.Add(new AFKPlayer(player));
+                TrackedPlayers.Add(player.userID, new AFKPlayer(player));
             InitializeTimer();
         }
 
         private void Unload() => Instance = null;
 
-        private void OnPlayerInit(BasePlayer player) => TrackedPlayers.Add(new AFKPlayer(player));
+        private void OnPlayerInit(BasePlayer player) => TrackedPlayers.Add(player.userID, new AFKPlayer(player));
 
-        private void OnPlayerDisconnected(BasePlayer player, string reason) => TrackedPlayers.Remove(TrackedPlayers.Find(dp => dp.Player == player));
+        private void OnPlayerDisconnected(BasePlayer player, string reason) => TrackedPlayers.Remove(player.userID);
 
         private void CanBuild(Planner planner, Construction prefab, Construction.Target target)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == planner.GetOwnerPlayer());
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            var oplayer = planner?.GetOwnerPlayer();
+            if(oplayer != null && TrackedPlayers.ContainsKey(oplayer.userID)) TrackedPlayers[oplayer.userID].ResetAFKTime();
         }
 
         private void CanCraft(ItemCrafter itemCrafter, ItemBlueprint bp, int amount)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == itemCrafter.GetComponent<BasePlayer>());
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            var oplayer = itemCrafter?.GetComponent<BasePlayer>();
+            if(oplayer != null && TrackedPlayers.ContainsKey(oplayer.userID)) TrackedPlayers[oplayer.userID].ResetAFKTime();
         }
 
         private void OnPlayerActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == player);
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            if(player != null && TrackedPlayers.ContainsKey(player.userID)) TrackedPlayers[player.userID].ResetAFKTime();
         }
 
         private void OnPlayerChat(ConsoleSystem.Arg arg)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == arg.Player());
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            var oplayer = arg?.Player();
+            if(oplayer != null && TrackedPlayers.ContainsKey(oplayer.userID)) TrackedPlayers[oplayer.userID].ResetAFKTime();
         }
 
         private void OnPlayerVoice(BasePlayer player, byte[] data)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == player);
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            if(player != null && TrackedPlayers.ContainsKey(player.userID)) TrackedPlayers[player.userID].ResetAFKTime();
         }
 
         private void OnItemAction(Item item, string action, BasePlayer player)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == player);
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            if(player != null && TrackedPlayers.ContainsKey(player.userID)) TrackedPlayers[player.userID].ResetAFKTime();
         }
 
         private void CanMoveItem(Item item, PlayerInventory playerLoot, uint targetContainer, int targetSlot, int amount)
         {
-            var tplayer = TrackedPlayers.Find(p => p.Player == playerLoot.GetComponent<BasePlayer>());
-            if(tplayer != null) tplayer.TimeAFK = 0;
+            var oplayer = playerLoot?.GetComponent<BasePlayer>();
+            if(oplayer != null && TrackedPlayers.ContainsKey(oplayer.userID)) TrackedPlayers[oplayer.userID].ResetAFKTime();
         }
 
 
@@ -400,7 +397,7 @@ namespace Oxide.Plugins
         [ChatCommand("isafk")]
         private void CmdIsAFK(BasePlayer player, string command, string[] args)
         {
-            if(player != null && permission.UserHasPermission(player.UserIDString, PermissionUse))
+            if(permission.UserHasPermission(player.UserIDString, PermissionUse))
             {
                 if(args.Length == 1)
                 {
@@ -427,7 +424,7 @@ namespace Oxide.Plugins
         [ChatCommand("getafk")]
         private void CmdGetAFK(BasePlayer player, string command, string[] args)
         {
-            if(player != null && permission.UserHasPermission(player.UserIDString, PermissionUse))
+            if(permission.UserHasPermission(player.UserIDString, PermissionUse))
             {
                 string reply = string.Empty;
                 if(AFKPlayers.Count < 1) Messenger(player, true, mnoafkplayers);
@@ -449,10 +446,10 @@ namespace Oxide.Plugins
         [ChatCommand("kickafk")]
         private void CmdKickAllAFK(BasePlayer player, string command, string[] args)
         {
-            if(player != null && permission.UserHasPermission(player.UserIDString, PermissionKick))
+            if(permission.UserHasPermission(player.UserIDString, PermissionKick))
             {
                 foreach(var afkplayer in AFKPlayers)
-                    if(afkplayer.IsConnected) afkplayer.Kick("AFK for too long");
+                    if(afkplayer.IsConnected) afkplayer.Kick(lang.GetMessage(mkickreason, this, afkplayer.UserIDString));
             }
             else Messenger(player, true, mnoperm);
         }
@@ -503,8 +500,9 @@ namespace Oxide.Plugins
                     TimeAFK = 0;
                 }
             }
+            internal void ResetAFKTime() => TimeAFK = 0;
         }
-        
+
         /// <summary>
         /// Plugin configuration class
         /// </summary>

@@ -4,6 +4,8 @@ using System.Linq;
 using Oxide.Core;
 using Rust;
 using Newtonsoft.Json;
+using System.Collections;
+using System.Reflection;
 
 /* TODO:
  * [x] Make option for other barricades
@@ -15,7 +17,7 @@ using Newtonsoft.Json;
 
 namespace Oxide.Plugins
 {
-    [Info("HighWallBarricades", "2CHEVSKII", "2.2.2")]
+    [Info("HighWallBarricades", "2CHEVSKII", "2.2.3")]
     [Description("Makes High External Walls decay.")]
     internal class HighWallBarricades : RustPlugin
     {
@@ -24,12 +26,13 @@ namespace Oxide.Plugins
 
 
         //Config
-        private Configuration config;
+        private PluginSettings Settings { get; set; }
 
         //Storages
-        private Dictionary<DecayEntity, int> Storage { get; set; }
-        private List<DecayEntity> DecayNeeded { get; set; }
-        private Dictionary<DecayEntity, float> StandartProtection { get; set; }
+
+        private static HighWallBarricades Singleton { get; set; }
+
+        private HashSet<DecayBarricade> ActiveComponents { get; set; }
 
 
         #endregion
@@ -37,7 +40,7 @@ namespace Oxide.Plugins
         #region -Configuration-
 
 
-        private class Configuration
+        private class PluginSettings
         {
             [JsonProperty(PropertyName = "Time between decay ticks")]
             internal int DecayTime { get; set; }
@@ -57,9 +60,9 @@ namespace Oxide.Plugins
             internal VersionNumber ConfigVersion { get; set; }
         }
 
-        private Configuration GetDefaultConfig()
+        private PluginSettings GetDefaultConfig()
         {
-            return new Configuration
+            return new PluginSettings
             {
                 DecayTime = 600,
                 DecayDamage = 0.2f,
@@ -89,46 +92,46 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                config = Config.ReadObject<Configuration>();
-                if(config == null)
+                Settings = Config.ReadObject<PluginSettings>();
+                if(Settings == null)
                     throw new JsonException("Configuration failed to load, creating new one!");
             }
             catch
             {
-                Config.Clear();
-                config = GetDefaultConfig();
+                base.Config.Clear();
+                Settings = GetDefaultConfig();
                 SaveConfig();
             }
-            if(config.ConfigVersion == null)
+            if(Settings.ConfigVersion == null)
             {
-                Config.Clear();
-                config = GetDefaultConfig();
+                base.Config.Clear();
+                Settings = GetDefaultConfig();
                 SaveConfig();
                 Puts("Configuration has been updated!");
             }
-            if(config.ConfigVersion < Version)
+            if(Settings.ConfigVersion < Version)
             {
-                if(config.ConfigVersion == new VersionNumber(2, 1, 0))
+                if(Settings.ConfigVersion == new VersionNumber(2, 1, 0))
                 {
-                    var tempconfig = new Configuration
+                    var tempconfig = new PluginSettings
                     {
-                        DecayTime = config.DecayTime,
-                        DecayDamage = config.DecayDamage,
-                        InitialHealth = config.InitialHealth,
-                        DecayInCupRange = config.DecayInCupRange,
+                        DecayTime = Settings.DecayTime,
+                        DecayDamage = Settings.DecayDamage,
+                        InitialHealth = Settings.InitialHealth,
+                        DecayInCupRange = Settings.DecayInCupRange,
                         CheckBarricadeOwner = true,
-                        DisableStandartDecay = config.DisableStandartDecay,
-                        EnabledEntities = config.EnabledEntities
+                        DisableStandartDecay = Settings.DisableStandartDecay,
+                        EnabledEntities = Settings.EnabledEntities
                     };
-                    config = tempconfig;
+                    Settings = tempconfig;
                 }
-                config.ConfigVersion = Version;
+                Settings.ConfigVersion = Version;
                 SaveConfig();
                 Puts("Configuration has been updated!");
             }
-            if(config.EnabledEntities == null)
+            if(Settings.EnabledEntities == null)
             {
-                config.EnabledEntities = new Dictionary<string, bool>
+                Settings.EnabledEntities = new Dictionary<string, bool>
                 {
                     { "assets/prefabs/building/wall.external.high.stone/wall.external.high.stone.prefab", true },
                     { "assets/prefabs/building/wall.external.high.wood/wall.external.high.wood.prefab", true },
@@ -147,12 +150,12 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig()
         {
-            config = GetDefaultConfig();
+            Settings = GetDefaultConfig();
             SaveConfig();
             Puts("New configuration file created...");
         }
 
-        protected override void SaveConfig() => Config.WriteObject(config);
+        protected override void SaveConfig() => Config.WriteObject(Settings);
 
 
         #endregion
@@ -161,110 +164,126 @@ namespace Oxide.Plugins
 
         private void Init()
         {
-            Storage = new Dictionary<DecayEntity, int>();
-            DecayNeeded = new List<DecayEntity>();
+            Singleton = this;
+            ActiveComponents = new HashSet<DecayBarricade>();
         }
 
         private void OnServerInitialized()
         {
-            foreach(var sbb in UnityEngine.Object.FindObjectsOfType<DecayEntity>())
-                if(config.EnabledEntities.Keys.Contains(sbb.PrefabName) && config.EnabledEntities[sbb.PrefabName])
-                {
-                    Storage.Add(sbb, config.DecayTime);
-                    if(config.DisableStandartDecay)
-                        ProtectFromDecay(sbb);
-                }
+            foreach(var dEntity in UnityEngine.Object.FindObjectsOfType<DecayEntity>()) InitEntity(dEntity.gameObject);
         }
+        
+        private void OnEntityBuilt(Planner planner, GameObject gameObject) => InitEntity(gameObject);
 
-        private void Loaded() => timer.Every(5f, () => CheckDecayNeeded());
-
-        private void OnEntityBuilt(Planner planner, GameObject gameObject)
+        private void InitEntity(GameObject gameObject)
         {
-            if(gameObject != null && gameObject.GetComponent<DecayEntity>() != null && (config.EnabledEntities.Keys.Contains(gameObject.GetComponent<DecayEntity>().PrefabName) && config.EnabledEntities[gameObject.GetComponent<DecayEntity>().PrefabName]) && !Storage.ContainsKey(gameObject.GetComponent<DecayEntity>()))
+            var dEntity = gameObject?.GetComponent<DecayEntity>();
+            if(dEntity != null
+                && Settings.EnabledEntities.Keys.Contains(dEntity.PrefabName)
+                && Settings.EnabledEntities[dEntity.PrefabName])
             {
-                if(config.InitialHealth <= 0f)
-                    gameObject.GetComponent<DecayEntity>().Kill(BaseNetworkable.DestroyMode.Gib);
+                if(Settings.InitialHealth <= 0f)
+                    dEntity.Kill(BaseNetworkable.DestroyMode.Gib);
                 else
                 {
-                    Storage.Add(gameObject.GetComponent<DecayEntity>(), config.DecayTime);
-                    gameObject.GetComponent<DecayEntity>().healthFraction = config.InitialHealth;
-                    if(config.DisableStandartDecay)
-                        ProtectFromDecay(gameObject.GetComponent<DecayEntity>());
-                    gameObject.GetComponent<DecayEntity>().SendNetworkUpdate(BasePlayer.NetworkQueue.Update);
+                    dEntity.healthFraction = Settings.InitialHealth;
+                    gameObject.AddComponent<DecayBarricade>();
                 }
             }
         }
 
         private void OnEntityKill(BaseNetworkable entity)
         {
-            if(entity != null && entity.GetComponent<DecayEntity>() != null && Storage.ContainsKey(entity.GetComponent<DecayEntity>()))
-                Storage.Remove(entity.GetComponent<DecayEntity>());
+            var comp = entity?.GetComponent<DecayBarricade>();
+            if(comp != null && ActiveComponents.Contains(comp))
+            {
+                comp.RemoveComponent();
+                ActiveComponents.Remove(comp);
+            }
         }
 
         private void Unload()
         {
-            if(StandartProtection != null)
-                foreach(var kvp in StandartProtection)
-                {
-                    if(!kvp.Key.IsDestroyed)
-                        kvp.Key.baseProtection.amounts[(int)DamageType.Decay] = kvp.Value;
-                }
+            foreach(var comp in ActiveComponents)
+            {
+                comp.RemoveComponent();
+            }
+            //typeof(DecayBarricade).GetField("DecayPool", BindingFlags.Static | BindingFlags.NonPublic).SetValue(null, null);
+
+            DecayBarricade.DecayPool = null;
+            Singleton = null;
         }
 
 
         #endregion
 
-        #region -Core-
-
-
-        private void CheckDecayNeeded()
+        //NRE (update?)
+        private class DecayBarricade : MonoBehaviour
         {
-            foreach(var block in Storage.Keys.ToList())
+            private DecayEntity Entity { get; set; }
+            private float LastDecayTick { get; set; }
+            private float StandartDecayProtection { get; set; }
+            public static List<DecayEntity> DecayPool { get; set; } = new List<DecayEntity>();
+
+            private static bool DoChecks(DecayEntity entity)
             {
-                if(block.GetBuildingPrivilege() == null)
+                if(entity.GetBuildingPrivilege() == null) return true;
+                if(Singleton.Settings.DecayInCupRange)
                 {
-                    DecayNeeded.Add(block);
+                    return !Singleton.Settings.CheckBarricadeOwner ? true : entity.GetBuildingPrivilege().authorizedPlayers.Any(player => player.userid == entity.OwnerID) ? false : true;
                 }
-                else if(block.GetBuildingPrivilege() != null && config.DecayInCupRange)
-                {
-                    if(config.CheckBarricadeOwner && block.GetBuildingPrivilege().authorizedPlayers.Any(o => o.userid == block.OwnerID))
-                        Storage[block] = config.DecayTime;
-                    else
-                        DecayNeeded.Add(block);
-                }
-                else
-                    Storage[block] = config.DecayTime;
+                return false;
             }
-            foreach(var block in DecayNeeded)
+
+            private void Awake()
             {
-                Storage[block] -= 5;
-                if(Storage[block] <= 0)
-                {
-                    block.health -= block.MaxHealth() * config.DecayDamage;
-                    Storage[block] = config.DecayTime;
-                }
-                if(block.health <= 0)
-                {
-                    block.Kill(BaseNetworkable.DestroyMode.Gib);
-                    if(Storage.ContainsKey(block)) Storage.Remove(block);
-                }
-                block.SendNetworkUpdate(BasePlayer.NetworkQueue.Update);
+                Entity = GetComponent<DecayEntity>();
+                LastDecayTick = Time.realtimeSinceStartup;
+                StandartDecayProtection = Entity.baseProtection.amounts[(int)DamageType.Decay];
+                if(Singleton.Settings.DisableStandartDecay) Entity.baseProtection.amounts[(int)DamageType.Decay] = 100f;
+                Entity.SendNetworkUpdate(BasePlayer.NetworkQueue.Update);
+                Singleton.ActiveComponents.Add(this);
             }
-            DecayNeeded.Clear();
+            
+            private void Update()
+            {
+                //if(Entity.healthFraction <= 0) Entity.Kill(BaseNetworkable.DestroyMode.Gib);
+                if((Time.realtimeSinceStartup - LastDecayTick) > Singleton.Settings.DecayTime)
+                {
+                    if(DoChecks(Entity)) DecayPool.Add(Entity);
+                    LastDecayTick = Time.realtimeSinceStartup;
+                }
+            }
+
+            private void LateUpdate()
+            {
+                if(DecayPool.Count > 0) ServerMgr.Instance.StartCoroutine(DecayCycle());
+            }
+
+            private static IEnumerator DecayCycle()
+            {
+                for(int i = 0; i < DecayPool.Count; i++)
+                {
+                    yield return new WaitUntil(new System.Func<bool>(() =>
+                    {
+                        return DecayTick(DecayPool[i]);
+                    }));
+                }
+                DecayPool.Clear();
+            }
+
+            private static bool DecayTick(DecayEntity entity)
+            {
+                entity.Hurt(Singleton.Settings.DecayDamage, DamageType.Decay, null, false);
+                if(entity.healthFraction <= 0) entity.Kill(BaseNetworkable.DestroyMode.Gib);
+                entity.SendNetworkUpdate(BasePlayer.NetworkQueue.Update);
+                return true;
+            }
+
+            private void OnDestroy()=> Entity.baseProtection.amounts[(int)DamageType.Decay] = StandartDecayProtection;
+
+            public void RemoveComponent() => DestroyImmediate(this);
         }
-
-        private void ProtectFromDecay(DecayEntity entity)
-        {
-            if(entity.baseProtection.Get(DamageType.Decay) != 100f)
-            {
-                if(StandartProtection == null) StandartProtection = new Dictionary<DecayEntity, float>();
-                StandartProtection.Add(entity, entity.baseProtection.Get(DamageType.Decay));
-                entity.baseProtection.amounts[(int)DamageType.Decay] = 100f;
-            }
-        }
-
-
-        #endregion
 
     }
 }

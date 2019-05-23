@@ -11,6 +11,15 @@ using System.Collections.Generic;
 * Maybe some more features? Dunno... [?] 
 */
 
+
+
+
+
+    // - ATTACHMENTS
+
+
+    // - Detailed ammo in gun setting
+
 /* Changelog
   * [1.3.1] New configuration and option to remove default loot
   * [1.3.2] Corrected error caused by new config (float values were reset)
