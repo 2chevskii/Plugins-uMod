@@ -30,19 +30,19 @@ namespace Oxide.Plugins
         #region [Permissions]
 
 
-        private string PermissionUse { get; set; }
-        private string PermissionKick { get; set; }
+        private const string PERMISSIONUSE = ".use";
+        private const string PERMISSIONKICK = ".kick";
 
         private void RegisterPermissions()
         {
-            PermissionUse = Name.ToLower() + ".use";
-            PermissionKick = Name.ToLower() + ".kick";
-            permission.RegisterPermission(PermissionUse, this);
-            permission.RegisterPermission(PermissionKick, this);
+            permission.RegisterPermission(nameof(AFKAPI).ToLower() + PERMISSIONUSE, this);
+            permission.RegisterPermission(nameof(AFKAPI).ToLower() + PERMISSIONKICK, this);
 #if(DEBUG)
-            Puts($"Permissions are registered successfully! ({PermissionUse}, {PermissionKick})");
+            Puts($"Permissions are registered successfully! ({nameof(AFKAPI).ToLower() + PERMISSIONUSE}, {nameof(AFKAPI).ToLower() + PERMISSIONKICK})");
 #endif
         }
+
+        private bool CheckPermission(BasePlayer player, string perm) => permission.UserHasPermission(player.UserIDString, nameof(AFKAPI).ToLower() + perm);
 
 
         #endregion
@@ -338,7 +338,7 @@ namespace Oxide.Plugins
                 TrackedPlayers.Add(player.userID, new AFKPlayer(player));
             InitializeTimer();
         }
-        
+
         private void Unload() => Instance = null;
 
         private void OnPlayerInit(BasePlayer player) => TrackedPlayers.Add(player.userID, new AFKPlayer(player));
@@ -399,7 +399,7 @@ namespace Oxide.Plugins
         [ChatCommand("isafk")]
         private void CmdIsAFK(BasePlayer player, string command, string[] args)
         {
-            if(permission.UserHasPermission(player.UserIDString, PermissionUse))
+            if(CheckPermission(player, PERMISSIONUSE))
             {
                 if(args.Length == 1)
                 {
@@ -426,7 +426,7 @@ namespace Oxide.Plugins
         [ChatCommand("getafk")]
         private void CmdGetAFK(BasePlayer player, string command, string[] args)
         {
-            if(permission.UserHasPermission(player.UserIDString, PermissionUse))
+            if(CheckPermission(player, PERMISSIONUSE))
             {
                 string reply = string.Empty;
                 if(AFKPlayers.Count < 1) Messenger(player, true, mnoafkplayers);
@@ -448,7 +448,7 @@ namespace Oxide.Plugins
         [ChatCommand("kickafk")]
         private void CmdKickAllAFK(BasePlayer player, string command, string[] args)
         {
-            if(permission.UserHasPermission(player.UserIDString, PermissionKick))
+            if(CheckPermission(player, PERMISSIONKICK))
             {
                 foreach(var afkplayer in AFKPlayers)
                     if(afkplayer.IsConnected) afkplayer.Kick(lang.GetMessage(mkickreason, this, afkplayer.UserIDString));
