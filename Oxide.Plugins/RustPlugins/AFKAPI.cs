@@ -1,16 +1,14 @@
-﻿#define DEBUG //Uncomment this line to get debug information (Or useless console spam, depends on POV)
+﻿//#define DEBUG //Uncomment this line to get debug information
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Newtonsoft.Json;
 using System;
 
-/* AFKAPI -> Public Rust Plugin [uMod and RustWorkshop]
+/* AFKAPI -> Public Rust Plugin
  * Author -> 2CHEVSKII :
  * : https://umod.org/user/2CHEVSKII 
  * : https://github.com/2chevskii/ 
- * : No RWS link to avoid advertizing
- * : No YT link to avoid advertizing
  * Changelog:
  * [0.1.0] - Initial release
  * [0.1.1] - Fixes
@@ -19,10 +17,9 @@ using System;
 
 namespace Oxide.Plugins
 {
-    //For reviewer: I think people can handle reading the title AND the description to avoid mixing-up two different plugins
-    [Info("AFK API", "2CHEVSKII", "0.1.2")]
+    [Info("AFK API", "2CHEVSKII", "0.1.3")]
     [Description("API to check, if player is AFK")]
-    public class AFKAPI : RustPlugin
+    internal class AFKAPI : RustPlugin
     {
 
         #region -Fields-

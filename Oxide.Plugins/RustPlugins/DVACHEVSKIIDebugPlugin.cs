@@ -140,7 +140,8 @@ namespace Oxide.Plugins
             {
                 RaycastHit raycastHit;
                 if(Physics.Raycast(player.eyes.HeadRay(), out raycastHit))
-                    SendReply(player, $"Prefab: {raycastHit.GetEntity()?.PrefabName}\nType: {raycastHit.GetEntity()?.GetType().ToString()}");
+                    SendReply(player, $"Prefab: {raycastHit.GetEntity()?.PrefabName}\nType: {raycastHit.GetEntity()?.GetType().ToString()}" +
+                        $"\nLayer: {raycastHit.collider.gameObject.layer}");
             }
         }
         
