@@ -33,7 +33,7 @@
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RustPlugins\AFKAPI.cs" />
-    <Compile Include="RustPlugins\CleanUp.cs" />
+    <Compile Include="RustPlugins\EntityCleanup.cs" />
     <Compile Include="RustPlugins\DisableDamage.cs" />
     <Compile Include="RustPlugins\DVACHEVSKIIDebugPlugin.cs" />
     <Compile Include="RustPlugins\AutoFPSLimiter.cs" />
