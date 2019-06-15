@@ -21,6 +21,38 @@ namespace Oxide.Plugins
     class PerformanceUI : RustPlugin
     {
 
+
+
+        void TestUI()
+        {
+            var player = BasePlayer.Find("2CHEVSKII");
+
+            var container = new CuiElementContainer();        //fadeout and fadein work now
+
+            var mainpanel = "pui.testui";
+
+            container.Add(new CuiPanel
+            {
+                CursorEnabled=false,
+                Image = { Color = "0.6 0.8 0.2 1", Material = "assets/icons/iconmaterial.mat" },
+                RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-25 -10", OffsetMax = "25 10"}
+            }, "Hud", mainpanel);
+
+            CuiHelper.AddUi(player, container);
+
+        }
+
+
+
+        void RemoveTestUI()
+        {
+            foreach(var player in BasePlayer.activePlayerList)
+            {
+                CuiHelper.DestroyUi(player, "pui.testui");
+            }
+        }
+
+
         #region -Configuration-
 
 
@@ -119,6 +151,7 @@ namespace Oxide.Plugins
             permission.RegisterPermission(permUseGUI, this); //permission for gui usage (since it's much more heavy than the chat command)
             //permission.GrantGroupPermission("default", permUse, this); //grants chat command to all
             IconSize();
+            TestUI();
         }
 
         private void OnServerInitialized()
@@ -140,6 +173,7 @@ namespace Oxide.Plugins
             guiUsersOpened.Clear();
             guiUsersCollapsed.Clear();
             RefreshUI();
+            RemoveTestUI();
         }
 
         private void OnPlayerInit(BasePlayer player) //add new player to the ui userlist
