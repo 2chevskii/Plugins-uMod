@@ -12,6 +12,10 @@ using System;
  * Option to log plugin activity
  * */
 
+/* TODO:
+* optimize the plugin using coroutines
+*/
+
 // Original idea and plugin version => Vlad-00003
 
 namespace Oxide.Plugins

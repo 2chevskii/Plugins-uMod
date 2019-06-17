@@ -4,17 +4,9 @@ using Random = UnityEngine.Random;
 using System.Collections.Generic;
 using System.Linq;
 
-/*TODO:
-* Make configuration [x]
-* Optimize code a bit [x]
-* Add new features? [x]
-* ...?
-* Maybe some more features? Dunno... [?] 
+/* TODO:
+* Attachments
 */
-
-    // - ATTACHMENTS
-    
-    // - Detailed ammo in gun setting
 
 /* Changelog
   * [1.3.1] New configuration and option to remove default loot

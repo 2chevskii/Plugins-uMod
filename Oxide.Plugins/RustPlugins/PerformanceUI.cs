@@ -9,11 +9,7 @@ using System;
 namespace Oxide.Plugins
 {
     /* TODO:
-     * Finish UI alignment [x]
-     * Make configuration [x]
-     * Optimize code (if it's possible) [meh...]
-     * Improve UI to make it look beautiful [x]
-     * Make UI work without ImageLibrary [---]
+     * Remaster
      */
 
     [Info("Performance UI", "2CHEVSKII", "1.0.7")]
