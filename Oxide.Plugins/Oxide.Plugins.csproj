@@ -36,6 +36,7 @@
     <Compile Include="RustPlugins\DisableDamage.cs" />
     <Compile Include="RustPlugins\DVACHEVSKIIDebugPlugin.cs" />
     <Compile Include="RustPlugins\AutoFPSLimiter.cs" />
+    <Compile Include="RustPlugins\EntityCleanup.cs" />
     <Compile Include="RustPlugins\GodmodeIndicator.cs" />
     <Compile Include="RustPlugins\HighWallBarricades.cs" />
     <Compile Include="RustPlugins\IgnoreCollision.cs" />
