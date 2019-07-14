@@ -147,7 +147,7 @@ namespace Oxide.Plugins
             permission.RegisterPermission(permUseGUI, this); //permission for gui usage (since it's much more heavy than the chat command)
             //permission.GrantGroupPermission("default", permUse, this); //grants chat command to all
             IconSize();
-            TestUI();
+            //TestUI();
         }
 
         private void OnServerInitialized()
@@ -169,7 +169,7 @@ namespace Oxide.Plugins
             guiUsersOpened.Clear();
             guiUsersCollapsed.Clear();
             RefreshUI();
-            RemoveTestUI();
+            //RemoveTestUI();
         }
 
         private void OnPlayerInit(BasePlayer player) //add new player to the ui userlist
