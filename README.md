@@ -1,7 +1,7 @@
 [license]: https://www.tldrlegal.com/l/mit
 
 ![Header](https://i.imgur.com/mqPOWtp.png)
-# 2CHEVSKII's OxideMod/uMod public plugins repository
+# 2CHEVSKII's OxideMod/uMod public plugins repository [![License](https://img.shields.io/github/license/2chevskii/oxide.plugins.svg?style=flat-square)][license] ![](https://img.shields.io/github/last-commit/2chevskii/oxide.plugins.svg?style=flat-square)
 
 ## Contacts
 
