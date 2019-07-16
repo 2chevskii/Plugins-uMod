@@ -66,8 +66,15 @@ namespace Oxide.Plugins
             var list = new List<string>();
             while(type.BaseType != null)
             {
+<<<<<<< HEAD
                 list.Add(type.Name);
                 type = type.BaseType;
+=======
+                RaycastHit raycastHit;
+                if(Physics.Raycast(player.eyes.HeadRay(), out raycastHit))
+                    SendReply(player, $"Prefab: {raycastHit.GetEntity()?.PrefabName}\nType: {raycastHit.GetEntity()?.GetType().ToString()}" +
+                        $"\nLayer: {raycastHit.collider.gameObject.layer}");
+>>>>>>> master
             }
             return string.Join(" : ", list);
         }

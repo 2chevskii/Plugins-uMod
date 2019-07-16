@@ -20,7 +20,7 @@ namespace Oxide.Plugins
 {
     [Info("AFK API", "2CHEVSKII", "0.1.3")]
     [Description("API to check, if player is AFK")]
-    public class AFKAPI : RustPlugin
+    internal class AFKAPI : RustPlugin
     {
 
         #region -Fields-
