@@ -1,4 +1,4 @@
-[license]: https://tldrlegal.com/license/gnu-general-public-license-v3-(gpl-3)#fulltext
+[license]: https://www.tldrlegal.com/l/mit
 
 ![Header](https://i.imgur.com/mqPOWtp.png)
 # 2CHEVSKII's OxideMod/uMod public plugins repository
@@ -26,8 +26,3 @@
   - [PayPal.me](https://www.paypal.com/paypalme2/2chevskii)
 
 - [DonationAlerts](https://www.donationalerts.com/r/2chevskii)
-
-###### All the plugins in this repository are licensed under `GNUGPLv3`
-
-
-
