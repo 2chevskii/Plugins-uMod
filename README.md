@@ -1,1 +1,3 @@
-`in progress`
+[logo]: ./logo.png
+
+![logo]
