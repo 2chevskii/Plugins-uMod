@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("DEBUG")]
 [assembly: AssemblyCompany("RustWorkshop/2CHEVSKII")]
 [assembly: AssemblyProduct("2CHEVSKII.Plugins.uMod")]
-[assembly: AssemblyCopyright("Copyright © 2CHEVSKII 2020")]
+[assembly: AssemblyCopyright("Copyright © 2019-2020 2CHEVSKII")]
 [assembly: AssemblyTrademark("RWS")]
 [assembly: AssemblyCulture("en")]
 
