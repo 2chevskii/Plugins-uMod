@@ -49,7 +49,7 @@
     <Compile Include="Newbie.cs" />
     <Compile Include="NoClipRestrictions.cs" />
     <Compile Include="NPCDropGun.cs" />
-    <Compile Include="PerformanceRestarter.cs" />
+    <Compile Include="StressRestart.cs" />
     <Compile Include="PerformanceUI.cs" />
     <Compile Include="PermissionGranter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -63,7 +63,7 @@
     <Compile Include="WipeDataCleaner.cs" />
   </ItemGroup>
   <ItemGroup>
-  <Reference Include="Assembly-CSharp">
+    <Reference Include="Assembly-CSharp">
       <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
@@ -109,6 +109,6 @@
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>..\..\References\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
-    </ItemGroup>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

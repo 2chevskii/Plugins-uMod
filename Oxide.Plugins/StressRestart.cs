@@ -13,9 +13,9 @@ namespace Oxide.Plugins
 {
 	[Info("Performance Restarter", "2CHEVSKII", "0.1.0")]
 	[Description("Warns and optionally restarts server while it starts to loose FPS")]
-	class PerformanceRestarter : CovalencePlugin
+	class StressRestart : CovalencePlugin
 	{
-		static PerformanceRestarter instance;
+		static StressRestart instance;
 
 		const string PERMISSION = "performancerestarter.use";
 
