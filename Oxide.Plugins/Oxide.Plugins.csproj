@@ -37,6 +37,7 @@
     <Compile Include="AFKAPI.cs" />
     <Compile Include="AutoFPSLimiter.cs" />
     <Compile Include="CapacityController.cs" />
+    <Compile Include="CodeLockAuthAPI.cs" />
     <Compile Include="DisableDamage.cs" />
     <Compile Include="DumpInfo.cs" />
     <Compile Include="DVACHEVSKIIDebugPlugin.cs" />
@@ -71,6 +72,9 @@
     </Reference>
     <Reference Include="Facepunch.Network">
       <HintPath>..\..\References\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.System">
+      <HintPath>..\..\..\LoadManifest\Refs\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.Unity">
       <HintPath>..\..\References\Facepunch.Unity.dll</HintPath>
