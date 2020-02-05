@@ -45,11 +45,13 @@
     <Compile Include="GodmodeIndicator.cs" />
     <Compile Include="GoldenAKChallenge.cs" />
     <Compile Include="HighWallBarricades.cs" />
+    <Compile Include="HorseShootingRockets.cs" />
     <Compile Include="IgnoreCollision.cs" />
     <Compile Include="IngameClockGUI.cs" />
     <Compile Include="Newbie.cs" />
     <Compile Include="NoClipRestrictions.cs" />
     <Compile Include="NPCDropGun.cs" />
+    <Compile Include="RustDataDump.cs" />
     <Compile Include="StressRestart.cs" />
     <Compile Include="PerformanceUI.cs" />
     <Compile Include="PermissionGranter.cs" />
@@ -70,8 +72,14 @@
     <Reference Include="Assembly-CSharp-firstpass">
       <HintPath>..\..\References\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
+    <Reference Include="Facepunch.Console">
+      <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\Facepunch.Console.dll</HintPath>
+    </Reference>
     <Reference Include="Facepunch.Network">
       <HintPath>..\..\References\Facepunch.Network.dll</HintPath>
+    </Reference>
+    <Reference Include="Facepunch.Steamworks.Win64">
+      <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\Facepunch.Steamworks.Win64.dll</HintPath>
     </Reference>
     <Reference Include="Facepunch.System">
       <HintPath>..\..\..\LoadManifest\Refs\RustDedicated_Data\Managed\Facepunch.System.dll</HintPath>
@@ -81,6 +89,13 @@
     </Reference>
     <Reference Include="Facepunch.UnityEngine">
       <HintPath>..\..\References\Facepunch.UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="netstandard, Version=2.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\netstandard.dll</HintPath>
+    </Reference>
+    <Reference Include="NewAssembly">
+      <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\NewAssembly.dll</HintPath>
     </Reference>
     <Reference Include="Oxide.Core">
       <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\Oxide.Core.dll</HintPath>
@@ -107,6 +122,9 @@
       <HintPath>..\..\References\Rust.Localization.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>..\..\..\..\..\Desktop\GameServers\rust-ds\RustDedicated_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>..\..\References\UnityEngine.CoreModule.dll</HintPath>
     </Reference>

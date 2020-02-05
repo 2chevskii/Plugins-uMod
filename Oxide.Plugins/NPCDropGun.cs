@@ -7,7 +7,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.0")]
+	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.1")]
 	[Description("Forces NPC to drop used gun and other items after death")]
 	internal class NPCDropGun : RustPlugin
 	{
@@ -84,7 +84,7 @@ namespace Oxide.Plugins
 				}
 			}
 
-			var definition = player.inventory.containerBelt.FindItemByUID(player.svActiveItemID)?.info;
+			var definition = player.inventory?.containerBelt?.FindItemByUID(player.svActiveItemID)?.info;
 
 			if(definition == null)
 			{
@@ -92,6 +92,11 @@ namespace Oxide.Plugins
 			}
 
 			var item = ItemManager.Create(definition, 1, settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL);
+
+			if(item == null)
+			{
+				return;
+			}
 
 			var heldEnt = item.GetHeldEntity();
 
