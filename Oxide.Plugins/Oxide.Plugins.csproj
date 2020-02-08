@@ -45,7 +45,6 @@
     <Compile Include="GodmodeIndicator.cs" />
     <Compile Include="GoldenAKChallenge.cs" />
     <Compile Include="HighWallBarricades.cs" />
-    <Compile Include="HorseShootingRockets.cs" />
     <Compile Include="IgnoreCollision.cs" />
     <Compile Include="IngameClockGUI.cs" />
     <Compile Include="Newbie.cs" />
