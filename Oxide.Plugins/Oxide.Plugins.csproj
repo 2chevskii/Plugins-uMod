@@ -60,6 +60,7 @@
     <Compile Include="Telekinesis.cs" />
     <Compile Include="TeleportGun.cs" />
     <Compile Include="TickrateLimiter.cs" />
+    <Compile Include="VoteAPI.cs" />
     <Compile Include="WeatherDB.cs" />
     <Compile Include="WhereIsMyHorse.cs" />
     <Compile Include="WipeDataCleaner.cs" />
