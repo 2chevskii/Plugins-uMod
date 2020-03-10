@@ -18,7 +18,9 @@
     <DebugSymbols>false</DebugSymbols>
     <DebugType>none</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>..\build\default\</OutputPath>
+    <OutputPath>$(SolutionDir)/build/</OutputPath>
+    <IntermediateOutputPath>$(ProjectDir)</IntermediateOutputPath>
+    <BaseIntermediateOutputPath>$(ProjectDir)</BaseIntermediateOutputPath>
     <DefineConstants>
     </DefineConstants>
     <ErrorReport>prompt</ErrorReport>
