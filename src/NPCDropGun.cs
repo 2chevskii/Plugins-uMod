@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Facepunch;
 using Newtonsoft.Json;
 using UnityEngine;
 using Random = UnityEngine.Random;
@@ -25,13 +26,13 @@ namespace Oxide.Plugins
 		void OnServerInitialized()
 		{
 			// Warn if BotSpawn may cause unexpected behaviour
-			if((bool)Manager.GetPlugin("BotSpawn"))
+			if ((bool)Manager.GetPlugin("BotSpawn"))
 				PrintWarning($"BotSpawn plugin found! Some ammo and loot might not be handled correctly!");
 		}
 
 		void OnEntityDeath(BasePlayer player)
 		{
-			if(player is HTNPlayer || player is NPCPlayer)
+			if (player is HTNPlayer || player is NPCPlayer)
 			{
 				DoSpawns(player);
 			}
@@ -39,14 +40,14 @@ namespace Oxide.Plugins
 
 		void OnPlayerCorpse(BasePlayer player, PlayerCorpse corpse)
 		{
-			if(!player || !corpse || !delayedItems.ContainsKey(player))
+			if (!player || !corpse || !delayedItems.ContainsKey(player))
 			{
 				return;
 			}
 
-			if(settings.RemoveDefault)
+			if (settings.RemoveDefault)
 			{
-				for(int i = 0; i < corpse.containers.Length; i++)
+				for (int i = 0; i < corpse.containers.Length; i++)
 				{
 					corpse.containers[i].Clear();
 				}
@@ -54,14 +55,16 @@ namespace Oxide.Plugins
 
 			var list = delayedItems[player];
 
-			for(int i = 0; i < list.Count; i++)
+			for (int i = 0; i < list.Count; i++)
 			{
 				var item = list[i];
-				if(!item.MoveToContainer(corpse.containers[2]) && !item.MoveToContainer(corpse.containers[0]))
+				if (!item.MoveToContainer(corpse.containers[2]) && !item.MoveToContainer(corpse.containers[0]))
 				{
 					ApplyVelocity(DropNearPosition(item, corpse.transform.position + new Vector3(0, 0.3f)));
 				}
 			}
+
+			Pool.FreeList(ref list);
 
 			delayedItems.Remove(player);
 		}
@@ -72,13 +75,13 @@ namespace Oxide.Plugins
 
 		void DoSpawns(BasePlayer player)
 		{
-			delayedItems[player] = new List<Item>();
-
-			if(Random.Range(0.0f, 1.0f) <= settings.Meds.DropChance)
+			delayedItems[player] = Pool.GetList<Item>();
+			
+			if (Random.Range(0.0f, 1.0f) <= settings.Meds.DropChance)
 			{
 				var med = SpawnMeds();
 
-				if(med != null)
+				if (med != null)
 				{
 					delayedItems[player].Add(med);
 				}
@@ -86,35 +89,39 @@ namespace Oxide.Plugins
 
 			var definition = player.inventory?.containerBelt?.FindItemByUID(player.svActiveItemID)?.info;
 
-			if(definition == null)
+			if (definition == null)
 			{
 				return;
 			}
 
 			var item = ItemManager.Create(definition, 1, settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL);
 
-			if(item == null)
+			if (item == null)
 			{
 				return;
 			}
 
+			var condition = Random.Range(settings.Guns.Condition.Min, settings.Guns.Condition.Max);
+
+			item.conditionNormalized = condition / 100;
+
 			var heldEnt = item.GetHeldEntity();
 
-			if(Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance && heldEnt is BaseProjectile)
+			if (Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance && heldEnt is BaseProjectile)
 			{
 				var ammo = SpawnAmmo(heldEnt as BaseProjectile);
 
-				if(ammo != null)
+				if (ammo != null)
 				{
 					delayedItems[player].Add(ammo);
 				}
 			}
 
-			if(Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance && definition != null)
+			if (Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance && definition != null)
 			{
 				SetAttachments(item);
 
-				if(settings.GunIntoCorpse)
+				if (settings.GunIntoCorpse)
 				{
 					delayedItems[player].Add(item);
 				}
@@ -134,7 +141,7 @@ namespace Oxide.Plugins
 
 		Item SpawnAmmo(BaseProjectile weapon)
 		{
-			if(!weapon.primaryMagazine.ammoType)
+			if (!weapon.primaryMagazine.ammoType)
 			{
 				return null;
 			}
@@ -146,20 +153,20 @@ namespace Oxide.Plugins
 
 		Item SetAttachments(Item item)
 		{
-			if(settings.Guns.Attachments.Length < 1 || item.contents == null)
+			if (settings.Guns.Attachments.Length < 1 || item.contents == null)
 			{
 				return item;
 			}
 
 			var attachmentCount = Random.Range(settings.Guns.AttachmentCount.Min, settings.Guns.AttachmentCount.Max);
 
-			for(int i = 0; i < attachmentCount; i++)
+			for (int i = 0; i < attachmentCount; i++)
 			{
 				var attachment = settings.Guns.Attachments.GetRandom();
 
 				var attachmentItem = ItemManager.CreateByPartialName(attachment);
 
-				if(attachmentItem == null || !item.contents.CanTake(attachmentItem))
+				if (attachmentItem == null || !item.contents.CanTake(attachmentItem))
 				{
 					continue;
 				}
@@ -186,14 +193,26 @@ namespace Oxide.Plugins
 
 		ulong GetRandomSkin(ItemDefinition idef)
 		{
-			if(!idef || (idef.skins.Length < 1 && idef.skins2.Length < 1))
+			if (!idef)
 				return 0;
-			List<int> skins = new List<int>();
 
-			skins.AddRange(from skin in idef.skins select skin.id);
-			skins.AddRange(from skin in idef.skins2 select skin.Id);
+			List<int> skins = Pool.GetList<int>();
 
-			return ItemDefinition.FindSkin(idef.itemid, skins.GetRandom());
+			if (idef.skins != null && idef.skins.Length > 0)
+			{
+				skins.AddRange(from skin in idef.skins select skin.id);
+			}
+
+			if (idef.skins2 != null && idef.skins2.Length > 0)
+			{
+				skins.AddRange(from skin in idef.skins2 where skin != null select skin.Id);
+			}
+
+			var randomSkin = skins.GetRandom();
+
+			Pool.FreeList(ref skins);
+
+			return randomSkin == 0 ? 0 : ItemDefinition.FindSkin(idef.itemid, randomSkin);
 		}
 
 		#endregion
@@ -213,7 +232,7 @@ namespace Oxide.Plugins
 			{
 				settings = Config.ReadObject<Settings>();
 
-				if(settings == null)
+				if (settings == null)
 				{
 					throw new Exception();
 				}
