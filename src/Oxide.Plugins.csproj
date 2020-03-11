@@ -29,36 +29,36 @@
     <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="AFKAPI.cs" />
-    <Compile Include="AutoFPSLimiter.cs" />
-    <Compile Include="CapacityController.cs" />
-    <Compile Include="CodeLockAuthAPI.cs" />
-    <Compile Include="DisableDamage.cs" />
-    <Compile Include="DumpInfo.cs" />
-    <Compile Include="DVACHEVSKIIDebugPlugin.cs" />
-    <Compile Include="EntityCleanup.cs" />
-    <Compile Include="GodmodeIndicator.cs" />
-    <Compile Include="GoldenAKChallenge.cs" />
-    <Compile Include="HighWallBarricades.cs" />
-    <Compile Include="IgnoreCollision.cs" />
-    <Compile Include="IngameClockGUI.cs" />
-    <Compile Include="Newbie.cs" />
-    <Compile Include="NoClipRestrictions.cs" />
-    <Compile Include="NPCDropGun.cs" />
-    <Compile Include="RustDataDump.cs" />
-    <Compile Include="StressRestart.cs" />
-    <Compile Include="PerformanceUI.cs" />
-    <Compile Include="PermissionGranter.cs" />
+    <None Include="AFKAPI.cs" />
+    <None Include="AutoFPSLimiter.cs" />
+    <None Include="CapacityController.cs" />
+    <None Include="CodeLockAuthAPI.cs" />
+    <None Include="DisableDamage.cs" />
+    <None Include="DumpInfo.cs" />
+    <None Include="DVACHEVSKIIDebugPlugin.cs" />
+    <None Include="EntityCleanup.cs" />
+    <None Include="GodmodeIndicator.cs" />
+    <None Include="GoldenAKChallenge.cs" />
+    <None Include="HighWallBarricades.cs" />
+    <None Include="IgnoreCollision.cs" />
+    <None Include="IngameClockGUI.cs" />
+    <None Include="Newbie.cs" />
+    <None Include="NoClipRestrictions.cs" />
+    <None Include="NPCDropGun.cs" />
+    <None Include="RustDataDump.cs" />
+    <None Include="StressRestart.cs" />
+    <None Include="PerformanceUI.cs" />
+    <None Include="PermissionGranter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RealisticExplosions.cs" />
-    <Compile Include="Replenish.cs" />
-    <Compile Include="Telekinesis.cs" />
-    <Compile Include="TeleportGun.cs" />
-    <Compile Include="TickrateLimiter.cs" />
-    <Compile Include="VoteAPI.cs" />
-    <Compile Include="WeatherDB.cs" />
-    <Compile Include="WhereIsMyHorse.cs" />
-    <Compile Include="WipeDataCleaner.cs" />
+    <None Include="RealisticExplosions.cs" />
+    <None Include="Replenish.cs" />
+    <None Include="Telekinesis.cs" />
+    <None Include="TeleportGun.cs" />
+    <None Include="TickrateLimiter.cs" />
+    <None Include="VoteAPI.cs" />
+    <None Include="WeatherDB.cs" />
+    <None Include="WhereIsMyHorse.cs" />
+    <None Include="WipeDataCleaner.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony">
