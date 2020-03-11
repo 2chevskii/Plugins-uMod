@@ -8,7 +8,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.1")]
+	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.2")]
 	[Description("Forces NPC to drop used gun and other items after death")]
 	internal class NPCDropGun : RustPlugin
 	{
