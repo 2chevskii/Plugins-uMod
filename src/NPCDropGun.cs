@@ -8,7 +8,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.2")]
+	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.3")]
 	[Description("Forces NPC to drop used gun and other items after death")]
 	internal class NPCDropGun : RustPlugin
 	{
@@ -76,14 +76,14 @@ namespace Oxide.Plugins
 		void DoSpawns(BasePlayer player)
 		{
 			delayedItems[player] = Pool.GetList<Item>();
-			
+
 			if (Random.Range(0.0f, 1.0f) <= settings.Meds.DropChance)
 			{
-				var med = SpawnMeds();
+				var meds = SpawnMeds();
 
-				if (med != null)
+				if (meds != null)
 				{
-					delayedItems[player].Add(med);
+					delayedItems[player].Add(meds);
 				}
 			}
 
@@ -94,20 +94,20 @@ namespace Oxide.Plugins
 				return;
 			}
 
-			var item = ItemManager.Create(definition, 1, settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL);
+			var itemWeapon = ItemManager.Create(definition, 1, settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL);
 
-			if (item == null)
+			if (itemWeapon == null)
 			{
 				return;
 			}
 
 			var condition = Random.Range(settings.Guns.Condition.Min, settings.Guns.Condition.Max);
 
-			item.conditionNormalized = condition / 100;
+			itemWeapon.conditionNormalized = condition / 100;
 
-			var heldEnt = item.GetHeldEntity();
+			var heldEnt = itemWeapon.GetHeldEntity();
 
-			if (Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance && heldEnt is BaseProjectile)
+			if (heldEnt is BaseProjectile && Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance)
 			{
 				var ammo = SpawnAmmo(heldEnt as BaseProjectile);
 
@@ -117,17 +117,17 @@ namespace Oxide.Plugins
 				}
 			}
 
-			if (Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance && definition != null)
+			if (Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance)
 			{
-				SetAttachments(item);
+				SetAttachments(itemWeapon);
 
-				if (settings.GunIntoCorpse)
+				if (settings.GunIntoCorpse || !player.eyes || !heldEnt)
 				{
-					delayedItems[player].Add(item);
+					delayedItems[player].Add(itemWeapon);
 				}
 				else
 				{
-					ApplyVelocity(DropNearPosition(item, player.eyes.position));
+					ApplyVelocity(DropNearPosition(itemWeapon, player.eyes.position));
 				}
 			}
 		}
