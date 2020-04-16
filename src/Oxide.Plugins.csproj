@@ -45,9 +45,10 @@
     <Compile Include="Newbie.cs" />
     <Compile Include="NoClipRestrictions.cs" />
     <Compile Include="NPCDropGun.cs" />
+    <Compile Include="PerformanceUI.cs" />
     <Compile Include="RustDataDump.cs" />
     <Compile Include="StressRestart.cs" />
-    <Compile Include="PerformanceUI.cs" />
+    <Compile Include="PerformanceUI.old.cs" />
     <Compile Include="PermissionGranter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RealisticExplosions.cs" />
