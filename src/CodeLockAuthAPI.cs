@@ -4,7 +4,7 @@ using Oxide.Core.Libraries.Covalence;
 namespace Oxide.Plugins
 {
 	[Info("CodeLock Auth API", "2CHEVSKII", "0.1.1")]
-	[Description("API for checking player authorization to code locks in building")]
+	[Description("API for checking player authorization in building's code locks.")]
 	class CodeLockAuthAPI : CovalencePlugin
 	{
 		#region API
