@@ -16,7 +16,7 @@ namespace Oxide.Plugins
 {
 
 	[Info("HighWallBarricades", "Guilty Spark & 2CHEVSKII", "2.3.0")]
-	[Description("Makes High External Walls decay.")]
+	[Description("Configurable decay speed for certain barricades.")]
 	internal class HighWallBarricades : RustPlugin
 	{
 
