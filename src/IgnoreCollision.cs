@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Oxide.Plugins
 {
 	[Info("IgnoreCollision", "2CHEVSKII", "1.1.1")]
-	[Description("This plugin removes collisions between dropped items")]
+	[Description("Automatically disables collision of dropped items.")]
 	internal class IgnoreCollision : RustPlugin
 	{
 
