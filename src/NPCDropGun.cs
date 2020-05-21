@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Facepunch;
 using Newtonsoft.Json;
+using Oxide.Core.Plugins;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
@@ -16,6 +17,8 @@ namespace Oxide.Plugins
 
 		Settings settings;
 		Dictionary<BasePlayer, List<Item>> delayedItems;
+
+		[PluginReference] Plugin ItemSkinRandomizer;
 
 		#endregion
 
