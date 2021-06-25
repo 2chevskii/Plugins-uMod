@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Facepunch;
 using Newtonsoft.Json;
-using Oxide.Core.Plugins;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.3")]
+	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.7")]
 	[Description("Forces NPC to drop used gun and other items after death")]
 	internal class NPCDropGun : RustPlugin
 	{
@@ -17,8 +16,6 @@ namespace Oxide.Plugins
 
 		Settings settings;
 		Dictionary<BasePlayer, List<Item>> delayedItems;
-
-		[PluginReference] Plugin ItemSkinRandomizer;
 
 		#endregion
 
@@ -41,7 +38,7 @@ namespace Oxide.Plugins
 			}
 		}
 
-		void OnPlayerCorpse(BasePlayer player, PlayerCorpse corpse)
+		void OnCorpsePopulate(BasePlayer player, PlayerCorpse corpse)
 		{
 			if (!player || !corpse || !delayedItems.ContainsKey(player))
 			{
@@ -61,11 +58,13 @@ namespace Oxide.Plugins
 			for (int i = 0; i < list.Count; i++)
 			{
 				var item = list[i];
-				if (!item.MoveToContainer(corpse.containers[2]) && !item.MoveToContainer(corpse.containers[0]))
-				{
-					ApplyVelocity(DropNearPosition(item, corpse.transform.position + new Vector3(0, 0.3f)));
+				if (!item.MoveToContainer(corpse.containers[0]) && !item.MoveToContainer(corpse.containers[2]))
+                {
+                    if (settings.DropNearFull)
+                        ApplyVelocity(DropNearPosition(item, corpse.transform.position + new Vector3(0, 0.3f)));
+					else item.Remove();
 				}
-			}
+            }
 
 			Pool.FreeList(ref list);
 
@@ -169,7 +168,7 @@ namespace Oxide.Plugins
 
 				var attachmentItem = ItemManager.CreateByPartialName(attachment);
 
-				if (attachmentItem == null || !item.contents.CanTake(attachmentItem))
+				if (attachmentItem == null || !item.contents.CanAccept(attachmentItem))
 				{
 					continue;
 				}
@@ -208,7 +207,7 @@ namespace Oxide.Plugins
 
 			if (idef.skins2 != null && idef.skins2.Length > 0)
 			{
-				skins.AddRange(from skin in idef.skins2 where skin != null select skin.Id);
+				skins.AddRange(from skin in idef.skins2 where skin != null select skin.DefinitionId);
 			}
 
 			var randomSkin = skins.GetRandom();
