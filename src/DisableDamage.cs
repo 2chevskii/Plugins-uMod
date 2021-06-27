@@ -3,9 +3,9 @@ using Oxide.Core;
 
 namespace Oxide.Plugins
 {
-    [Info("Disable Damage", "2CHEVSKII", "0.3.1")]
+    [Info("Disable Damage", "2CHEVSKII", "0.4.0")]
     [Description("Allows players with permission to disable other player's damage.")]
-    internal class DisableDamage : RustPlugin
+    class DisableDamage : RustPlugin
     {
 
         #region [Fields]
@@ -14,43 +14,43 @@ namespace Oxide.Plugins
         //////////////////////////////////////////
         //// Config variables                 ////
         //////////////////////////////////////////
-        private bool displayerdmg = true;
-        private bool disNPCdmg = true;
-        private bool disStructdmg = true;
-        private bool disAnimaldmg = true;
-        private bool disBarreldmg = true;
-        private bool disHelidmg = true;
-        private bool disTransportdmg = true;
-        private bool announceTarget = true;
-        private bool announceName = true;
-        private bool savedisabled = true;
+        bool displayerdmg = true;
+        bool disNPCdmg = true;
+        bool disStructdmg = true;
+        bool disAnimaldmg = true;
+        bool disBarreldmg = true;
+        bool disHelidmg = true;
+        bool disTransportdmg = true;
+        bool announceTarget = true;
+        bool announceName = true;
+        bool savedisabled = true;
 
-        private bool disDefaultdmg = false;
+        bool disDefaultdmg = false;
 
         /// <summary>
         /// Players with disabled damage
         /// </summary>
-        private List<ulong> DisabledDamage { get; set; }
+        List<ulong> DisabledDamage { get; set; }
 
         /// <summary>
         /// Permission to use the chat command
         /// </summary>
-        private const string PERMISSIONUSE = "disabledamage.use";
+        const string PERMISSION_USE = "disabledamage.use";
 
         //////////////////////////////////////////
         //// Strings                          ////
         //////////////////////////////////////////
-        private const string mprefix = "Prefix";
-        private const string myourdenabled = "Self damage enabled";
-        private const string myourddisabled = "Self damage disabled";
-        private const string mplayerdenabled = "Player's damage enabled";
-        private const string mplayerddisabled = "Player's damage disabled";
-        private const string menby = "Player enabled your damage";
-        private const string mdisby = "Player disabled your damage";
-        private const string mnoperm = "No permission";
-        private const string mnoplayer = "No player found";
-        private const string mhelp = "Help message";
-        private const string munavailable = "Command unavailable";
+        const string M_PREFIX = "Prefix";
+        const string M_SELF_DAMAGE_ENABLED = "Self damage enabled";
+        const string M_SELF_DAMAGE_DISABLED = "Self damage disabled";
+        const string M_PLAYER_DAMAGE_ENABLED = "Player's damage enabled";
+        const string M_PLAYER_DAMAGE_DISABLED = "Player's damage disabled";
+        const string M_ENABLED_BY = "Player enabled your damage";
+        const string M_DISABLED_BY = "Player disabled your damage";
+        const string M_NO_PERMISSION = "No permission";
+        const string M_PLAYER_NOT_FOUND = "No player found";
+        const string M_HELP = "Help message";
+        const string M_UNAVAILABLE = "Command unavailable";
 
 
         #endregion
@@ -58,7 +58,7 @@ namespace Oxide.Plugins
         #region [Configuration]
 
 
-        private void CheckConfig<T>(string menu, string key, ref T value)
+        void CheckConfig<T>(string menu, string key, ref T value)
         {
             if (Config[menu, key] is T)
                 value = (T)Config[menu, key];
@@ -68,7 +68,7 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig() { }
 
-        private void LoadConfiguration()
+        void LoadConfiguration()
         {
             CheckConfig("General", "Save disabled players to data", ref savedisabled);
             CheckConfig("General", "Announce target player", ref announceTarget);
@@ -92,21 +92,21 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultMessages() => lang.RegisterMessages(defmessages, this, "en");
 
-        private void Replier(BasePlayer player, string message, params string[] args) => player.ChatMessage($"{lang.GetMessage(mprefix, this)} {string.Format(lang.GetMessage(message, this), args)}");
+        void Replier(BasePlayer player, string message, params string[] args) => player.ChatMessage($"{lang.GetMessage(M_PREFIX, this)} {string.Format(lang.GetMessage(message, this), args)}");
 
-        private Dictionary<string, string> defmessages = new Dictionary<string, string>
+        Dictionary<string, string> defmessages = new Dictionary<string, string>
         {
-            [mprefix] = "<color=red>[</color>DISABLE DAMAGE<color=red>]</color>",
-            [mnoperm] = "<color=red>Y</color>ou have no permission to use this command<color=red>!</color>",
-            [myourdenabled] = "Your damage has been <color=#36d859>enabled</color>.",
-            [myourddisabled] = "Your damage has been <color=red>disabled</color>.",
-            [mplayerdenabled] = "You <color=#36d859>enabled</color> damage for player <color=#36a1d8>{0}</color>.",
-            [mplayerddisabled] = "You <color=red>disabled</color> damage for player <color=#36a1d8>{0}</color>.",
-            [menby] = "Your damage has been <color=#36d859>enabled</color> by <color=#36a1d8>{0}</color>.",
-            [mdisby] = "Your damage has been <color=red>disabled</color> by <color=#36a1d8>{0}</color>.",
-            [mnoplayer] = "<color=red>N</color>o player found with that name<color=red>!</color>",
-            [mhelp] = "<color=yellow>Wrong command usage!</color>\n<color=#36a1d8>/dd</color> - enable/disable your damage\n<color=#36a1d8>/dd <username or userid></color> - disable damage for specific user.",
-            [munavailable] = "This command is <color=yellow>unavailable</color> while \"<color=#F2BC14>Damage disabled by default</color>\" is \"<color=#195FFF>true</color>\" in the config file!"
+            [M_PREFIX] = "<color=red>[</color>DISABLE DAMAGE<color=red>]</color>",
+            [M_NO_PERMISSION] = "<color=red>Y</color>ou have no permission to use this command<color=red>!</color>",
+            [M_SELF_DAMAGE_ENABLED] = "Your damage has been <color=#36d859>enabled</color>.",
+            [M_SELF_DAMAGE_DISABLED] = "Your damage has been <color=red>disabled</color>.",
+            [M_PLAYER_DAMAGE_ENABLED] = "You <color=#36d859>enabled</color> damage for player <color=#36a1d8>{0}</color>.",
+            [M_PLAYER_DAMAGE_DISABLED] = "You <color=red>disabled</color> damage for player <color=#36a1d8>{0}</color>.",
+            [M_ENABLED_BY] = "Your damage has been <color=#36d859>enabled</color> by <color=#36a1d8>{0}</color>.",
+            [M_DISABLED_BY] = "Your damage has been <color=red>disabled</color> by <color=#36a1d8>{0}</color>.",
+            [M_PLAYER_NOT_FOUND] = "<color=red>N</color>o player found with that name<color=red>!</color>",
+            [M_HELP] = "<color=yellow>Wrong command usage!</color>\n<color=#36a1d8>/dd</color> - enable/disable your damage\n<color=#36a1d8>/dd <username or userid></color> - disable damage for specific user.",
+            [M_UNAVAILABLE] = "This command is <color=yellow>unavailable</color> while \"<color=#F2BC14>Damage disabled by default</color>\" is \"<color=#195FFF>true</color>\" in the config file!"
         };
 
 
@@ -116,15 +116,15 @@ namespace Oxide.Plugins
 
 
         [ChatCommand("dd")]
-        private void CmdDD(BasePlayer player, string command, string[] args)
+        void CmdDD(BasePlayer player, string command, string[] args)
         {
-            if (!permission.UserHasPermission(player.UserIDString, PERMISSIONUSE))
+            if (!permission.UserHasPermission(player.UserIDString, PERMISSION_USE))
             {
-                Replier(player, mnoperm);
+                Replier(player, M_NO_PERMISSION);
             }
             else if (disDefaultdmg)
             {
-                Replier(player, munavailable);
+                Replier(player, M_UNAVAILABLE);
             }
             else
             {
@@ -134,12 +134,12 @@ namespace Oxide.Plugins
                         if (!DisabledDamage.Contains(player.userID))
                         {
                             DisabledDamage.Add(player.userID);
-                            Replier(player, myourddisabled);
+                            Replier(player, M_SELF_DAMAGE_DISABLED);
                         }
                         else
                         {
                             DisabledDamage.Remove(player.userID);
-                            Replier(player, myourdenabled);
+                            Replier(player, M_SELF_DAMAGE_ENABLED);
                         }
                         break;
                     case 1:
@@ -149,33 +149,33 @@ namespace Oxide.Plugins
                             if (!DisabledDamage.Contains(player.userID))
                             {
                                 DisabledDamage.Add(findplayer.userID);
-                                Replier(player, mplayerddisabled, findplayer.displayName);
+                                Replier(player, M_PLAYER_DAMAGE_DISABLED, findplayer.displayName);
                                 if (announceTarget)
                                 {
                                     if (announceName)
-                                        Replier(findplayer, mdisby, player.displayName);
+                                        Replier(findplayer, M_DISABLED_BY, player.displayName);
                                     else
-                                        Replier(findplayer, myourddisabled);
+                                        Replier(findplayer, M_SELF_DAMAGE_DISABLED);
                                 }
                             }
                             else
                             {
                                 DisabledDamage.Remove(findplayer.userID);
-                                Replier(player, mplayerdenabled, findplayer.displayName);
+                                Replier(player, M_PLAYER_DAMAGE_ENABLED, findplayer.displayName);
                                 if (announceTarget)
                                 {
                                     if (announceName)
-                                        Replier(findplayer, menby, player.displayName);
+                                        Replier(findplayer, M_ENABLED_BY, player.displayName);
                                     else
-                                        Replier(findplayer, myourdenabled);
+                                        Replier(findplayer, M_SELF_DAMAGE_ENABLED);
                                 }
                             }
                         }
                         else
-                            Replier(player, mnoplayer);
+                            Replier(player, M_PLAYER_NOT_FOUND);
                         break;
                     default:
-                        Replier(player, mhelp);
+                        Replier(player, M_HELP);
                         break;
                 }
             }
@@ -187,7 +187,7 @@ namespace Oxide.Plugins
         #region [Hooks]
 
 
-        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+        void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
         {
             if (info != null && info.InitiatorPlayer != null && entity != null)
             {
@@ -200,16 +200,16 @@ namespace Oxide.Plugins
                                 || ((entity.GetComponent<Deployable>() != null) && disStructdmg)
                                 || (entity.PrefabName.Contains("barrel") && disBarreldmg)
                                 || (entity is BaseHelicopter && disHelidmg)
-                                || (entity is MiniCopter || entity is MotorBoat) && disTransportdmg))
+                                || ((entity is BaseVehicle) && disTransportdmg)))
                 {
                     info.damageTypes.ScaleAll(0);
                 }
             }
         }
 
-        private void Init()
+        void Init()
         {
-            permission.RegisterPermission(PERMISSIONUSE, this);
+            permission.RegisterPermission(PERMISSION_USE, this);
             LoadConfiguration();
             if (!disDefaultdmg)
             {
@@ -229,7 +229,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private void Unload() { if (!disDefaultdmg && savedisabled) Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(DisabledDamage); }
+        void Unload() { if (!disDefaultdmg && savedisabled) Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(DisabledDamage); }
 
 
         #endregion

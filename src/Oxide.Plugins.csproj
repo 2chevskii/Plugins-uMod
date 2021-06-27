@@ -213,9 +213,6 @@
     <Reference Include="Oxide.MySql">
       <HintPath>..\..\References\Oxide.MySql.dll</HintPath>
     </Reference>
-    <Reference Include="Oxide.References">
-      <HintPath>..\..\References\Oxide.References.dll</HintPath>
-    </Reference>
     <Reference Include="Oxide.Rust">
       <HintPath>..\..\References\Oxide.Rust.dll</HintPath>
     </Reference>
