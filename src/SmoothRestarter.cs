@@ -6,6 +6,7 @@ using Oxide.Core.Libraries.Covalence;
 using System.Text.RegularExpressions;
 using System;
 using System.Linq;
+using Oxide.Core;
 
 namespace Oxide.Plugins
 {
@@ -14,52 +15,57 @@ namespace Oxide.Plugins
     {
         const string PERMISSION_RESTART = "smoothrestart.canrestart";
 
-        static DateTime NextRestartTime { get; set; }
+        static RestartTime NextRestartTime { get; set; }
 
-        static Queue<DateTime> RestartTimes { get; set; }
+        static Queue<RestartTime> RestartTimes { get; set; }
 
         #region Oxide Hooks
 
         void OnServerInitialized()
         {
-            //ServerMgr.Instance.InvokeRepeating(CheckTimers, 60, 60);
-
-            List<DateTime> list = new List<DateTime>();
+            List<RestartTime> list = new List<RestartTime>();
 
             for (int i = 0; i < Settings.Current.EveryDayRestart.Length; i++)
             {
-                var rt = Settings.Current.EveryDayRestart[i];
-                int hour, minute;
-                var t = ParseDayTime(rt, out hour, out minute);
+                var str = Settings.Current.EveryDayRestart[i];
 
-                if (!t) continue;
-
-                var dt = new DateTime(DateTime.Today.Year, DateTime.Today.Month, DateTime.Today.Day, hour, minute, 0);
-
-                if (DateTime.Now.CompareTo(dt) >= 0)
+                try
                 {
-                    dt = dt.AddDays(1);
-                }
+                    var parsed = RestartTime.Parse(str);
 
-                list.Add(dt);
+                    list.Add(parsed);
+                }
+                catch (Exception e)
+                {
+                    LogError(e.Message);
+                }
             }
 
-            var ordered = list.OrderBy(dt => dt.Date).ThenBy(dt => dt.Hour).ThenBy(dt => dt.Minute);
+            var dts = new List<DateTime>();
+            var now = DateTime.Now;
+            var today = DateTime.Now.Date;
+            for(int i = 0; i < list.Count; i++)
+            {
+                var rt = list[i];
 
-            RestartTimes = new Queue<DateTime>(ordered.Reverse());
+                if(rt.hour < now.Hour || (rt.hour == now.Hour && rt.minute <= now.Minute))
+                {
+                    dts.Add(now.AddDays(1) + new TimeSpan(rt.hour, rt.minute, 0));
+                } else
+                {
+                    //dts.Add(now + new TimeSpan())
+                }
+            }
+
+
         }
 
         void Unload()
         {
-            ServerMgr.Instance.CancelInvoke(CheckTimers);
+
         }
 
         #endregion
-
-        bool HasPermission(IPlayer player)
-        {
-            return player.HasPermission(PERMISSION_RESTART);
-        }
 
         bool IsServerRestartingNatively()
         {
@@ -70,7 +76,7 @@ namespace Oxide.Plugins
         {
             var rc = typeof(ServerMgr).GetField("restartCoroutine", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             var val = rc.GetValue(ServerMgr.Instance);
-            if(val != null)
+            if (val != null)
             {
                 ServerMgr.Instance.StopCoroutine(val as IEnumerator);
                 rc.SetValue(ServerMgr.Instance, null);
@@ -93,9 +99,51 @@ namespace Oxide.Plugins
             return true;
         }
 
-        void CheckTimers()
+        struct RestartTime
         {
+            public readonly int hour;
+            public readonly int minute;
 
+            static Exception GenerateParseException(string inputStr)
+            {
+                return new Exception($"Restart time string ({inputStr}) must be in form of 'hour:minute'.");
+            }
+
+            public RestartTime(int hour, int minute)
+            {
+                this.hour = hour;
+                this.minute = minute;
+            }
+
+            public static RestartTime Parse(string str)
+            {
+                if (str.Length < 3)
+                {
+                    throw GenerateParseException(str);
+                }
+
+                int hour, minute;
+                char separator = ':';
+
+                string[] separated = str.Split(separator);
+
+                if (separated.Length < 2)
+                {
+                    throw GenerateParseException(str);
+                }
+
+                if (!int.TryParse(separated[0], out hour) || !int.TryParse(separated[1], out minute))
+                {
+                    throw GenerateParseException(str);
+                }
+
+                if (hour < 0 || hour > 23 || minute < 0 || minute > 60)
+                {
+                    throw GenerateParseException(str);
+                }
+
+                return new RestartTime(hour, minute);
+            }
         }
 
         #region Configuration
