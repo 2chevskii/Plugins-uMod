@@ -1,133 +1,139 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
+
+using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-	[Info("Teleport Gun", "2CHEVSKII", "0.1.2")]
-	[Description("Shoot something to teleport to it!")]
-	internal class TeleportGun : RustPlugin
-	{
+    [Info("Teleport Gun", "2CHEVSKII", "0.2.0")]
+    [Description("Shoot something to teleport to it!")]
+    class TeleportGun : CovalencePlugin
+    {
 
-		#region -Hooks-
-
-
-		private void Init()
-		{
-			permission.RegisterPermission(perm, this);
-			LoadConfigVariables();
-		}
-
-		protected override void LoadDefaultConfig() { }
-
-		protected override void LoadDefaultMessages() => lang.RegisterMessages(defaultMessages, this, "en");
-
-		private void OnPlayerAttack(BasePlayer attacker, HitInfo info)
-		{
-			if(enabledplayers.Keys.Contains(attacker) && info.Weapon.GetItem() == enabledplayers[attacker])
-			{
-				attacker.MovePosition(info.HitPositionWorld);
-			}
-		}
-
-		private void OnPlayerActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
-		{
-			if(enabledplayers.ContainsKey(player) && autodisable)
-			{
-				enabledplayers.Remove(player);
-				Replier(player, disabled);
-			}
-		}
-		
-
-		#endregion
-
-		#region -Fields-
+        #region -Hooks-
 
 
-		private bool autodisable = true;
-		private int autodisabletimer = 0;
-		private const string perm = "teleportgun.use";
-		private const string prefix = "Prefix";
-		private const string enabled = "Enabled";
-		private const string disabled = "Disabled";
-		private const string wrongitem = "Wrong item";
-		private const string nopermission = "No permission";
-		private Dictionary<string, string> defaultMessages = new Dictionary<string, string> {
-			[prefix] = "<color=yellow>[</color>TELEPORT GUN<color=yellow>]</color>",
-			[enabled] = "<color=#47FF11>E</color>nabled teleport gun<color=#47FF11>.</color>",
-			[disabled] = "<color=red>D</color>isabled teleport gun<color=red>.</color>",
-			[nopermission] = "<color=red>Y</color>ou have no permission to use teleport gun<color=red>!</color>",
-			[wrongitem] = "<color=yellow>A</color>ctive item must be a gun<color=yellow>!</color>"
-		};
-		private Dictionary<BasePlayer, Item> enabledplayers = new Dictionary<BasePlayer, Item>();
+        void Init()
+        {
+            permission.RegisterPermission(PERMISSION_USE, this);
+            LoadConfigVariables();
+        }
+
+        protected override void LoadDefaultConfig() { }
+
+        protected override void LoadDefaultMessages() => lang.RegisterMessages(defaultMessages, this, "en");
+
+        void OnPlayerAttack(BasePlayer attacker, HitInfo info)
+        {
+            Item item;
+            if (enabledplayers.TryGetValue(attacker.IPlayer, out item) && info.Weapon?.GetItem() == item)
+            {
+                attacker.MovePosition(info.HitPositionWorld);
+            }
+        }
+
+        void OnActiveItemChanged(BasePlayer player)
+        {
+            if (enabledplayers.ContainsKey(player.IPlayer) && autodisable)
+            {
+                Disable(player);
+            }
+        }
 
 
-		#endregion
+        #endregion
 
-		#region -Command-
-
-
-		[ChatCommand("tpgun")]
-		private void CmdSwitchGun(BasePlayer player, string command, string[] args)
-		{
-			if(permission.UserHasPermission(player.UserIDString, perm))
-			{
-				if(!enabledplayers.ContainsKey(player) && player.GetHeldEntity() is BaseProjectile)
-				{
-					enabledplayers.Add(player, player.GetHeldEntity().GetItem());
-					if(autodisabletimer > 0)
-						timer.Once(Convert.ToSingle(autodisabletimer), () =>
-						{
-							if(enabledplayers.ContainsKey(player))
-							{
-								enabledplayers.Remove(player);
-								Replier(player, disabled);
-							}
-						});
-					Replier(player, enabled);
-				}
-				else if(!enabledplayers.ContainsKey(player) && !(player.GetHeldEntity() is BaseProjectile))
-				{
-					Replier(player, wrongitem);
-				}
-				else
-				{
-					enabledplayers.Remove(player);
-					Replier(player, disabled);
-				}
-			}
-			else
-			{
-				Replier(player, nopermission);
-			}
-		}
+        #region -Fields-
 
 
-		#endregion
+        bool autodisable = true;
+        int autodisabletimer = 0;
+        const string PERMISSION_USE = "teleportgun.use";
+        const string CHAT_PREFIX = "Chat prefix";
+        const string ENABLED = "Enabled";
+        const string DISABLED = "Disabled";
+        const string WRONG_ITEM = "Wrong item";
+        const string NO_PERMISSION = "No permission";
+        Dictionary<string, string> defaultMessages = new Dictionary<string, string>
+        {
+            [CHAT_PREFIX] = "<color=yellow>[</color>TELEPORT GUN<color=yellow>]</color>",
+            [ENABLED] = "<color=#47FF11>E</color>nabled teleport gun<color=#47FF11>.</color>",
+            [DISABLED] = "<color=red>D</color>isabled teleport gun<color=red>.</color>",
+            [NO_PERMISSION] = "<color=red>Y</color>ou have no permission to use teleport gun<color=red>!</color>",
+            [WRONG_ITEM] = "<color=yellow>A</color>ctive item must be a gun<color=yellow>!</color>"
+        };
+        Dictionary<IPlayer, Item> enabledplayers = new Dictionary<IPlayer, Item>();
+        Dictionary<BasePlayer, Timer> timers = new Dictionary<BasePlayer, Timer>();
 
-		#region -Helpers-
+        #endregion
+
+        #region -Command-
 
 
-		private void LoadConfigVariables()
-		{
-			CheckConfig("Auto disable when active item changed", ref autodisable);
-			CheckConfig("Auto disable after timer (seconds)", ref autodisabletimer);
-			SaveConfig();
-		}
-
-		private void CheckConfig<T>(string key, ref T value)
-		{
-			if(Config[key] is T)
-				value = (T)Config[key];
-			else
-				Config[key] = value;
-		}
-
-		private void Replier(BasePlayer player, string message) => SendReply(player, $"{lang.GetMessage(prefix, this, player.UserIDString)} {lang.GetMessage(message, this, player.UserIDString)}");
+        [Command("tpgun")]
+        void CmdTpGun(IPlayer player, string command, string[] args)
+        {
+            if (enabledplayers.ContainsKey(player))
+            {
+                Disable((BasePlayer)player.Object);
+            }
+            else if (!player.HasPermission(PERMISSION_USE))
+            {
+                Replier(player, NO_PERMISSION);
+            }
+            else Enable((BasePlayer)player.Object);
+        }
 
 
-		#endregion
+        #endregion
 
-	}
+        #region -Helpers-
+
+        void Enable(BasePlayer player)
+        {
+            var heldEnt = player.GetHeldEntity();
+
+            if (heldEnt is BaseProjectile)
+            {
+                enabledplayers.Add(player.IPlayer, heldEnt.GetItem());
+                if (autodisabletimer > 0)
+                    timers.Add(player, timer.Once(Convert.ToSingle(autodisabletimer), () => Disable(player)));
+                Replier(player, ENABLED);
+            }
+            else Replier(player, WRONG_ITEM);
+        }
+
+        void Disable(BasePlayer player)
+        {
+            enabledplayers.Remove(player.IPlayer);
+            if(timers.ContainsKey(player))
+            {
+                timers[player].Destroy();
+                timers.Remove(player);
+            }
+            Replier(player, DISABLED);
+        }
+
+        void LoadConfigVariables()
+        {
+            CheckConfig("Auto disable when active item changed", ref autodisable);
+            CheckConfig("Auto disable after timer (seconds)", ref autodisabletimer);
+            SaveConfig();
+        }
+
+        void CheckConfig<T>(string key, ref T value)
+        {
+            if (Config[key] is T)
+                value = (T)Config[key];
+            else
+                Config[key] = value;
+        }
+
+        void Replier(BasePlayer player, string message) => Replier(player.IPlayer, message);
+        void Replier(IPlayer player, string message) => player.Message(lang.GetMessage(message, this, player.Id), lang.GetMessage(CHAT_PREFIX, this, player.Id));
+
+
+        #endregion
+
+    }
 }

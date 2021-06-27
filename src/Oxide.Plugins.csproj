@@ -10,6 +10,7 @@
     <RootNamespace>Oxide.Plugins</RootNamespace>
     <AssemblyName>2CHEVSKII.Plugins.uMod</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <LangVersion>6.0</LangVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
