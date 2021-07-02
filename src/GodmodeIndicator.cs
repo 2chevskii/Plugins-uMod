@@ -9,7 +9,7 @@ using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.0.3")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.0.4")]
     [Description("Displays an UI indicator for players with godmode enabled.")]
     internal class GodmodeIndicator : RustPlugin
     {
@@ -182,7 +182,7 @@ namespace Oxide.Plugins
                         DetachComponent();
                     else
                     {
-                        if (Player.IsImmortal())
+                        if (Player.IsImmortalTo(null))
                             IsInGodMode = true;
                         else
                         {
