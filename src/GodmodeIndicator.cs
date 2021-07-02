@@ -1,21 +1,19 @@
 ﻿// Requires: ImageLibrary
 
 using System.Collections.Generic;
+using Oxide.Game.Rust.Cui;
 using Newtonsoft.Json;
 using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
 using UnityEngine;
 using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.0.4")]
-    [Description("Displays an UI indicator for players with godmode enabled.")]
-    internal class GodmodeIndicator : RustPlugin
+    [Info("Godmode Indicator", "2CHEVSKII", "2.0.5")]
+    [Description("Displays an indicator on screen if a player is in godmode")]
+    class GodmodeIndicator : RustPlugin
     {
-
         #region -Configuration and fields-
-
 
         private static GodmodeIndicator Instance { get; set; }
 
@@ -74,11 +72,9 @@ namespace Oxide.Plugins
 
         protected override void SaveConfig() => Config.WriteObject(Settings, true);
 
-
         #endregion
 
         #region -Hooks-
-
 
         private void Init()
         {
@@ -96,29 +92,25 @@ namespace Oxide.Plugins
             });
         }
 
-        private void OnPlayerInit(BasePlayer player) => player.gameObject.AddComponent<GodmodeComponent>().IsWaiting = true;
+        private void OnPlayerConnected(BasePlayer player) => player.gameObject.AddComponent<GodmodeComponent>().IsWaiting = true;
 
         private void OnPlayerSleepEnded(BasePlayer player)
         {
-            GodmodeComponent component = player.gameObject.GetComponent<GodmodeComponent>();
-            if (component != null && component.IsWaiting)
-                timer.Once(2f, () => component.IsWaiting = false);
+            var component = player.gameObject.GetComponent<GodmodeComponent>();
+            if (component != null && component.IsWaiting) timer.Once(2f, () => component.IsWaiting = false);
         }
 
         private void OnPlayerDisconnected(BasePlayer player, string reason)
         {
-            if (ActiveIndicator.Contains(player))
-                ActiveIndicator.Remove(player);
+            if (ActiveIndicator.Contains(player)) ActiveIndicator.Remove(player);
             player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent();
         }
 
-        private void Unload() { foreach (BasePlayer player in BasePlayer.activePlayerList) player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent(); }
-
+        private void Unload() { foreach (var player in BasePlayer.activePlayerList) player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent(); }
 
         #endregion
 
         #region -UI-
-
 
         private CuiElementContainer MainUI { get; set; }
 
@@ -157,11 +149,9 @@ namespace Oxide.Plugins
             });
         }
 
-
         #endregion
 
         #region -Component-
-
 
         private bool UIBuilt { get; set; } = false;
 
@@ -178,18 +168,14 @@ namespace Oxide.Plugins
             {
                 if (Time.realtimeSinceStartup - LastUpdate > 1f)
                 {
-                    if (Player == null || !Player.IsConnected)
-                        DetachComponent();
+                    if (Player == null || !Player.IsConnected) DetachComponent();
                     else
                     {
-                        if (Player.IsImmortalTo(null))
-                            IsInGodMode = true;
+                        if (Player.IsImmortalTo(null)) IsInGodMode = true;
                         else
                         {
-                            if (Instance.Godmode != null && Instance.Godmode.IsLoaded && Instance.Godmode.Call<bool>("IsGod", Player.UserIDString))
-                                IsInGodMode = true;
-                            else
-                                IsInGodMode = false;
+                            if (Instance.Godmode != null && Instance.Godmode.IsLoaded && Instance.Godmode.Call<bool>("IsGod", Player.UserIDString)) IsInGodMode = true;
+                            else IsInGodMode = false;
                         }
                     }
                     if (IsInGodMode && !Instance.ActiveIndicator.Contains(Player) && Instance.UIBuilt && !IsWaiting)
@@ -211,8 +197,6 @@ namespace Oxide.Plugins
             private void OnDestroy() => DestroyUi(Player, mainPanel);
         }
 
-
         #endregion
-
     }
 }
