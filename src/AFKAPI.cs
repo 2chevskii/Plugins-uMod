@@ -230,7 +230,6 @@ namespace Oxide.Plugins
 
         long GetPlayerAFKTime(ulong id)
         {
-
             return (long)GetPlayerAFKTime(id.ToString());
         }
 

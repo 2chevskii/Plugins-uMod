@@ -420,7 +420,7 @@ namespace Oxide.Plugins
         {
             readonly char[] separators = new[] { '.', ':' };
             readonly Regex delayTimeRegex = new Regex(@"(?:(\d+)h|hr)?\s*(?:(\d+)m|min)?\s*(?:(\d+)s|sec)?");
-            readonly Regex digitRegex = new Regex(@"\d+");
+            readonly Regex digitRegex = new Regex(@"\d+"); // TODO: Remove this unnecessary regex
 
             readonly string input;
 
