@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("AFK API", "2CHEVSKII", "1.0.0")]
+    [Info("AFK API", "2CHEVSKII", "1.0.1")]
     [Description("Complex developer API for 'Away from keyboard' players.")]
     class AFKAPI : CovalencePlugin
     {
@@ -383,30 +383,48 @@ namespace Oxide.Plugins
 
         void OnActiveItemChanged(BasePlayer player)
         {
+            if (player?.IPlayer == null)
+            {
+                return;
+            }
             trackedPlayers[player.IPlayer].OnAction();
         }
 
         void OnPlayerChat(BasePlayer player)
         {
+            if (player?.IPlayer == null)
+            {
+                return;
+            }
             trackedPlayers[player.IPlayer].OnAction();
         }
 
         void OnPlayerVoice(BasePlayer player)
         {
+            if (player?.IPlayer == null)
+            {
+                return;
+            }
             trackedPlayers[player.IPlayer].OnAction();
         }
 
         void OnItemAction(Item item, string action, BasePlayer player)
         {
+            if (player?.IPlayer == null)
+            {
+                return;
+            }
             trackedPlayers[player.IPlayer].OnAction();
         }
 
         void CanMoveItem(Item item, PlayerInventory playerLoot, uint targetContainer, int targetSlot, int amount)
         {
             var player = playerLoot.baseEntity;
-
-            if (player != null)
-                trackedPlayers[player.IPlayer].OnAction();
+            if (player?.IPlayer == null)
+            {
+                return;
+            }
+            trackedPlayers[player.IPlayer].OnAction();
         }
 
 
