@@ -1,112 +1,115 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+
+using System;
 using System.Collections;
 using System.Collections.Generic;
-using Newtonsoft.Json;
+
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Capacity Controller", "2CHEVSKII", "2.0.0")]
+    [Info("Capacity Controller", "2CHEVSKII", "2.1.0")]
     [Description("Allows capacity modification of certain containers.")]
     class CapacityController : CovalencePlugin
     {
-        #region -Fields-
+        #region Fields
 
-
-        readonly Dictionary<string, string> shortnameToDisplayname = new Dictionary<string, string>();
-        Configuration settings;
-
+        Configuration config;
+        IEnumerator routine;
+        Dictionary<string, string> shortNameToDisplay;
 
         #endregion
 
-        #region -Core-
+        #region Oxide hooks
 
-
-        string ShortnameToDisplayName(string shortname)
+        void Init()
         {
-            if (shortnameToDisplayname.ContainsKey(shortname))
+            shortNameToDisplay = new Dictionary<string, string>();
+
+            Unsubscribe("OnEntitySpawned");
+            Unsubscribe("OnItemAddedToContainer");
+        }
+
+        void OnServerInitialized()
+        {
+            routine = GetContainers(() =>
             {
-                return shortnameToDisplayname[shortname];
+                Subscribe("OnEntitySpawned");
+                Subscribe("OnItemAddedToContainer");
+
+                routine = null;
+            });
+
+            ServerMgr.Instance.StartCoroutine(routine);
+        }
+
+        void OnEntitySpawned(StorageContainer entity)
+        {
+            string name;
+
+            if (shortNameToDisplay.TryGetValue(entity.ShortPrefabName, out name) && config.deployables.ContainsKey(name))
+            {
+                entity.inventory.capacity = config.deployables[name];
+                entity.SendNetworkUpdate();
             }
-
-            return string.Empty;
         }
 
-        void Initialize()
+        void OnItemAddedToContainer(ItemContainer _, Item item)
         {
-            ServerMgr.Instance.StartCoroutine(GetContainerItems(ItemManager.GetItemDefinitions(), (weapons, deployables) =>
+            var def = item.info;
+
+            if (config.weapons.ContainsKey(def.displayName.english))
             {
-                Action<Dictionary<string, int>, ContainerItem> insertFunc = (dict, item) =>
-                {
-                    var sntdn = ShortnameToDisplayName(item.shortname);
-
-                    if (string.IsNullOrEmpty(sntdn))
-                    {
-                        return;
-                    }
-
-                    if (!dict.ContainsKey(sntdn))
-                    {
-                        dict.Add(sntdn, item.capacity);
-                    }
-                };
-
-                weapons.ForEach(weapon => insertFunc(settings.Weapons, weapon));
-                deployables.ForEach(deployable => insertFunc(settings.DeployableContainers, deployable));
-
-                SaveConfig();
-
-                //Puts(JsonConvert.SerializeObject(new { weapons, deployables }, Formatting.Indented)); // debug
-            }));
+                item.contents.capacity = config.weapons[def.displayName.english];
+            }
         }
 
-        IEnumerator GetContainerItems(IList<ItemDefinition> itemDefinitions, Action<List<ContainerItem>, List<ContainerItem>> callback)
+        void Unload()
         {
-            var weapons = new List<ContainerItem>();
-            var deployables = new List<ContainerItem>();
-            for (int i = 0; i < itemDefinitions.Count; i++)
+            if (routine != null)
             {
-                var definition = itemDefinitions[i];
+                ServerMgr.Instance.StopCoroutine(routine);
+            }
+        }
 
-                if (!definition)
+        #endregion
+
+        #region Core
+
+        IEnumerator GetContainers(Action callback)
+        {
+            var defs = ItemManager.GetItemDefinitions();
+            foreach (var def in defs)
+            {
+                var modDeployable = def.GetComponent<ItemModDeployable>();
+
+                if (modDeployable)
                 {
-                    continue;
-                }
+                    var ent = GameManager.server.CreatePrefab(modDeployable.entityPrefab.resourcePath, false)?.GetComponent<StorageContainer>();
 
-                var deployable = definition.GetComponent<ItemModDeployable>();
-                var container = definition.GetComponent<ItemModContainer>();
-
-                if (deployable || container)
-                {
-                    if (deployable)
+                    if (ent)
                     {
-                        var entity = GameManager.server.CreateEntity(deployable.entityPrefab.resourcePath);
-
-                        if (entity is StorageContainer)
+                        shortNameToDisplay[ent.ShortPrefabName] = def.displayName.english;
+                        if (!config.deployables.ContainsKey(def.displayName.english))
                         {
-                            entity.Spawn();
-                            if (!shortnameToDisplayname.ContainsKey(entity.ShortPrefabName))
-                            {
-                                shortnameToDisplayname.Add(entity.ShortPrefabName, definition.displayName?.english);
-                            }
-
-                            deployables.Add(new ContainerItem().SetShortName(entity.ShortPrefabName).SetCapacity((entity as StorageContainer).inventory.capacity));
-
+                            config.deployables[def.displayName.english] = ent.inventorySlots;
                         }
-
-                        entity?.Kill();
                     }
-                    else
-                    {
-                        var item = ItemManager.Create(definition);
+                    UnityEngine.Object.Destroy(ent);
+                }
+                else
+                {
+                    var modContainer = def.GetComponent<ItemModContainer>();
 
-                        if (item?.GetHeldEntity() is BaseProjectile && item.contents?.capacity > 0)
+                    if (modContainer)
+                    {
+                        var item = ItemManager.Create(def);
+                        if (item != null && item.GetHeldEntity() is BaseProjectile && modContainer.capacity > 0)
                         {
-                            if (!shortnameToDisplayname.ContainsKey(definition.shortname))
+                            if (!config.weapons.ContainsKey(def.displayName.english))
                             {
-                                shortnameToDisplayname.Add(definition.shortname, definition.displayName?.english);
+                                config.weapons[def.displayName.english] = modContainer.capacity;
                             }
-                            weapons.Add(new ContainerItem().SetShortName(definition.shortname).SetCapacity(container.capacity));
                         }
 
                         item?.Remove();
@@ -115,117 +118,30 @@ namespace Oxide.Plugins
                 yield return new WaitForEndOfFrame();
             }
 
-            callback(weapons, deployables);
-        }
+            SaveConfig();
 
+            callback();
+        }
 
         #endregion
 
-        #region -uMod Hooks-
+        #region Configuration
 
-
-        void OnServerInitialized()
+        protected override void LoadDefaultConfig()
         {
-            Initialize();
+            config = Configuration.Default;
+            SaveConfig();
         }
-
-        void OnEntitySpawned(StorageContainer entity)
-        {
-            if (!entity || entity.inventory == null)
-            {
-                return;
-            }
-            var sntdn = ShortnameToDisplayName(entity.ShortPrefabName);
-            if (settings.DeployableContainers.ContainsKey(sntdn))
-            {
-                entity.inventory.capacity = settings.DeployableContainers[sntdn];
-                entity.SendNetworkUpdate();
-            }
-        }
-
-        void OnItemAddedToContainer(ItemContainer itemContainer, Item item)
-        {
-            if (item == null || item.info == null)
-            {
-                return;
-            }
-            var weapon = item.GetHeldEntity() as AttackEntity;
-            var sntdn = ShortnameToDisplayName(item.info.shortname);
-            if (weapon && settings.Weapons.ContainsKey(sntdn))
-            {
-                item.contents.capacity = settings.Weapons[sntdn];
-                item.MarkDirty();
-            }
-        }
-
-
-        #endregion
-
-        #region -Nested Types-
-
-
-        struct ContainerItem
-        {
-            public string shortname;
-            public int capacity;
-
-            public ContainerItem SetCapacity(int capacity)
-            {
-                this.capacity = capacity;
-                return this;
-            }
-
-            public ContainerItem SetShortName(string shortname)
-            {
-                this.shortname = shortname;
-                return this;
-            }
-        }
-
-
-        #endregion
-
-        #region -Configuration-
-
-        #region [Types]
-
-
-        class Configuration
-        {
-            public static Configuration Default => new Configuration
-            {
-                Weapons = new Dictionary<string, int>(),
-                DeployableContainers = new Dictionary<string, int>()
-            };
-
-            [JsonProperty("Weapon attachment capacity")]
-            public Dictionary<string, int> Weapons { get; set; }
-            [JsonProperty("Deployable containers capacity")]
-            public Dictionary<string, int> DeployableContainers { get; set; }
-
-            public static bool operator !(Configuration settings)
-            {
-                return settings == null;
-            }
-        }
-
-
-        #endregion
-
-        #region [Methods]
-
 
         protected override void LoadConfig()
         {
             base.LoadConfig();
+
             try
             {
-                settings = Config.ReadObject<Configuration>();
+                config = Config.ReadObject<Configuration>();
 
-                if (!settings)
-                {
-                    throw new Exception();
-                }
+                if (config == null) throw new Exception();
             }
             catch
             {
@@ -233,16 +149,54 @@ namespace Oxide.Plugins
             }
         }
 
-        protected override void LoadDefaultConfig()
+        protected override void SaveConfig()
         {
-            settings = Configuration.Default;
-            SaveConfig();
+            Config.WriteObject(config);
         }
 
-        protected override void SaveConfig() => Config.WriteObject(settings);
+        class Configuration
+        {
+            public static Configuration Default => new Configuration
+            {
+                weapons = new Dictionary<string, int>(),
+                deployables = new Dictionary<string, int>()
+            };
 
+            [JsonProperty("Weapons")]
+            public Dictionary<string, int> weapons;
+            [JsonProperty("Deployables")]
+            public Dictionary<string, int> deployables;
 
-        #endregion
+            public void SetWeaponCapacity(string name, int capacity)
+            {
+                weapons[name] = capacity;
+            }
+
+            public void SetDeployableCapacity(string name, int capacity)
+            {
+                deployables[name] = capacity;
+            }
+
+            public int GetWeaponCapacity(string name)
+            {
+                if (weapons.ContainsKey(name))
+                {
+                    return weapons[name];
+                }
+
+                return -1;
+            }
+
+            public int GetDeployableCapacity(string name)
+            {
+                if (deployables.ContainsKey(name))
+                {
+                    return deployables[name];
+                }
+
+                return -1;
+            }
+        }
 
         #endregion
     }
