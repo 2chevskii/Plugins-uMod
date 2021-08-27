@@ -71,9 +71,6 @@
     <Reference Include="Assembly-CSharp-firstpass">
       <HintPath>..\..\References\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
-    <Reference Include="com.unity.postprocessing.Runtime">
-      <HintPath>..\..\References\com.unity.postprocessing.Runtime.dll</HintPath>
-    </Reference>
     <Reference Include="CurvedTextMeshPro">
       <HintPath>..\..\References\CurvedTextMeshPro.dll</HintPath>
     </Reference>
