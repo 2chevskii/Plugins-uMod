@@ -495,9 +495,9 @@ namespace Oxide.Plugins
         }
 
         [HookMethod(nameof(GetCurrentRestartReason))]
-        public RestartReason? GetCurrentRestartReason()
+        public int? GetCurrentRestartReason()
         {
-            return component.CurrentRestartReason;
+            return (int?)component.CurrentRestartReason;
         }
 
         [HookMethod(nameof(GetCurrentRestartInitiator))]
@@ -658,7 +658,7 @@ namespace Oxide.Plugins
 
         #region Nested types
 
-        public enum RestartReason
+        enum RestartReason
         {
             Timed,
             OxideUpdate,
