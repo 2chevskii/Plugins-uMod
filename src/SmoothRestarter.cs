@@ -25,7 +25,7 @@ using Debug = UnityEngine.Debug;
 
 namespace Oxide.Plugins
 {
-    [Info("SmoothRestarter", "2CHEVSKII", "3.0.0")]
+    [Info("SmoothRestarter", "2CHEVSKII", "3.0.1")]
     [Description("A reliable way to shutdown your server when you need it")]
     public class SmoothRestarter : CovalencePlugin
     {
@@ -845,9 +845,12 @@ namespace Oxide.Plugins
 
             public static void Cleanup()
             {
-                foreach (var component in AllComponents.ToArray())
+                if (AllComponents != null)
                 {
-                    DestroyImmediate(component);
+                    foreach (var component in AllComponents.ToArray())
+                    {
+                        DestroyImmediate(component);
+                    }
                 }
 
                 UiSecondsCache = null;
