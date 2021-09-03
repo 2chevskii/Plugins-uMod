@@ -1,923 +1,554 @@
-﻿// #define SIMULATE_OXIDE_PATCH
+﻿// #define UNITY_ASSERTIONS // Uncomment this if you have any issues with the plugin, assertion log can help locate problematic code
+// #define SIMULATE_OXIDE_PATCH
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
+
+using ConVar;
 
 using Newtonsoft.Json;
 
-using System.Collections.Generic;
-using System.Collections;
-using Oxide.Core.Libraries.Covalence;
-using System.Text.RegularExpressions;
-using System;
-using System.Linq;
 using Oxide.Core;
-using Oxide.Game.Rust;
-using UnityEngine;
-using System.Text;
-using System.Reflection;
+using Oxide.Core.Libraries.Covalence;
+using Oxide.Core.Plugins;
+using Oxide.Game.Rust.Cui;
 
-using Pool = Facepunch.Pool;
+using UnityEngine;
+using UnityEngine.UI;
+
+using Debug = UnityEngine.Debug;
 
 namespace Oxide.Plugins
 {
-    [Info("SmoothRestarter", "2CHEVSKII", "2.0.0")]
+    [Info("SmoothRestarter", "2CHEVSKII", "3.0.0")]
+    [Description("A reliable way to shutdown your server when you need it")]
     public class SmoothRestarter : CovalencePlugin
     {
-        #region Fields
+        #region Permission names
 
-
-        #region Permissions
-
-        const string PERMISSION_RESTART = "smoothrestarter.restart";
-        const string PERMISSION_CANCEL = "smoothrestarter.cancel";
+        const string PERMISSION_STATUS  = "smoothrestarter.status",
+                     PERMISSION_RESTART = "smoothrestarter.restart",
+                     PERMISSION_CANCEL  = "smoothrestarter.cancel";
 
         #endregion
 
-        #region Message keys
+        #region LangAPI keys
 
-        const string M_CHAT_PREFIX = "Chat prefix";
-        const string M_KICK_REASON = "Kick reason";
-
-        const string M_NO_PERMISSION = "[Alert] No permission";
-        const string M_USAGE_ERROR = "[Alert] Command usage error";
-        const string M_CANCEL_SUCCESS = "[Alert] Restart cancelled";
-        const string M_RESTART_SUCCESS = "[Alert] Restart init success";
-        const string M_NOT_RESTARTING = "[Alert] Server not restarting";
-        const string M_CANNOT_RESTART = "[Alert] Cannot restart server";
-        const string M_CANNOT_CANCEL = "[Alert] Cannot cancel server restart";
-
-        const string M_OXIDE_PATCH_RESTART = "[Announce] Restart (Oxide patch)";
-        const string M_TIMED_RESTART = "[Announce] Restart (planned)";
-        const string M_COMMAND_RESTART = "[Announce] Restart (command initiated)";
-        const string M_RESTART_CANCELLED = "[Announce] Restart cancelled";
-        const string M_RESTART_COUNTDOWN = "[Announce] Restart countdown";
+        const string M_CHAT_PREFIX                = "Chat prefix",
+                     M_NO_PERMISSION              = "No permission",
+                     M_KICK_REASON                = "Kick reason",
+                     M_HELP                       = "Help message",
+                     M_HELP_HELP                  = "Help message: Help",
+                     M_HELP_STATUS                = "Help message: Status",
+                     M_HELP_RESTART               = "Help message: Restart",
+                     M_HELP_CANCEL                = "Help message: Cancel",
+                     M_RESTARTING_ALREADY         = "Restarting already",
+                     M_NOT_RESTARTING             = "Not restarting",
+                     M_CANCEL_SUCCESS             = "Cancelled successfully",
+                     M_RESTART_REASON_TIMED       = "Restart reason: Timed",
+                     M_RESTART_REASON_OXIDE       = "Restart reason: Oxide update",
+                     M_RESTART_REASON_COMMAND     = "Restart reason: Command",
+                     M_RESTART_REASON_API         = "Restart reason: API call",
+                     M_ANNOUNCE_RESTART_INIT      = "Announcement: Restart initiated",
+                     M_ANNOUNCE_COUNTDOWN_TICK    = "Announcement: Countdown tick",
+                     M_ANNOUNCE_RESTART_CANCELLED = "Announcement: Restart cancelled",
+                     M_RESTART_SUCCESS            = "Restart initiated",
+                     M_STATUS_RESTARTING          = "Status: Restarting",
+                     M_STATUS_RESTARTING_NATIVE   = "Status: Restarting (global.restart)",
+                     M_STATUS_PLANNED             = "Status: Restart planned",
+                     M_STATUS_NO_PLANNED          = "Status: No planned restarts";
 
         #endregion
 
-        static SmoothRestarter instance;
+#if SIMULATE_OXIDE_PATCH
+        static readonly VersionNumber CurrentOxideRustVersion = new VersionNumber(0, 0, 0);
+#else
+        static readonly VersionNumber CurrentOxideRustVersion = Interface.Oxide.GetAllExtensions().First(e => e.Name == "Rust").Version;
+#endif
+        static SmoothRestarter Instance;
+
+        readonly FieldInfo nativeRestartRoutine = typeof(ServerMgr).GetField(
+            "restartCoroutine",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+
+        #region LangAPI EN dictionary
 
         readonly Dictionary<string, string> defaultMessagesEn = new Dictionary<string, string>
         {
-            [M_CHAT_PREFIX] = "[SmoothRestarter]",
-            [M_KICK_REASON] = "Server restart",
-
-            [M_NO_PERMISSION] = "You are not allowed to use this command.",
-            [M_USAGE_ERROR] = "Usage: /srestart <delay time> | /srestart cancel | /srestart status",
-            [M_CANCEL_SUCCESS] = "Restart cancelled successfully.",
-            [M_RESTART_SUCCESS] = "Restart initiated.",
-            [M_NOT_RESTARTING] = "Server is not restarting at the moment.",
-            [M_CANNOT_RESTART] = "Could not initiate server restart.",
-            [M_CANNOT_CANCEL] = "Could not cancel server restart.",
-
-            [M_OXIDE_PATCH_RESTART] = "New Oxide patch is out! Server will be restarted in {0}.",
-            [M_TIMED_RESTART] = "Planned server restart in {0}.",
-            [M_COMMAND_RESTART] = "Server restart was initiated by {1}. Restarting in {0}.",
-            [M_RESTART_CANCELLED] = "Restart was cancelled.",
-            [M_RESTART_COUNTDOWN] = "Server restarting in {0}.",
+            [M_CHAT_PREFIX]   = "<color=#d9770f>Smooth Restarter</color>:",
+            [M_NO_PERMISSION] = "<color=#d9420f>You</color> have no permission to use this command",
+            [M_KICK_REASON]   = "Server is restarting",
+            [M_HELP]          = "/sr <color=#1a97ba>[command]</color> <color=#1aba8f>[arguments]</color>\n" +
+                                "Commands: " +
+                                "<color=#1a97ba>help</color>, <color=#1a97ba>status</color>, <color=#1a97ba>restart</color>, <color=#1a97ba>cancel</color>\n" +
+                                "To get information about command usage, type '/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color>'",
+            [M_HELP_HELP]     = "/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color> - Outputs general help message or command usage help if command is specified",
+            [M_HELP_STATUS]   = "/sr <color=#1a97ba>status</color> - Outputs current restart status",
+            [M_HELP_RESTART]  = "/sr <color=#1a97ba>restart</color> <color=#1aba8f>[time]</color> - Initiates new restart process\n" +
+                                "Time must be in one of the following formats:\n" +
+                                "<color=#77ba20>123</color> - delay before restart in seconds\n" +
+                                "<color=#77ba20>123</color><h|m|s> - delay before restart in <hours|minutes|seconds>\n" +
+                                "<color=#77ba20>1</color>h <color=#77ba20>2</color>m <color=#77ba20>3</color>s - delay before restart in hr+min+sec, all optional\n" +
+                                "<color=#77ba20>1</color>:<color=#77ba20>23</color> - schedule restart on 1:23 (24hr format)",
+            [M_HELP_CANCEL]   = "/sr <color=#1a97ba>cancel</color> - Cancels current restart process",
+            [M_RESTARTING_ALREADY] = "Cannot do restart - already restarting. Use '/sr <color=#1a97ba>status</color>' to get info about current restart process, or try '/sr <color=#1a97ba>cancel</color>' to cancel current restart before starting new one",
+            [M_NOT_RESTARTING] = "Cannot cancel restart - plugin does not perform a restart currently.",
+            [M_CANCEL_SUCCESS] = "Restart was successfully cancelled",
+            [M_RESTART_REASON_TIMED] = "Planned",
+            [M_RESTART_REASON_OXIDE] = "New Oxide update is out",
+            [M_RESTART_REASON_COMMAND] = "Command from <color=#dbc30b>{0}</color>",
+            [M_RESTART_REASON_API] = "API call from <color=#dbc30b>{0}</color>",
+            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0}</color> seconds ({1})",
+            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0}</color> seconds left before server restart",
+            [M_ANNOUNCE_RESTART_CANCELLED] = "Server restart was cancelled",
+            [M_RESTART_SUCCESS] = "Restart initiated successfully",
+            [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:0}</color> seconds left",
+            [M_STATUS_RESTARTING_NATIVE] = "Server is restarting natively",
+            [M_STATUS_PLANNED] = "Server restart planned on <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:0}</color> seconds left)",
+            [M_STATUS_NO_PLANNED] = "Server is not restarting, no planned restarts found"
         };
-
-        readonly int[] countDownSeconds = new[]
-        {
-            300,
-            250,
-            200,
-            150,
-            100,
-            80,
-            50,
-            40,
-            30,
-            25,
-            20,
-            15,
-            10,
-            5,
-            4,
-            3,
-            2,
-            1
-        };
-
-        Settings settings;
-        FieldInfo nativeRestartRoutine;
-        SmoothRestart component;
-
 
         #endregion
 
-        #region Oxide Hooks
+        readonly Regex timeParseRegex = new Regex(
+            @"^\s*(?:(\d+)|(\d+\s*[HhMmSs])|(?!$)((?:(?<h>\d+)[Hh])?\s*(?:(?<m>\d+)[Mm])?\s*(?:(?<s>\d+)[Ss])?)|(\d{1,2}:\d{1,2}))\s*$",
+            RegexOptions.Compiled
+        );
 
+        SmoothRestart  component;
+        PluginSettings settings;
+        bool           isNewOxideOut;
+
+        bool IsRestarting => IsRestartingNative || IsRestartingComponent;
+        bool IsRestartingNative => ServerMgr.Instance.Restarting;
+        bool IsRestartingComponent => component.IsRestarting;
+
+        #region Oxide hooks
+        // ReSharper disable UnusedMember.Local
 
         void Init()
         {
-            instance = this;
+            Instance = this;
 
+            permission.RegisterPermission(PERMISSION_STATUS, this);
             permission.RegisterPermission(PERMISSION_RESTART, this);
             permission.RegisterPermission(PERMISSION_CANCEL, this);
 
-            AddUniversalCommand("srestart", nameof(CommandHandler));
-
-            nativeRestartRoutine = typeof(ServerMgr).GetField("restartCoroutine", BindingFlags.NonPublic | BindingFlags.Instance);
+            AddCovalenceCommand(new[] { "sr", "srestart", "smoothrestart", "smoothrestarter" }, "CommandHandler");
         }
 
         void OnServerInitialized()
         {
-            component = SingletonComponent<ServerMgr>.Instance.gameObject.AddComponent<SmoothRestart>();
+            component = ServerMgr.Instance.gameObject.AddComponent<SmoothRestart>();
+            if (settings.EnableUi)
+                foreach (var player in players.Connected)
+                {
+                    OnUserConnected(player);
+                }
+        }
+
+        void OnUserConnected(IPlayer user)
+        {
+            var player = (BasePlayer)user.Object;
+
+            player.gameObject.AddComponent<SmoothRestarterUi>();
+        }
+
+        void OnUserDisconnected(IPlayer user)
+        {
+            var player = (BasePlayer)user.Object;
+
+            UnityEngine.Object.Destroy(player.GetComponent<SmoothRestarterUi>());
         }
 
         void Unload()
         {
-            UnityEngine.Object.Destroy(SingletonComponent<ServerMgr>.Instance.GetComponent<SmoothRestart>());
-            instance = null;
+            if (IsRestartingComponent)
+            {
+                component.CancelRestart(this);
+            }
+
+            if (settings.EnableUi)
+            {
+                SmoothRestarterUi.Cleanup();
+            }
+
+            UnityEngine.Object.Destroy(component);
+            Instance = null;
         }
 
-
+        // ReSharper restore UnusedMember.Local
         #endregion
 
         #region Command handler
 
-
-        bool CommandHandler(IPlayer player, string command, string[] args)
+        // ReSharper disable once UnusedMember.Local
+        void CommandHandler(IPlayer player, string _, string[] args)
         {
-            var subcommand = args.Length > 0 ? args[0] : null;
-
-            if (subcommand == null)
+            if (args.Length == 0)
             {
-                MessagePlayer(player, M_USAGE_ERROR);
-            }
-            else if (subcommand.Equals("status", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!component.IsRestarting)
-                {
-                    MessagePlayer(player, M_NOT_RESTARTING);
-                }
-                else
-                {
-                    var timeleft = component.SecondsLeft;
-
-                    MessagePlayer(player, M_RESTART_COUNTDOWN, timeleft);
-                }
-            }
-            else if (subcommand.Equals("cancel", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!CheckPermission(player, PERMISSION_CANCEL))
-                {
-                    MessagePlayer(player, M_NO_PERMISSION);
-                }
-                else if (!component.IsRestarting)
-                {
-                    MessagePlayer(player, M_NOT_RESTARTING);
-                }
-                else if (!component.CancelRestart(player))
-                {
-                    MessagePlayer(player, M_CANNOT_CANCEL);
-                }
-                else
-                {
-                    MessagePlayer(player, M_CANCEL_SUCCESS);
-                }
+                Message(player, M_HELP);
             }
             else
             {
-                var strTime = string.Join(" ", args);
+                var command = args[0];
 
-                try
+                switch (command)
                 {
-                    var parsedTime = new TimeParser(strTime).ParseDelayTime();
+                    case "status":
+                        if (CheckPermission(player, PERMISSION_STATUS))
+                        {
+                            DateTime dateTime;
+                            Message(player, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
+                        }
+                        break;
+                    case "restart":
+                        if (CheckPermission(player, PERMISSION_RESTART))
+                        {
+                            if (IsRestarting)
+                            {
+                                Message(player, M_RESTARTING_ALREADY);
+                            }
+                            else
+                            {
+                                TimeSpan time;
+                                bool isTod;
+                                if (args.Length == 1 || !TryParseTime(string.Join(" ", args.Skip(1)), out time, out isTod))
+                                {
+                                    Message(player, M_HELP_RESTART);
+                                    return;
+                                }
 
-                    if (!CheckPermission(player, PERMISSION_RESTART))
-                    {
-                        MessagePlayer(player, M_NO_PERMISSION);
-                    }
-                    else if (!component.IsRestarting && component.DoCommandRestart(player, parsedTime))
-                    {
-                        MessagePlayer(player, M_RESTART_SUCCESS);
-                    }
-                    else MessagePlayer(player, M_CANNOT_RESTART);
+                                DateTime restartTime;
+
+                                if (!isTod)
+                                {
+                                    restartTime = DateTime.Now + time;
+                                }
+                                else if (time < DateTime.Now.TimeOfDay)
+                                {
+                                    restartTime = DateTime.Today.AddDays(1) + time;
+                                }
+                                else
+                                {
+                                    restartTime = DateTime.Today + time;
+                                }
+
+                                component.DoRestart(restartTime, RestartReason.Command, player);
+                                Message(player, M_RESTART_SUCCESS);
+                            }
+                        }
+                        break;
+
+                    case "cancel":
+                        if (CheckPermission(player, PERMISSION_CANCEL))
+                        {
+                            if (IsRestartingNative)
+                            {
+                                CancelNativeRestart();
+                            }
+                            else if (IsRestartingComponent)
+                            {
+                                component.CancelRestart(player);
+                            }
+                            else
+                            {
+                                Message(player, M_NOT_RESTARTING);
+                                return;
+                            }
+                            Message(player, M_CANCEL_SUCCESS);
+                        }
+                        break;
+                    case "help":
+                        Message(player, GetHelp(args.Skip(1)));
+                        break;
+                    default:
+                        Message(player, M_HELP);
+                        break;
                 }
-                catch
+            }
+        }
+
+        string GetHelp(IEnumerable<string> args)
+        {
+            var arg = args.FirstOrDefault();
+            if (arg != null)
+            {
+                switch (arg.ToLower())
                 {
-                    MessagePlayer(player, M_USAGE_ERROR);
+                    case "help":
+                        return M_HELP_HELP;
+                    case "status":
+                        return M_HELP_STATUS;
+                    case "restart":
+                        return M_HELP_RESTART;
+                    case "cancel":
+                        return M_HELP_CANCEL;
                 }
+            }
+
+            return M_HELP;
+        }
+
+        string GetStatus(out DateTime restartTime)
+        {
+            restartTime = default(DateTime);
+            if (IsRestartingNative)
+            {
+                return M_STATUS_RESTARTING_NATIVE;
+            }
+
+            if (IsRestartingComponent)
+            {
+                restartTime = component.CurrentRestartTime.Value;
+                return M_STATUS_RESTARTING;
+            }
+
+            if (settings.RestartTimes.Count > 0)
+            {
+                double _;
+                restartTime = component.FindNextRestartTime(out _);
+                return M_STATUS_PLANNED;
+            }
+
+            return M_STATUS_NO_PLANNED;
+        }
+
+        bool TryParseTime(string argString, out TimeSpan time, out bool isTod)
+        {
+            Match match = timeParseRegex.Match(argString);
+            isTod = false;
+
+            if (match.Groups[1].Success)
+            {
+                var seconds = int.Parse(match.Groups[1].Value);
+
+                time = TimeSpan.FromSeconds(seconds);
+            }
+            else if (match.Groups[2].Success)
+            {
+                var str = match.Groups[2].Value;
+                var specifier = str[str.Length - 1];
+                var number = int.Parse(str.Remove(str.Length - 1).TrimEnd());
+
+                switch (specifier)
+                {
+                    case 'H':
+                    case 'h':
+                        number *= 3600;
+                        break;
+
+                    case 'M':
+                    case 'm':
+                        number *= 60;
+                        break;
+                }
+
+                time = TimeSpan.FromSeconds(number);
+            }
+            else if (match.Groups[3].Success)
+            {
+                var h = match.Groups["h"].Success ? int.Parse(match.Groups["h"].Value) : 0;
+                var m = match.Groups["m"].Success ? int.Parse(match.Groups["m"].Value) : 0;
+                var s = match.Groups["s"].Success ? int.Parse(match.Groups["s"].Value) : 0;
+
+                time = new TimeSpan(h, m, s);
+            }
+            else if (TimeSpan.TryParse(match.Groups[4].Value, out time))
+            {
+                isTod = true;
+            }
+            else
+            {
+                time = default(TimeSpan);
+                return false;
+            }
+
+            if (time.TotalSeconds == 0)
+            {
+                return false;
             }
 
             return true;
         }
 
-
-        #endregion
-
-        #region Helpers
-
-
-        bool CheckPermission(IPlayer player, string permission)
+        bool CheckPermission(IPlayer player, string perm)
         {
-            return player.IsServer || player.HasPermission(permission);
-        }
-
-        #region Log
-
-        void LogRestart(RestartReason reason, int secondsLeft, IPlayer initiator = null)
-        {
-            if (!settings.LogEnabled)
+            if (player.HasPermission(perm))
             {
-                return;
+                return true;
             }
 
-            switch (reason)
-            {
-                case RestartReason.Timed:
-                    Log($"Timed server restart initiated, {secondsLeft}s left.");
-                    break;
-                case RestartReason.OxideUpdate:
-                    Log($"New Oxide version found, server restarting in {secondsLeft}s.");
-                    break;
-                case RestartReason.Command:
-                    Log($"Server restart initiated by '{initiator.Name}'. {secondsLeft}s left.");
-                    break;
-            }
-        }
-
-        void LogRestartCancel(IPlayer initiator)
-        {
-            if (!settings.LogEnabled)
-            {
-                return;
-            }
-
-            Log($"Server restart cancelled by {initiator.Name}");
-        }
-
-        void LogNativeRestartCancel()
-        {
-            if (!settings.LogEnabled)
-            {
-                return;
-            }
-
-            Log("Native restart cancelled");
+            Message(player, M_NO_PERMISSION);
+            return false;
         }
 
         #endregion
 
-        List<DateTime> GetRestartTimesFromConfig()
+        #region Utility
+
+        void FetchLatestOxideRustVersion(Action<Exception, VersionNumber> callback)
         {
-            var times = settings.EveryDayRestart;
-            var list = Pool.GetList<DateTime>();
-
-            for (int i = 0; i < times.Length; i++)
-            {
-                var time = times[i];
-
-                var timeParser = new TimeParser(time);
-                TimeSpan parsedTime;
-
-                try
-                {
-                    parsedTime = timeParser.ParseDayTime();
-                }
-                catch (Exception e)
-                {
-                    LogError("Failed to parse restart time from the configuration: {0}", e.Message);
-                    continue;
-                }
-
-                list.Add(DateTime.Now.Date + parsedTime);
-            }
-
-            if (list.IsEmpty())
-            {
-                LogWarning("Timed restart list is empty");
-            }
-
-            return list;
-        }
-
-        int GetNextCountdownValue(int secondsLeft)
-        {
-            if (secondsLeft <= 0)
-            {
-                return 0;
-            }
-
-            for (int i = 0; i < countDownSeconds.Length; i++)
-            {
-                var el = countDownSeconds[i];
-                if (el >= secondsLeft)
-                {
-                    continue;
-                }
-
-                return el;
-            }
-
-            return 0;
-        }
-
-        string FormatTimeSpan(TimeSpan ts)
-        {
-            var builder = new StringBuilder();
-
-            var hrs = ts.Hours;
-            var mins = ts.Minutes;
-            var seconds = ts.Seconds;
-
-            if (hrs > 0 || (mins <= 0 && seconds <= 0))
-            {
-                builder.Append(hrs).Append('h');
-                if (mins > 0 || seconds > 0)
-                {
-                    builder.Append(' ');
-                }
-            }
-            if (mins > 0 || (hrs <= 0 && seconds <= 0))
-            {
-                builder.Append(mins).Append('m');
-                if (seconds > 0)
-                {
-                    builder.Append(' ');
-                }
-            }
-            if (seconds > 0 || (hrs <= 0 && mins <= 0))
-            {
-                builder.Append(seconds).Append('s');
-            }
-
-            return builder.ToString();
-        }
-
-
-        #endregion
-
-        #region Oxide update checks
-
-
-        void GetLatestOxideVersion(Action<Exception, VersionNumber> callback)
-        {
-            webrequest.Enqueue("https://umod.org/games/rust.json", null, (code, data) =>
-            {
-                if (code != 200)
-                {
-                    callback(new Exception($"Failed to get Oxide version from uMod API ({code})"), new VersionNumber());
-                }
-                else
-                {
-                    try
+            PluginLog("Fetching latest Oxide.Rust version...");
+            webrequest.Enqueue("https://umod.org/games/rust.json", null,
+                (responseCode, json) => {
+                    if (responseCode != 200)
                     {
-                        var obj = JsonConvert.DeserializeObject<Dictionary<string, object>>(data);
-
-                        var ver = ((string)obj["latest_release_version"]).Split('.');
-
-                        var verN = new VersionNumber(int.Parse(ver[0]), int.Parse(ver[1]), int.Parse(ver[2]));
-
-                        callback(null, verN);
+                        callback(
+                            new Exception(
+                                $"Failed to fetch latest Oxide.Rust version from uMod.org API - code {responseCode}"
+                            ),
+                            default(VersionNumber)
+                        );
                     }
-                    catch (Exception e)
+                    else
                     {
-                        callback(new Exception("Failed to deserialize uMod API response", e), new VersionNumber());
+                        try
+                        {
+                            var response = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+
+                            if (response == null)
+                            {
+                                throw new Exception("Response is null");
+                            }
+
+                            var latestVersionStr = response["latest_release_version"];
+
+                            var array = ((string)latestVersionStr).Split('.');
+
+                            var version = new VersionNumber(int.Parse(array[0]), int.Parse(array[1]), int.Parse(array[2]));
+
+                            callback(null, version);
+                        }
+                        catch (Exception e)
+                        {
+                            callback(
+                                new Exception($"Failed to deserialize uMod.org API response: {e.Message}"),
+                                default(VersionNumber)
+                            );
+                        }
                     }
-                }
-            }, this);
+                }, this);
         }
 
-        VersionNumber GetCurrentOxideVersion()
+        void PluginLog(string format, params object[] args)
         {
-            var rustExtension = Interface.Oxide.GetAllExtensions().First(ext => ext.Name == "Rust") as RustExtension;
-
-            return rustExtension.Version;
+            if (settings.EnableLog)
+            {
+                Log(format, args);
+            }
         }
 
-        bool IsOxideOutdated(VersionNumber current, VersionNumber newest)
+        void KickAll()
         {
-            return current < newest;
-        }
-
-
-        #endregion
-
-        #region Native restart check/cancel
-
-
-        bool IsServerRestartingNatively()
-        {
-            return ServerMgr.Instance.Restarting;
+            foreach (var player in players.Connected.ToArray())
+            {
+                player.Kick(GetMessage(player, M_KICK_REASON));
+            }
         }
 
         void CancelNativeRestart()
         {
-            var val = nativeRestartRoutine.GetValue(ServerMgr.Instance);
-            ServerMgr.Instance.StopCoroutine(val as IEnumerator);
+            Debug.Assert(IsRestartingNative, "Cancelling native restart while !IsRestartingNative");
+
+            var routine = (IEnumerator)nativeRestartRoutine.GetValue(ServerMgr.Instance);
+            ServerMgr.Instance.StopCoroutine(routine);
+
             nativeRestartRoutine.SetValue(ServerMgr.Instance, null);
 
-            LogNativeRestartCancel();
-        }
-
-
-        #endregion
-
-        #region Helper types
-
-
-        class TimeParser
-        {
-            readonly char[] separators = new[] { '.', ':' };
-            readonly Regex delayTimeRegex = new Regex(@"(?:(\d+)h|hr)?\s*(?:(\d+)m|min)?\s*(?:(\d+)s|sec)?");
-            readonly Regex digitRegex = new Regex(@"\d+"); // TODO: Remove this unnecessary regex
-
-            readonly string input;
-
-            public TimeParser(string input)
+            ConsoleNetwork.BroadcastToAllClients("chat.add", new object[]
             {
-                this.input = input.Trim();
-            }
-
-            Exception GenerateException(string message)
-            {
-                return new Exception(message + string.Format(" ({0})", input));
-            }
-
-            public TimeSpan ParseDayTime()
-            {
-                var splitted = input.Split(separators);
-
-                if (splitted.Length != 2)
-                {
-                    throw GenerateException("Day time must be in format 'hour:minute'");
-                }
-
-                int hour, minute;
-
-                if (!int.TryParse(splitted[0], out hour))
-                {
-                    throw GenerateException("Could not parse hour");
-                }
-
-                if (hour < 0 || hour > 23)
-                {
-                    throw GenerateException("Hour must be in range between 0 and 23");
-                }
-
-                if (!int.TryParse(splitted[1], out minute))
-                {
-                    throw GenerateException("Could not parse minute");
-                }
-
-                if (minute < 0 || minute > 59)
-                {
-                    throw GenerateException("Minute must be in range between 0 and 59");
-                }
-
-                return new TimeSpan(hour, minute, 0);
-            }
-
-            public TimeSpan ParseDelayTime()
-            {
-                var match = delayTimeRegex.Match(input);
-
-                if (!match.Success)
-                {
-                    throw GenerateException("Input string does not match the pattern");
-                }
-
-                var hoursStr = match.Groups[1];
-                var minutesStr = match.Groups[2];
-                var secondsStr = match.Groups[3];
-
-                int hours, minutes, seconds;
-                hours = minutes = seconds = 0;
-
-                if (hoursStr != null && hoursStr.Length > 0)
-                {
-                    hours = int.Parse(digitRegex.Match(hoursStr.Value).Value);
-                }
-
-                if (minutesStr != null && minutesStr.Length > 0)
-                {
-                    minutes = int.Parse(digitRegex.Match(minutesStr.Value).Value);
-                }
-
-                if (secondsStr != null && secondsStr.Length > 0)
-                {
-                    seconds = int.Parse(digitRegex.Match(secondsStr.Value).Value);
-                }
-
-                if (hours == 0 && minutes == 0 && seconds == 0)
-                {
-                    throw GenerateException("Restart delay cannot be less than one second");
-                }
-
-                return new TimeSpan(hours, minutes, seconds);
-            }
-        }
-
-        public enum RestartReason
-        {
-            Timed = 0,
-            OxideUpdate = 1,
-            Command = 2
-        }
-
-        public enum NotificationType
-        {
-            RestartInit,
-            RestartTimeLeft,
-            RestartCancelled
-        }
-
-
-        #endregion
-
-        #region Core
-
-
-        class SmoothRestart : MonoBehaviour
-        {
-            #region Fields and props
-
-            public bool IsRestarting => restartRoutine != null;
-            public int SecondsLeft => (int)(currentRestartTime - DateTime.Now).TotalSeconds;
-
-            bool newOxideOut;
-            Coroutine restartRoutine;
-            DateTime currentRestartTime;
-            RestartReason currentRestartReason;
-
-            Queue<DateTime> restartTimes;
-            Settings settings;
-
-            VersionNumber currentOxideVersion;
-
-            #endregion
-
-            #region Lifecycle methods
-
-            void Start()
-            {
-                settings = instance.settings;
-                currentOxideVersion = instance.GetCurrentOxideVersion();
-
-                var list = instance.GetRestartTimesFromConfig();
-                var now = DateTime.Now;
-                for (int i = 0; i < list.Count; i++)
-                {
-                    var t = list[i];
-
-                    if (t.Hour < now.Hour || (t.Hour == now.Hour && t.Minute <= now.Minute))
-                    {
-                        t.AddDays(1);
-                    }
-                }
-
-                restartTimes = new Queue<DateTime>(list.OrderBy(t => t.Date).ThenBy(t => t.TimeOfDay));
-
-                Pool.FreeList(ref list);
-
-                InvokeRepeating(nameof(CheckRestartNeeded), 5f, 1f);
-
-                if (settings.NewOxideBuildRestart)
-                {
-                    InvokeRepeating(nameof(CheckNewOxideOut), 1f, 300f);
-                }
-            }
-
-            void OnDestroy()
-            {
-                CancelInvoke();
-                CancelRestart();
-            }
-
-            #endregion
-
-            #region Restart methods
-
-            void DoOxideUpdateRestart()
-            {
-                var restartTime = new TimeSpan(0, 0, settings.OxideBuildRestartDelay);
-
-                if (!CanSmoothRestart(RestartReason.OxideUpdate, (int)restartTime.TotalSeconds))
-                {
-                    return;
-                }
-
-                NotifyRestartInit(RestartReason.OxideUpdate, restartTime);
-                instance.LogRestart(RestartReason.OxideUpdate, (int)restartTime.TotalSeconds);
-
-                DoRestart(DateTime.Now + restartTime, RestartReason.OxideUpdate);
-                OnSmoothRestart(currentRestartReason, SecondsLeft);
-            }
-
-            void DoTimedRestart()
-            {
-                var rt = restartTimes.Peek();
-                DequeueRestartTimeAndUpdateDate();
-
-                var ts = rt - DateTime.Now;
-
-                if (!CanSmoothRestart(RestartReason.Timed, (int)ts.TotalSeconds))
-                {
-                    return;
-                }
-
-                NotifyRestartInit(RestartReason.Timed, ts);
-                instance.LogRestart(RestartReason.Timed, (int)ts.TotalSeconds);
-
-                DoRestart(rt, RestartReason.Timed);
-                OnSmoothRestart(currentRestartReason, SecondsLeft);
-            }
-
-            public bool DoCommandRestart(IPlayer player, TimeSpan delay)
-            {
-                if (IsRestarting)
-                {
-                    return false;
-                }
-
-                var rt = DateTime.Now + delay;
-
-                if (!CanSmoothRestart(RestartReason.Command, (int)delay.TotalSeconds, player))
-                {
-                    return false;
-                }
-
-                NotifyRestartInit(RestartReason.Command, delay, player);
-                instance.LogRestart(RestartReason.Command, (int)delay.TotalSeconds, player);
-
-                DoRestart(rt, RestartReason.Command);
-                OnSmoothRestart(currentRestartReason, SecondsLeft, player);
-                return true;
-            }
-
-            void DoRestart(DateTime restartTime, RestartReason reason)
-            {
-                if (instance.IsServerRestartingNatively())
-                {
-                    instance.CancelNativeRestart();
-                }
-
-                CancelRestart();
-
-                currentRestartTime = restartTime;
-                currentRestartReason = reason;
-
-                restartRoutine = StartCoroutine(nameof(GetRestartRoutine), currentRestartTime);
-            }
-
-            IEnumerator GetRestartRoutine(DateTime restartTime)
-            {
-                int secondsLeft, cdSeconds;
-                while ((secondsLeft = (int)(restartTime - DateTime.Now).TotalSeconds) > 0)
-                {
-                    cdSeconds = instance.GetNextCountdownValue(secondsLeft);
-
-                    yield return new WaitForSecondsRealtime(secondsLeft - cdSeconds);
-
-                    NotifyRestartCountdown(restartTime - DateTime.Now);
-                }
-
-                foreach (var player in instance.players.Connected.ToList())
-                {
-                    player.Kick(instance.lang.GetMessage(M_KICK_REASON, instance, player.Id));
-                }
-
-                restartRoutine = null;
-
-                ConsoleSystem.Run(ConsoleSystem.Option.Server, "quit", Array.Empty<object>());
-            }
-
-            public bool CancelRestart(IPlayer canceller)
-            {
-                if (!CanSmoothCancel(canceller))
-                {
-                    return false;
-                }
-
-                NotifyRestartCancelled(canceller);
-
-                CancelRestart();
-                OnSmoothRestartCancelled(canceller);
-
-                return true;
-            }
-
-            void CancelRestart()
-            {
-                if (IsRestarting)
-                {
-                    StopCoroutine(restartRoutine);
-                    restartRoutine = null;
-                }
-            }
-
-            #endregion
-
-            #region Helpers
-
-            void DequeueRestartTimeAndUpdateDate()
-            {
-                var t = restartTimes.Dequeue();
-                restartTimes.Enqueue(t.AddDays(1));
-            }
-
-            #endregion
-
-            #region Checks
-
-            void CheckRestartNeeded()
-            {
-                if (IsRestarting)
-                {
-                    return;
-                }
-
-                if (newOxideOut)
-                {
-                    DoOxideUpdateRestart();
-                }
-                else if (restartTimes.Count < 1)
-                {
-                    return;
-                }
-                else if (restartTimes.Peek() < DateTime.Now)
-                {
-                    DequeueRestartTimeAndUpdateDate();
-                    CheckRestartNeeded();
-                }
-                else if ((restartTimes.Peek() - DateTime.Now).TotalSeconds <= instance.countDownSeconds.Max())
-                {
-                    DoTimedRestart();
-                }
-            }
-
-            void CheckNewOxideOut()
-            {
-                if (newOxideOut)
-                {
-                    return;
-                }
-
-#if SIMULATE_OXIDE_PATCH
-                newOxideOut = true;
-#else
-                var current = instance.GetCurrentOxideVersion();
-
-                instance.GetLatestOxideVersion((e, latest) =>
-                {
-                    if (e != null)
-                    {
-                        instance.LogError(e.Message);
-                    }
-                    else newOxideOut = instance.IsOxideOutdated(current, latest);
-                });
-#endif
-            }
-
-            #endregion
-
-            #region Notification methods
-
-            void NotifyRestartInit(RestartReason reason, TimeSpan timeLeft, IPlayer initiator = null)
-            {
-                var secondsLeft = (int)timeLeft.TotalSeconds;
-                var targetPlayers = BasePlayer.activePlayerList;
-
-                if (!CanSmoothNotify(NotificationType.RestartInit, secondsLeft, targetPlayers, reason, initiator))
-                {
-                    return;
-                }
-
-                var strTime = instance.FormatTimeSpan(timeLeft);
-                string msg;
-
-                switch (reason)
-                {
-                    case RestartReason.Timed:
-                        msg = M_TIMED_RESTART;
-                        break;
-                    case RestartReason.OxideUpdate:
-                        msg = M_OXIDE_PATCH_RESTART;
-                        break;
-                    default:
-                        msg = M_COMMAND_RESTART;
-                        break;
-                }
-
-                if (initiator != null)
-                {
-                    NotifyPlayers(targetPlayers, msg, strTime, initiator.Name);
-                }
-                else NotifyPlayers(targetPlayers, msg, strTime);
-            }
-
-            void NotifyRestartCountdown(TimeSpan ts)
-            {
-                var targetPlayers = BasePlayer.activePlayerList;
-
-                if (!CanSmoothNotify(NotificationType.RestartTimeLeft, (int)ts.TotalSeconds, targetPlayers, currentRestartReason))
-                {
-                    return;
-                }
-
-                NotifyPlayers(targetPlayers, M_RESTART_COUNTDOWN, instance.FormatTimeSpan(ts));
-            }
-
-            void NotifyRestartCancelled(IPlayer canceller)
-            {
-                var targetPlayers = BasePlayer.activePlayerList;
-
-                if (!CanSmoothNotify(NotificationType.RestartCancelled, -1, targetPlayers, currentRestartReason, canceller))
-                {
-                    return;
-                }
-
-                NotifyPlayers(targetPlayers, M_RESTART_CANCELLED);
-            }
-
-            void NotifyPlayers(IList<BasePlayer> targets, string msg, params object[] args)
-            {
-                for (int i = 0; i < targets.Count; i++)
-                {
-                    instance.MessagePlayer(targets[i].IPlayer, msg, args);
-                }
-            }
-
-            #endregion
-
-            bool CanSmoothRestart(RestartReason reason, int secondsLeft, IPlayer initiator = null)
-            {
-                return Interface.CallHook("CanSmoothRestart", reason, secondsLeft, initiator) == null;
-            }
-
-            bool CanSmoothNotify(
-                NotificationType type,
-                int secondsLeft,
-                ListHashSet<BasePlayer> targets,
-                RestartReason reason = RestartReason.Command,
-                IPlayer initiator = null
-            )
-            {
-                return Interface.CallHook("CanSmoothNotify", type, secondsLeft, targets, reason, initiator) == null;
-            }
-
-            bool CanSmoothCancel(IPlayer initiator)
-            {
-                return Interface.CallHook("CanSmoothCancel", initiator) == null;
-            }
-
-            void OnSmoothRestart(RestartReason reason, int secondsLeft, IPlayer initiator = null)
-            {
-                Interface.Oxide.CallHook("OnSmoothRestart", reason, secondsLeft, initiator);
-            }
-
-            void OnSmoothRestartCancelled(IPlayer initiator)
-            {
-                Interface.Oxide.CallHook("OnSmoothRestartCancelled", initiator);
-            }
+                2,
+                0,
+                "<color=#fff>SERVER</color> Restart interrupted!"
+            });
+
+            PluginLog("Native restart was cancelled");
         }
 
         #endregion
 
-        #region Configuration
+        #region Plugin API
 
-
-        protected override void LoadConfig()
+        [HookMethod(nameof(IsSmoothRestarting))]
+        public bool IsSmoothRestarting()
         {
-            base.LoadConfig();
-            try
+            return IsRestartingComponent;
+        }
+
+        [HookMethod(nameof(GetPlannedRestarts))]
+        public IReadOnlyCollection<TimeSpan> GetPlannedRestarts()
+        {
+            return settings.RestartTimes;
+        }
+
+        [HookMethod(nameof(GetCurrentRestartTime))]
+        public DateTime? GetCurrentRestartTime()
+        {
+            return component.CurrentRestartTime;
+        }
+
+        [HookMethod(nameof(GetCurrentRestartReason))]
+        public int? GetCurrentRestartReason()
+        {
+            return (int?)component.CurrentRestartReason;
+        }
+
+        [HookMethod(nameof(GetCurrentRestartInitiator))]
+        public object GetCurrentRestartInitiator()
+        {
+            return component.CurrentRestartInitiator;
+        }
+
+        [HookMethod(nameof(InitSmoothRestart))]
+        public bool InitSmoothRestart(DateTime restartTime, Plugin initiator)
+        {
+            if (initiator == null || !initiator.IsLoaded)
             {
-                settings = Config.ReadObject<Settings>();
+                return false;
             }
-            catch (Exception e)
+
+            if (restartTime < DateTime.Now)
             {
-                LogError("Failed to load configuration:\n{0}Loading default config instead (config file will be reset)", e.Message);
-                LoadDefaultConfig();
+                return false;
             }
-        }
 
-        protected override void LoadDefaultConfig()
-        {
-            settings = Settings.Default;
-            SaveConfig();
-        }
-
-        protected override void SaveConfig() => Config.WriteObject(settings);
-
-        class Settings
-        {
-            public static Settings Default => new Settings
+            if (IsRestartingComponent)
             {
-                EveryDayRestart = new[]
-                {
-                    "0:00"
-                },
-                NewOxideBuildRestart = false,
-                OxideBuildRestartDelay = 300,
-                LogEnabled = true
-            };
+                return false;
+            }
 
-            public string[] EveryDayRestart { get; set; }
-            public bool NewOxideBuildRestart { get; set; }
-            public int OxideBuildRestartDelay { get; set; }
-            public bool LogEnabled { get; set; }
+            if (IsRestartingNative)
+            {
+                CancelNativeRestart();
+            }
+
+            component.DoRestart(restartTime, RestartReason.ApiCall, initiator);
+            return true;
         }
 
+        [HookMethod(nameof(CancelSmoothRestart))]
+        public bool CancelSmoothRestart(Plugin canceller)
+        {
+            if (canceller == null || !canceller.IsLoaded)
+            {
+                return false;
+            }
+
+            if (!IsRestartingComponent)
+            {
+                return false;
+            }
+
+            component.CancelRestart(canceller);
+            return true;
+        }
 
         #endregion
 
@@ -928,15 +559,865 @@ namespace Oxide.Plugins
             lang.RegisterMessages(defaultMessagesEn, this, "en");
         }
 
-        void MessagePlayer(IPlayer player, string langMessage, params object[] args)
+        string GetMessage(IPlayer player, string langKey)
         {
-            var msg = instance.lang.GetMessage(langMessage, instance, player.Id);
-            var prefix = instance.lang.GetMessage(M_CHAT_PREFIX, instance, player.Id);
-
-            var formatted = prefix + string.Format(msg, args);
-
-            player.Message(formatted);
+            return lang.GetMessage(langKey, this, player.Id);
         }
+
+        void Message(IPlayer player, string langKey, params object[] args)
+        {
+            player.Message(GetMessage(player, langKey), GetMessage(player, M_CHAT_PREFIX), args);
+        }
+
+        void AnnounceRestartInit(float secondsLeft, RestartReason reason, object initiator = null)
+        {
+            string secondsLeftStr = secondsLeft.ToString("0");
+            foreach (IPlayer player in players.Connected)
+            {
+                var reasonStr = GetRestartReasonString(player, reason, initiator);
+
+                Message(player, M_ANNOUNCE_RESTART_INIT, secondsLeftStr, reasonStr);
+            }
+        }
+
+        void Announce(string langKey, params object[] args)
+        {
+            foreach (IPlayer player in players.Connected)
+            {
+                Message(player, langKey, args);
+            }
+        }
+
+        string GetRestartReasonString(IPlayer player, RestartReason reason, object initiator = null)
+        {
+            Debug.Assert((int)reason < 2 || initiator != null);
+
+            string reasonStr;
+
+            switch (reason)
+            {
+                case RestartReason.Timed:
+                    reasonStr = GetMessage(player, M_RESTART_REASON_TIMED);
+                    break;
+                case RestartReason.OxideUpdate:
+                    reasonStr = GetMessage(player, M_RESTART_REASON_OXIDE);
+                    break;
+                case RestartReason.Command:
+                    reasonStr = string.Format(GetMessage(player, M_RESTART_REASON_COMMAND), ((IPlayer)initiator).Name);
+                    break;
+                default:
+                    reasonStr = string.Format(GetMessage(player, M_RESTART_REASON_API), ((Plugin)initiator).Name);
+                    break;
+            }
+
+            return reasonStr;
+        }
+
+        #endregion
+
+        #region Configuration
+
+        protected override void LoadDefaultConfig()
+        {
+            settings = PluginSettings.GetDefaults();
+            SaveConfig();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+
+            try
+            {
+                settings = Config.ReadObject<PluginSettings>();
+
+                if (settings == null)
+                {
+                    throw new Exception("Config is null");
+                }
+
+                if (!settings.Validate())
+                {
+                    Instance.LogWarning("Errors found in the configuration file, corrected values will be saved");
+                    SaveConfig();
+                }
+            }
+            catch (Exception e)
+            {
+                LogError("Error while loading configuration: {0}", e.Message);
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(settings);
+        }
+
+        #endregion
+
+        #region Nested types
+
+        enum RestartReason
+        {
+            Timed,
+            OxideUpdate,
+            Command,
+            ApiCall
+        }
+
+        #region Configuration
+
+        class PluginSettings
+        {
+            float[]           uiPosCached;
+            HashSet<TimeSpan> restartTimesCached;
+
+            [JsonProperty("Daily restarts")]
+            public string[] DailyRestart { get; set; }
+            [JsonProperty("Restart when new Oxide.Rust is out")]
+            public bool OxideUpdateRestart { get; set; }
+            [JsonProperty("Initiate countdown at")]
+            public int RestartCountdownMax { get; set; }
+            [JsonProperty("Enable UI")]
+            public bool EnableUi { get; set; }
+            [JsonProperty("UI position (X,Y)")]
+            public string UiPosition { get; set; }
+            [JsonProperty("UI scale")]
+            public float UiScale { get; set; }
+            [JsonProperty("Enable console logs")]
+            public bool EnableLog { get; set; }
+
+            [JsonIgnore]
+            public float UiX => uiPosCached[0];
+            [JsonIgnore]
+            public float UiY => uiPosCached[1];
+            [JsonIgnore]
+            public HashSet<TimeSpan> RestartTimes => restartTimesCached;
+
+            public static PluginSettings GetDefaults()
+            {
+                return new PluginSettings {
+                    DailyRestart = new[] { "0:00" },
+                    OxideUpdateRestart = true,
+                    RestartCountdownMax = 300,
+                    EnableUi = true,
+                    UiPosition = "0.92, 0.92",
+                    UiScale = 1.0f
+                };
+            }
+
+            #region Validation methods
+
+            public bool Validate()
+            {
+                bool valid = true;
+                if (DailyRestart == null)
+                {
+                    Instance.LogWarning("Daily restart times cannot be null");
+                    DailyRestart = Array.Empty<string>();
+                    valid = false;
+                }
+
+                if (!ParseRestartTimes(out restartTimesCached))
+                {
+                    DailyRestart = restartTimesCached.Select(rt => rt.ToString("hh\\:mm")).ToArray();
+                    valid = false;
+                }
+
+                if (RestartCountdownMax < 0)
+                {
+                    Instance.LogWarning("Restart countdown cannot be less than zero");
+                    RestartCountdownMax = 0;
+                    valid = false;
+                }
+
+                if (UiScale < 0.3f)
+                {
+                    UiScale = 0.3f;
+                    Instance.LogWarning("UI scale cannot be less than 0.3");
+                    valid = false;
+                }
+                else if (UiScale > 3f)
+                {
+                    UiScale = 3f;
+                    Instance.LogWarning("UI scale cannot be greater than 3");
+                    valid = false;
+                }
+
+                uiPosCached = new float[2];
+
+                if (!ParseUiPos(out uiPosCached[0], out uiPosCached[1]))
+                {
+                    uiPosCached[0] = 0.92f;
+                    uiPosCached[1] = 0.92f;
+                    UiPosition = "0.92, 0.92";
+                    valid = false;
+                }
+
+                return valid;
+            }
+
+            bool ParseUiPos(out float fX, out float fY)
+            {
+                fX = fY = 0f;
+
+                var array = UiPosition.Split(',');
+
+                if (array.Length != 2)
+                {
+                    Instance.LogWarning("Invalid format of UI position: {0}", UiPosition);
+                    return false;
+                }
+
+                bool valid = true;
+
+                if (!float.TryParse(array[0], NumberStyles.Number, CultureInfo.InvariantCulture, out fX) || fX < 0f || fX > 1f)
+                {
+                    Instance.LogWarning("Invalid value for UI position X coordinate: {0}", array[0]);
+                    valid = false;
+                }
+
+                if (!float.TryParse(array[1], NumberStyles.Number, CultureInfo.InvariantCulture, out fY) || fY < 0f || fY > 1f)
+                {
+                    Instance.LogWarning("Invalid value for UI position Y coordinate: {0}", array[1]);
+                    valid = false;
+                }
+
+                return valid;
+            }
+
+            bool ParseRestartTimes(out HashSet<TimeSpan> restartTimes)
+            {
+                bool valid = true;
+                restartTimes = new HashSet<TimeSpan>();
+
+                foreach (var rt in DailyRestart)
+                {
+                    TimeSpan result;
+                    if (!TimeSpan.TryParse(rt, out result))
+                    {
+                        valid = false;
+                        Instance.LogWarning("Invalid time specifier: {0}", rt);
+                    }
+
+                    if (!restartTimes.Add(result))
+                    {
+                        valid = false;
+                        Instance.LogWarning("Restart time duplication: {0}", rt);
+                    }
+                }
+
+                return valid;
+            }
+
+            #endregion
+        }
+
+        #endregion
+
+        #region SmoothRestarterUi
+
+        class SmoothRestarterUi : MonoBehaviour
+        {
+            const string UI_BACKGROUND   = "smoothrestarter.ui::background",
+                         UI_TITLE        = "smoothrestarter.ui::title",
+                         UI_PROGRESS_BAR = "smoothrestarter.ui::progress_bar",
+                         UI_SECONDS      = "smoothrestarter.ui::seconds_left";
+
+            static string                     MainPanel;
+            static HashSet<SmoothRestarterUi> AllComponents;
+            static Dictionary<int, string>    UiSecondsCache;
+            static Dictionary<float, string>  UiProgressbarCache;
+
+            BasePlayer player;
+            bool       isVisible;
+
+            bool IsVisible
+            {
+                set
+                {
+                    Debug.Assert(value != isVisible, "Double set isVisible to " + value);
+
+                    SetVisible(value);
+                }
+            }
+
+            public static void Cleanup()
+            {
+                foreach (var component in AllComponents.ToArray())
+                {
+                    DestroyImmediate(component);
+                }
+
+                UiSecondsCache = null;
+                UiProgressbarCache = null;
+                AllComponents = null;
+                MainPanel = null;
+            }
+
+            #region Unity methods
+
+            void Awake()
+            {
+                if (AllComponents == null)
+                {
+                    AllComponents = new HashSet<SmoothRestarterUi>();
+                }
+
+                if (MainPanel == null)
+                {
+                    var container = new CuiElementContainer
+                    {
+                        new CuiElement
+                        {
+                            FadeOut = 0.2f,
+                            Name = UI_BACKGROUND,
+                            Parent = "Hud",
+                            Components =
+                            {
+                                new CuiImageComponent
+                                {
+                                    Color = "0.2 0.2 0.2 0.3",
+                                    FadeIn = 0.2f,
+                                    ImageType = Image.Type.Simple,
+                                    Material = "assets/content/ui/uibackgroundblur.mat"
+                                },
+                                new CuiRectTransformComponent
+                                {
+                                    AnchorMin = $"{Instance.settings.UiX - 0.08f * Instance.settings.UiScale} " +
+                                                $"{Instance.settings.UiY - 0.05f * Instance.settings.UiScale}",
+                                    AnchorMax = $"{Instance.settings.UiX + 0.08f * Instance.settings.UiScale} " +
+                                                $"{Instance.settings.UiY + 0.05f * Instance.settings.UiScale}"
+                                }
+                            }
+                        },
+                        new CuiElement
+                        {
+                            FadeOut = 0.2f,
+                            Name = UI_TITLE,
+                            Parent = UI_BACKGROUND,
+                            Components =
+                            {
+                                new CuiTextComponent
+                                {
+                                    Color = "0.8 0.8 0.8 0.95",
+                                    FadeIn = 0.2f,
+                                    Align = TextAnchor.MiddleCenter,
+                                    Font = "robotocondensed-bold.ttf",
+                                    FontSize = 16,
+                                    Text = nameof(SmoothRestarter)
+                                },
+                                new CuiRectTransformComponent
+                                {
+                                    AnchorMin = "0 0.6",
+                                    AnchorMax = "1 1"
+                                }
+                            }
+                        }
+                    };
+
+                    MainPanel = SerializeUi(container);
+                }
+
+                if (UiSecondsCache == null)
+                {
+                    UiSecondsCache = new Dictionary<int, string>();
+                }
+
+                if (UiProgressbarCache == null)
+                {
+                    UiProgressbarCache = new Dictionary<float, string>();
+                }
+
+                player = GetComponent<BasePlayer>();
+
+                AllComponents.Add(this);
+            }
+
+            void Start()
+            {
+                InvokeRepeating(nameof(UiTick), 1f, 1f);
+            }
+
+            void OnDestroy()
+            {
+                if (isVisible)
+                {
+                    IsVisible = false;
+                }
+
+                AllComponents?.Remove(this);
+            }
+
+            #endregion
+
+            void SetVisible(bool visible)
+            {
+                Debug.Assert(player && player.IsConnected, "Player is null or disconnected");
+
+                if (visible)
+                {
+                    CuiHelper.AddUi(player, MainPanel);
+                }
+                else
+                {
+                    CuiHelper.DestroyUi(player, UI_SECONDS);
+                    CuiHelper.DestroyUi(player, UI_PROGRESS_BAR);
+                    CuiHelper.DestroyUi(player, UI_TITLE);
+                    CuiHelper.DestroyUi(player, UI_BACKGROUND);
+                }
+
+                isVisible = visible;
+            }
+
+            void UiTick()
+            {
+                if (Instance.IsRestartingComponent)
+                {
+                    if (!isVisible)
+                    {
+                        IsVisible = true;
+                    }
+
+                    var secondsLeft = (Instance.component.CurrentRestartTime.Value - DateTime.Now).TotalSeconds;
+
+                    UpdateSeconds(secondsLeft);
+                    UpdateProgressBar(GetFraction(secondsLeft));
+                }
+                else if (isVisible)
+                {
+                    IsVisible = false;
+                }
+            }
+
+            #region Ui update methods
+
+            void UpdateSeconds(double secondsLeft)
+            {
+                CuiHelper.DestroyUi(player, UI_SECONDS);
+                CuiHelper.AddUi(player, LookupUiDictionary((int)secondsLeft, UiSecondsCache, CreateSeconds));
+            }
+
+            void UpdateProgressBar(float fraction)
+            {
+                Debug.Assert(fraction >= 0f && fraction <= 1, "Progress bar fraction is outside of 0..1 range: " + fraction);
+
+                CuiHelper.DestroyUi(player, UI_PROGRESS_BAR);
+                CuiHelper.AddUi(player, LookupUiDictionary(fraction, UiProgressbarCache, CreateProgressBar));
+            }
+
+            string CreateSeconds(int secondsLeft)
+            {
+                return SerializeUi(
+                    new CuiElementContainer
+                    {
+                        new CuiElement
+                        {
+                            FadeOut = 0.2f,
+                            Name = UI_SECONDS,
+                            Parent = UI_BACKGROUND,
+                            Components =
+                            {
+                                new CuiTextComponent
+                                {
+                                    Color = "0.8 0.8 0.8 0.95",
+                                    FadeIn = 0.2f,
+                                    Align = TextAnchor.MiddleCenter,
+                                    Font = "robotocondensed-bold.ttf",
+                                    FontSize = 16,
+                                    Text = secondsLeft.ToString()
+                                },
+                                new CuiRectTransformComponent
+                                {
+                                    AnchorMin = "0 0",
+                                    AnchorMax = "1 0.45"
+                                }
+                            }
+                        }
+                    }
+                );
+            }
+
+            string CreateProgressBar(float fraction)
+            {
+                return SerializeUi(
+                    new CuiElementContainer
+                    {
+                        new CuiElement
+                        {
+                            FadeOut = 0.2f,
+                            Name = UI_PROGRESS_BAR,
+                            Parent = UI_BACKGROUND,
+                            Components =
+                            {
+                                new CuiImageComponent
+                                {
+                                    Color = GetFractionColor(fraction),
+                                    FadeIn = 0f,
+                                    ImageType = Image.Type.Simple,
+                                    Material = "assets/content/ui/namefontmaterial.mat"
+                                },
+                                new CuiRectTransformComponent
+                                {
+                                    AnchorMin = $"{0.5f - fraction * 0.45f} 0.45",
+                                    AnchorMax = $"{0.5f + fraction * 0.45f} 0.6"
+                                }
+                            }
+                        }
+                    }
+                );
+            }
+
+            #endregion
+
+            #region Utility
+
+            float GetFraction(double secondsLeft)
+            {
+                var norm = Instance.settings.RestartCountdownMax;
+
+                if (secondsLeft > norm)
+                {
+                    return 1f;
+                }
+
+                return (float)(secondsLeft / norm);
+            }
+
+            string GetFractionColor(float fraction)
+            {
+                float r;
+                float g;
+
+                if (fraction > 0.5f)
+                {
+                    r = Mathf.Lerp(.85f, .15f, (float)fraction / 2);
+                    g = 0.85f;
+                }
+                else
+                {
+                    r = 0.85f;
+                    g = Mathf.Lerp(.15f, .85f, (float)fraction * 2);
+                }
+
+                return $"{r} {g} 0.2 1";
+            }
+
+            string LookupUiDictionary<T>(T value, Dictionary<T, string> dict, Func<T, string> createFunction)
+            {
+                string returnVal;
+
+                if (!dict.TryGetValue(value, out returnVal))
+                {
+                    returnVal = createFunction(value);
+                    dict[value] = returnVal;
+                }
+
+                return returnVal;
+            }
+
+            string SerializeUi(CuiElementContainer container)
+            {
+                return JsonConvert.SerializeObject(
+                    container,
+                    Formatting.None,
+                    new JsonSerializerSettings {
+                        DefaultValueHandling = DefaultValueHandling.Ignore
+                    }
+                ).Replace("\\n", "\n");
+            }
+
+            #endregion
+        }
+
+        #endregion
+
+        #region SmoothRestart
+
+        class SmoothRestart : MonoBehaviour
+        {
+            IEnumerator     restartRoutine;
+            Queue<DateTime> restartQueue;
+            int             rtCountdownStart;
+            bool            doTimedRestarts;
+            bool            doRestartChecks;
+
+            public DateTime? CurrentRestartTime { get; private set; }
+            public RestartReason? CurrentRestartReason { get; private set; }
+            public object CurrentRestartInitiator { get; private set; }
+
+            public bool IsRestarting => restartRoutine != null;
+
+            bool DoRestartChecks
+            {
+                set
+                {
+                    Debug.Assert(value != doRestartChecks, "Double set DoRestartChecks to " + value);
+
+                    if (doRestartChecks != value)
+                    {
+                        doRestartChecks = value;
+                        if (value)
+                        {
+                            InvokeRepeating(nameof(RestartCheck), 1f, 1f);
+                        }
+                        else
+                        {
+                            CancelInvoke(nameof(RestartCheck));
+                        }
+                    }
+                }
+            }
+
+            #region Unity methods
+
+            void Awake()
+            {
+                rtCountdownStart = Instance.settings.RestartCountdownMax;
+
+                if (Instance.settings.RestartTimes.Count > 0)
+                {
+                    restartQueue = new Queue<DateTime>(
+                        Instance.settings.RestartTimes.Select(ts => DateTime.Today + ts)
+                    );
+                    doTimedRestarts = true;
+
+                    Instance.PluginLog(
+                        "Loaded {0} restart time(s):\n{1}",
+                        restartQueue.Count,
+                        string.Join("\n", restartQueue.Select(ts => ts.TimeOfDay.ToString("hh\\:mm").PadLeft(50)))
+                    );
+                }
+
+                if (Instance.settings.OxideUpdateRestart)
+                {
+                    Invoke(nameof(OxideVersionCheck), 5f);
+                }
+            }
+
+            void Start()
+            {
+                if (doTimedRestarts || Instance.settings.OxideUpdateRestart)
+                {
+                    DoRestartChecks = true;
+                }
+            }
+
+            void OnDestroy()
+            {
+                if (IsRestarting)
+                {
+                    CancelRestart(Instance);
+                }
+            }
+
+            #endregion
+
+            #region Public API
+
+            public void DoRestart(DateTime restartTime, RestartReason restartReason, object restartInitiator)
+            {
+                Debug.Assert(!Instance.IsRestarting, "DoRestart while restarting already");
+                Debug.Assert(restartTime > DateTime.Now, "Initiating restart in the past");
+
+                var totalSecondsLeft = (float)(restartTime - DateTime.Now).TotalSeconds;
+
+                DoRestartChecks = false;
+                restartRoutine = InitRestartRoutine(totalSecondsLeft);
+                CurrentRestartTime = restartTime;
+                CurrentRestartReason = restartReason;
+                CurrentRestartInitiator = restartInitiator;
+
+                StartCoroutine(restartRoutine);
+
+                OnRestartInit(totalSecondsLeft, restartReason, restartInitiator);
+            }
+
+            public void CancelRestart(object canceller)
+            {
+                Debug.Assert(canceller != null, "Restart canceller is null");
+
+                StopCoroutine(restartRoutine);
+                Cleanup();
+
+                DoRestartChecks = true;
+
+                OnRestartCancelled(canceller);
+            }
+
+            public DateTime FindNextRestartTime(out double diff)
+            {
+                DateTime restartTime;
+                DateTime now = DateTime.Now;
+                while ((restartTime = restartQueue.Peek()) < now)
+                    CycleQueue();
+
+                diff = (restartTime - now).TotalSeconds;
+
+                return restartTime;
+            }
+
+            #endregion
+
+            void OxideVersionCheck()
+            {
+                Debug.Assert(Instance.settings.OxideUpdateRestart, "OxideVersionCheck called when config value is false");
+                Debug.Assert(!Instance.isNewOxideOut, "OxideVersionCheck called when already new oxide patch detected");
+
+                Instance.FetchLatestOxideRustVersion(
+                    (e, v) => {
+                        if (e != null)
+                        {
+                            Instance.PluginLog(e.Message);
+                            Instance.PluginLog("Scheduling check after 1 minute...");
+                            Invoke(nameof(OxideVersionCheck), 60f);
+                        }
+                        else if (v > CurrentOxideRustVersion)
+                        {
+                            Instance.PluginLog("New Oxide.Rust version detected {0} -> {1}", CurrentOxideRustVersion, v);
+                            Instance.isNewOxideOut = true;
+                        }
+                        else
+                        {
+                            Instance.PluginLog("Current Oxide.Rust version is up-to-date, scheduling check after 10 minutes...");
+                            Invoke(nameof(OxideVersionCheck), 600f);
+                        }
+                    });
+            }
+
+            void RestartCheck()
+            {
+                Debug.Assert(!IsRestarting, "Restart check while IsRestarting");
+
+                if (Instance.IsRestartingNative)
+                {
+                    return; // since we have no observer on native restart routine, we do not pause invokes of this function, but simply interrupt it here
+                            // might wanna think about a workaround to raise event when native restart has started/interrupted (Harmony patch probably)
+                }
+
+                if (Instance.isNewOxideOut)
+                {
+                    DoRestart(DateTime.Now.AddSeconds(rtCountdownStart), RestartReason.OxideUpdate, null);
+                }
+                else
+                {
+                    DateTime restartTime;
+
+                    if (NeedsRestartOnTime(out restartTime))
+                    {
+                        CycleQueue();
+                        DoRestart(restartTime, RestartReason.Timed, null);
+                    }
+                }
+            }
+
+            bool NeedsRestartOnTime(out DateTime restartTime)
+            {
+                double diff;
+                restartTime = FindNextRestartTime(out diff);
+
+                if (diff <= rtCountdownStart)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+
+
+            void CycleQueue() => restartQueue.Enqueue(restartQueue.Dequeue().AddDays(1));
+
+            #region Component events
+
+            void OnRestartInit(float secondsLeft, RestartReason reason, object initiator)
+            {
+                Instance.PluginLog(
+                    "Server restart initiated in {0} seconds, reason: {1}, initiator: {2}",
+                    secondsLeft,
+                    reason,
+                    initiator
+                );
+
+                if (Interface.CallHook("OnSmoothRestartInit", secondsLeft, reason, initiator) == null)
+                {
+                    Instance.AnnounceRestartInit(secondsLeft, reason, initiator);
+                }
+            }
+
+            void OnRestartTick(int secondsLeft)
+            {
+                Instance.PluginLog("Server restart in progress, {0} seconds left", secondsLeft);
+
+                if (Interface.CallHook("OnSmoothRestartTick", secondsLeft) == null)
+                {
+                    Instance.Announce(M_ANNOUNCE_COUNTDOWN_TICK, secondsLeft);
+                }
+            }
+
+            void OnRestartCancelled(object canceller)
+            {
+                Instance.PluginLog("Server restart was cancelled by {0}", canceller);
+
+                Cleanup();
+
+                if (Interface.CallHook("OnSmoothRestartCancelled", canceller) == null)
+                {
+                    Instance.Announce(M_ANNOUNCE_RESTART_CANCELLED);
+                }
+            }
+
+            #endregion
+
+            IEnumerator InitRestartRoutine(float totalSecondsLeft)
+            {
+                Debug.Assert(totalSecondsLeft > 0);
+
+                while (totalSecondsLeft > 0)
+                {
+                    var nextCd = GetNextCountdownValue(Mathf.CeilToInt(totalSecondsLeft - 1f));
+                    yield return new WaitForSecondsRealtime(totalSecondsLeft - nextCd);
+
+                    OnRestartTick(nextCd);
+                    totalSecondsLeft = nextCd;
+                }
+
+                Cleanup();
+                RestartNow();
+            }
+
+            void Cleanup()
+            {
+                restartRoutine = null;
+                CurrentRestartTime = null;
+                CurrentRestartReason = null;
+                CurrentRestartInitiator = null;
+            }
+
+            void RestartNow()
+            {
+                Instance.KickAll();
+                Global.quit(null);
+            }
+
+            int GetNextCountdownValue(int secondsLeft)
+            {
+                Debug.Assert(secondsLeft >= 0, "GetNextCountdownValue: Seconds left < 0");
+
+                var divider = secondsLeft > 400 ? 100 :
+                    secondsLeft > 150 ? 50 :
+                    secondsLeft > 60 ? 25 :
+                    secondsLeft > 20 ? 10 :
+                    secondsLeft > 10 ? 5 : 1;
+
+                var remainder = secondsLeft % divider;
+
+                return secondsLeft - remainder; //fixme
+            }
+        }
+
+        #endregion
 
         #endregion
     }
