@@ -9,25 +9,23 @@ using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.0.5")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.0.6")]
     [Description("Displays an indicator on screen if a player is in godmode")]
     class GodmodeIndicator : RustPlugin
     {
         #region -Configuration and fields-
 
-        private static GodmodeIndicator Instance { get; set; }
+        static GodmodeIndicator Instance { get; set; }
 
-        [PluginReference]
-        private Plugin ImageLibrary;
+        [PluginReference] Plugin ImageLibrary;
 
-        [PluginReference]
-        private Plugin Godmode;
+        [PluginReference] Plugin Godmode;
 
-        private List<BasePlayer> ActiveIndicator { get; set; }
+        List<BasePlayer> ActiveIndicator { get; set; }
 
-        private PluginSettings Settings { get; set; }
+        PluginSettings Settings { get; set; }
 
-        private class PluginSettings
+        class PluginSettings
         {
             [JsonProperty(PropertyName = "UI X position")]
             internal float UI_X { get; set; }
@@ -39,7 +37,7 @@ namespace Oxide.Plugins
             internal string UI_Color { get; set; }
         }
 
-        private PluginSettings GetDefaultSettings() => new PluginSettings
+        PluginSettings GetDefaultSettings() => new PluginSettings
         {
             UI_X = 0.01f,
             UI_Y = 0.86f,
@@ -76,13 +74,13 @@ namespace Oxide.Plugins
 
         #region -Hooks-
 
-        private void Init()
+        void Init()
         {
             ActiveIndicator = new List<BasePlayer>();
             Instance = this;
         }
 
-        private void OnServerInitialized()
+        void OnServerInitialized()
         {
             timer.Once(1f, () => BuildUI());
             timer.Once(3f, () =>
@@ -92,31 +90,31 @@ namespace Oxide.Plugins
             });
         }
 
-        private void OnPlayerConnected(BasePlayer player) => player.gameObject.AddComponent<GodmodeComponent>().IsWaiting = true;
+        void OnPlayerConnected(BasePlayer player) => player.gameObject.AddComponent<GodmodeComponent>().IsWaiting = true;
 
-        private void OnPlayerSleepEnded(BasePlayer player)
+        void OnPlayerSleepEnded(BasePlayer player)
         {
             var component = player.gameObject.GetComponent<GodmodeComponent>();
             if (component != null && component.IsWaiting) timer.Once(2f, () => component.IsWaiting = false);
         }
 
-        private void OnPlayerDisconnected(BasePlayer player, string reason)
+        void OnPlayerDisconnected(BasePlayer player, string reason)
         {
             if (ActiveIndicator.Contains(player)) ActiveIndicator.Remove(player);
             player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent();
         }
 
-        private void Unload() { foreach (var player in BasePlayer.activePlayerList) player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent(); }
+        void Unload() { foreach (var player in BasePlayer.activePlayerList) player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent(); }
 
         #endregion
 
         #region -UI-
 
-        private CuiElementContainer MainUI { get; set; }
+        CuiElementContainer MainUI { get; set; }
 
-        private const string mainPanel = "godmodeindicator.mainui";
+        const string mainPanel = "godmodeindicator.mainui";
 
-        private void BuildUI()
+        void BuildUI()
         {
             string image = mainPanel + ".image";
             ImageLibrary?.Call("AddImage", Settings.UI_URL, image);
@@ -139,8 +137,8 @@ namespace Oxide.Plugins
                         },
                         new CuiRectTransformComponent
                         {
-                            AnchorMin = $"{Settings.UI_X.ToString()} {Settings.UI_Y.ToString()}",
-                            AnchorMax = $"{(Settings.UI_X + 0.07f).ToString()} {(Settings.UI_Y + 0.1f).ToString()}"
+                            AnchorMin = $"{Settings.UI_X} {Settings.UI_Y}",
+                            AnchorMax = $"{Settings.UI_X + 0.07f} {Settings.UI_Y + 0.1f}"
                         }
                     },
                     FadeOut = 0.4f
@@ -153,25 +151,25 @@ namespace Oxide.Plugins
 
         #region -Component-
 
-        private bool UIBuilt { get; set; } = false;
+        bool UIBuilt { get; set; }
 
-        private class GodmodeComponent : MonoBehaviour
+        class GodmodeComponent : MonoBehaviour
         {
-            private BasePlayer Player { get; set; }
-            private bool IsInGodMode { get; set; }
+            BasePlayer Player { get; set; }
+            bool IsInGodMode { get; set; }
             internal bool IsWaiting { get; set; }
-            private float LastUpdate { get; set; }
+            float LastUpdate { get; set; }
 
-            private void Awake() => Player = GetComponent<BasePlayer>();
+            void Awake() => Player = GetComponent<BasePlayer>();
 
-            private void Update()
+            void Update()
             {
                 if (Time.realtimeSinceStartup - LastUpdate > 1f)
                 {
                     if (Player == null || !Player.IsConnected) DetachComponent();
                     else
                     {
-                        if (Player.IsImmortalTo(null)) IsInGodMode = true;
+                        if (Player.IsGod()) IsInGodMode = true;
                         else
                         {
                             if (Instance.Godmode != null && Instance.Godmode.IsLoaded && Instance.Godmode.Call<bool>("IsGod", Player.UserIDString)) IsInGodMode = true;
@@ -194,7 +192,7 @@ namespace Oxide.Plugins
 
             internal void DetachComponent() => Destroy(this);
 
-            private void OnDestroy() => DestroyUi(Player, mainPanel);
+            void OnDestroy() => DestroyUi(Player, mainPanel);
         }
 
         #endregion
