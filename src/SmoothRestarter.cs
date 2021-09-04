@@ -136,6 +136,12 @@ namespace Oxide.Plugins
         {
             Instance = this;
 
+            if (!settings.EnableUi)
+            {
+                Unsubscribe(nameof(OnUserConnected));
+                Unsubscribe(nameof(OnUserDisconnected));
+            }
+
             permission.RegisterPermission(PERMISSION_STATUS, this);
             permission.RegisterPermission(PERMISSION_RESTART, this);
             permission.RegisterPermission(PERMISSION_CANCEL, this);
@@ -845,12 +851,14 @@ namespace Oxide.Plugins
 
             public static void Cleanup()
             {
-                if (AllComponents != null)
+                //if (AllComponents != null)
+                //{
+
+                //}
+
+                foreach (var component in AllComponents.ToArray())
                 {
-                    foreach (var component in AllComponents.ToArray())
-                    {
-                        DestroyImmediate(component);
-                    }
+                    DestroyImmediate(component);
                 }
 
                 UiSecondsCache = null;
