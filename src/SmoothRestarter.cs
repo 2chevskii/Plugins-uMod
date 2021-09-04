@@ -146,7 +146,7 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PERMISSION_RESTART, this);
             permission.RegisterPermission(PERMISSION_CANCEL, this);
 
-            AddCovalenceCommand(new[] { "sr", "srestart", "smoothrestart", "smoothrestarter" }, "CommandHandler");
+            AddCovalenceCommand(settings.Commands, "CommandHandler");
         }
 
         void OnServerInitialized()
@@ -481,6 +481,7 @@ namespace Oxide.Plugins
         #endregion
 
         #region Plugin API
+        // ReSharper disable UnusedMember.Local
 
         [HookMethod(nameof(IsSmoothRestarting))]
         public bool IsSmoothRestarting()
@@ -556,6 +557,7 @@ namespace Oxide.Plugins
             return true;
         }
 
+        // ReSharper restore UnusedMember.Local
         #endregion
 
         #region LangAPI
@@ -693,6 +695,8 @@ namespace Oxide.Plugins
             public float UiScale { get; set; }
             [JsonProperty("Enable console logs")]
             public bool EnableLog { get; set; }
+            [JsonProperty("Commands")]
+            public string[] Commands { get; set; }
 
             [JsonIgnore]
             public float UiX => uiPosCached[0];
@@ -703,13 +707,21 @@ namespace Oxide.Plugins
 
             public static PluginSettings GetDefaults()
             {
-                return new PluginSettings {
-                    DailyRestart = new[] { "0:00" },
+                return new PluginSettings
+                {
+                    DailyRestart = new[] {"0:00"},
                     OxideUpdateRestart = true,
                     RestartCountdownMax = 300,
                     EnableUi = true,
                     UiPosition = "0.92, 0.92",
-                    UiScale = 1.0f
+                    UiScale = 1.0f,
+                    Commands = new[]
+                    {
+                        "sr",
+                        "srestart",
+                        "smoothrestart",
+                        "smoothrestarter"
+                    }
                 };
             }
 
@@ -758,6 +770,12 @@ namespace Oxide.Plugins
                     uiPosCached[0] = 0.92f;
                     uiPosCached[1] = 0.92f;
                     UiPosition = "0.92, 0.92";
+                    valid = false;
+                }
+
+                if (Commands == null || Commands.Length == 0)
+                {
+                    Commands = new[] {"sr", "srestart", "smoothrestart", "smoothrestarter"};
                     valid = false;
                 }
 
