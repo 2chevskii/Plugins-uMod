@@ -582,14 +582,32 @@ namespace Oxide.Plugins
             player.Message(GetMessage(player, langKey), GetMessage(player, M_CHAT_PREFIX), args);
         }
 
+        void MessageWithCustomFormatter(IPlayer player, IFormatProvider formatProvider, string langKey, params object[] args)
+        {
+            var format = GetMessage(player, langKey);
+            var message = string.Format(formatProvider, format, args);
+            player.Message(message, GetMessage(player, M_CHAT_PREFIX));
+        }
+
+        void MessageRaw(IPlayer player, string message, params object[] args)
+        {
+            player.Message(message, GetMessage(player, M_CHAT_PREFIX), args);
+        }
+
         void AnnounceRestartInit(float secondsLeft, RestartReason reason, object initiator = null)
         {
-            string secondsLeftStr = secondsLeft.ToString("0");
             foreach (IPlayer player in players.Connected)
             {
                 var reasonStr = GetRestartReasonString(player, reason, initiator);
 
-                Message(player, M_ANNOUNCE_RESTART_INIT, secondsLeftStr, reasonStr);
+                //Message(player, M_ANNOUNCE_RESTART_INIT, secondsLeft.ToString("0"), reasonStr);
+                MessageWithCustomFormatter(
+                    player,
+                    SmoothTimeFormatter.Instance,
+                    M_ANNOUNCE_RESTART_INIT,
+                    secondsLeft,
+                    reasonStr
+                );
             }
         }
 
@@ -601,17 +619,20 @@ namespace Oxide.Plugins
             }
         }
 
+        void AnnounceWithCustomFormatter(IFormatProvider formatProvider, string langKey, params object[] args)
+        {
+            foreach (IPlayer player in players.Connected)
+            {
+                MessageWithCustomFormatter(player, formatProvider, langKey, args);
+            }
+        }
+
         void AnnounceRaw(string message, params object[] args)
         {
             foreach (var player in players.Connected)
             {
                 MessageRaw(player, message, args);
             }
-        }
-
-        void MessageRaw(IPlayer player, string message, params object[] args)
-        {
-            player.Message(message, GetMessage(player, M_CHAT_PREFIX), args);
         }
 
         string GetRestartReasonString(IPlayer player, RestartReason reason, object initiator = null)
@@ -1405,16 +1426,22 @@ namespace Oxide.Plugins
                 {
                     // The code below is so harsh Im feeling embarassed with it, but it is a solution I came with at the moment
                     // which does not force me to rewrite the whole messaging system
-                    foreach (var player in Instance.players.Connected)
-                    {
-                        var message = string.Format(
-                            new IntTimeFormatter(),
-                            Instance.GetMessage(player, M_ANNOUNCE_COUNTDOWN_TICK),
-                            secondsLeft
-                        );
+                    //foreach (var player in Instance.players.Connected)
+                    //{
+                    //    var message = string.Format(
+                    //        new IntTimeFormatter(),
+                    //        Instance.GetMessage(player, M_ANNOUNCE_COUNTDOWN_TICK),
+                    //        secondsLeft
+                    //    );
 
-                        Instance.MessageRaw(player, message);
-                    }
+                    //    Instance.MessageRaw(player, message);
+                    //}
+
+                    Instance.AnnounceWithCustomFormatter(
+                        SmoothTimeFormatter.Instance,
+                        M_ANNOUNCE_COUNTDOWN_TICK,
+                        secondsLeft
+                    );
                 }
             }
 
@@ -1481,52 +1508,50 @@ namespace Oxide.Plugins
 
         #endregion
 
-        class IntTimeFormatter : IFormatProvider, ICustomFormatter
+        class SmoothTimeFormatter : IFormatProvider, ICustomFormatter
         {
+            public static SmoothTimeFormatter Instance = new SmoothTimeFormatter();
+
             public string Format(string format, object arg, IFormatProvider formatProvider)
             {
-                if (arg is int)
+                if (arg is int || arg is double || arg is float)
                 {
-                    int iArg = (int)arg;
-
                     if (string.IsNullOrWhiteSpace(format))
                     {
-                        return Format(iArg, "<sec::t>");
+                        format = "<sec::t>";
                     }
 
-                    return Format(iArg, format);
+                    double nArg = (double)arg;
+                    return Format(TimeSpan.FromSeconds(nArg), format);
                 }
 
-                throw new ArgumentException(
-                    nameof(IntTimeFormatter) + " does not support type " + arg.GetType().Name,
-                    nameof(arg)
-                );
+                try
+                {
+                    return ((IFormattable)arg).ToString(format, CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                    throw new ArgumentException(
+                        nameof(SmoothTimeFormatter) + " does not support type " + arg.GetType().Name,
+                        nameof(arg)
+                    );
+                }
             }
 
             public object GetFormat(Type formatType)
             {
-                if (formatType == typeof(ICustomFormatter))
-                {
-                    return this;
-                }
-
-                return null;
+                return this;
             }
 
-            static string Format(int seconds, string format)
+            static string Format(TimeSpan ts, string format)
             {
-                var strSecondsTotal = seconds.ToString();
-                var strMinutesTotal = (seconds / 60f).ToString("0.00");
-                var strHoursTotal = (seconds / 3600f).ToString("0.000");
+                var strSecondsTotal = ts.TotalSeconds.ToString("0");
+                var strMinutesTotal = ts.TotalMinutes.ToString("0.##");
+                var strHoursTotal = ts.TotalHours.ToString("0.###");
 
-                var hours = seconds < 3600 ? 0 : (seconds - seconds % 3600) / 3600;
-                seconds -= hours * 3600;
-                var minutes = seconds < 60 ? 0 : (seconds - seconds % 60) / 60;
-                seconds -= minutes * 60;
-
-                var strHours = hours.ToString();
-                var strMinutes = minutes.ToString();
-                var strSeconds = seconds.ToString();
+                var strHours = ts.Hours.ToString("0");
+                var strMinutes = ts.Minutes.ToString("0");
+                var strSeconds = ts.Seconds.ToString("0");
 
                 var sb = new StringBuilder(format);
 
@@ -1538,9 +1563,9 @@ namespace Oxide.Plugins
                 sb.Replace("<min>", strMinutes);
                 sb.Replace("<sec>", strSeconds);
 
-                ReplaceOptionalTemplate(sb, "hr", hours > 0 ? strHours : string.Empty);
-                ReplaceOptionalTemplate(sb, "min", minutes> 0 ? strMinutes: string.Empty);
-                ReplaceOptionalTemplate(sb, "sec", seconds> 0 ? strSeconds : string.Empty);
+                ReplaceOptionalTemplate(sb, "hr", ts.Hours > 0 ? strHours : string.Empty);
+                ReplaceOptionalTemplate(sb, "min", ts.Minutes > 0 ? strMinutes : string.Empty);
+                ReplaceOptionalTemplate(sb, "sec", ts.Seconds > 0 ? strSeconds : string.Empty);
 
                 return sb.ToString();
             }
