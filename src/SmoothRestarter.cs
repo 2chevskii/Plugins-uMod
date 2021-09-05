@@ -85,7 +85,7 @@ namespace Oxide.Plugins
         readonly Dictionary<string, string> defaultMessagesEn = new Dictionary<string, string>
         {
             [M_CHAT_PREFIX]   = "<color=#d9770f>Smooth Restarter</color>:",
-            [M_NO_PERMISSION] = "<color=#d9420f>You</color> have no permission to use this command",
+            [M_NO_PERMISSION] = "<color=#f04c32>You</color> have no permission to use this command",
             [M_KICK_REASON]   = "Server is restarting",
             [M_HELP]          = "/sr <color=#1a97ba>[command]</color> <color=#1aba8f>[arguments]</color>\n" +
                                 "Commands: " +
@@ -107,16 +107,16 @@ namespace Oxide.Plugins
             [M_RESTART_REASON_OXIDE] = "New Oxide update is out",
             [M_RESTART_REASON_COMMAND] = "Command from <color=#dbc30b>{0}</color>",
             [M_RESTART_REASON_API] = "API call from <color=#dbc30b>{0}</color>",
-            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0}</color> seconds ({1})",
-            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0}</color> seconds left before server restart",
+            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0:sfmt::<hr? hr ><min> min <sec> sec}</color> ({1})",
+            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0:sfmt::<hr? hours ><min? minutes ><sec? seconds>}</color> left before server restart",
             [M_ANNOUNCE_RESTART_CANCELLED] = "Server restart was cancelled",
             [M_RESTART_SUCCESS] = "Restart initiated successfully",
             [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:0}</color> seconds left",
             [M_STATUS_RESTARTING_NATIVE] = "Server is restarting natively",
-            [M_STATUS_PLANNED] = "Server restart planned on <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:0}</color> seconds left)",
+            [M_STATUS_PLANNED] = "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<min::t> minutes <sec> seconds}</color> left)",
             [M_STATUS_NO_PLANNED] = "Server is not restarting, no planned restarts found",
             [M_UI_TITLE] = "SmoothRestarter",
-            [M_UI_COUNTDOWN] = "{0} seconds left"
+            [M_UI_COUNTDOWN] = "{0:sfmt::<min>:<sec>} left"
         };
 
         #endregion
@@ -216,7 +216,8 @@ namespace Oxide.Plugins
                         if (CheckPermission(player, PERMISSION_STATUS))
                         {
                             DateTime dateTime;
-                            Message(player, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
+                            //Message(player, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
+                            MessageWithCustomFormatter(player, SmoothTimeFormatter.Instance, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
                         }
                         break;
                     case "restart":
@@ -738,6 +739,10 @@ namespace Oxide.Plugins
             public string[] Commands { get; set; }
             [JsonProperty("Disable chat countdown notifications")]
             public bool DisableChatCountdown { get; set; }
+            [JsonProperty("Custom countdown reference points")]
+            public int[] CountdownRefPts { get; set; }
+            [JsonProperty("Use custom countdown reference points")]
+            public bool UseCustomCountdownRefPts { get; set; }
 
             [JsonIgnore]
             public float UiX => uiPosCached[0];
@@ -748,11 +753,13 @@ namespace Oxide.Plugins
 
             public static PluginSettings GetDefaults()
             {
-                return new PluginSettings {
-                    DailyRestart = new[] { "0:00" },
+                return new PluginSettings
+                {
+                    DailyRestart = new[] {"0:00"},
                     OxideUpdateRestart = true,
                     RestartCountdownMax = 300,
                     EnableUi = true,
+                    EnableLog = true,
                     UiPosition = "0.92, 0.92",
                     UiScale = 1.0f,
                     Commands = new[]
@@ -762,7 +769,9 @@ namespace Oxide.Plugins
                         "smoothrestart",
                         "smoothrestarter"
                     },
-                    DisableChatCountdown = false
+                    DisableChatCountdown = false,
+                    UseCustomCountdownRefPts = false,
+                    CountdownRefPts = new[] {60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
                 };
             }
 
@@ -819,6 +828,20 @@ namespace Oxide.Plugins
                     Commands = new[] { "sr", "srestart", "smoothrestart", "smoothrestarter" };
                     valid = false;
                 }
+
+                if (CountdownRefPts == null)
+                {
+                    CountdownRefPts = new[] {60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+                    valid = false;
+                }
+
+                if (UseCustomCountdownRefPts && CountdownRefPts.Length == 0)
+                {
+                    CountdownRefPts = new[] {30, 10, 5};
+                    valid = false;
+                }
+
+                CountdownRefPts = CountdownRefPts.OrderByDescending(_ => _).ToArray();
 
                 return valid;
             }
@@ -891,12 +914,13 @@ namespace Oxide.Plugins
                          UI_SECONDS      = "smoothrestarter.ui::seconds_left";
 
             static HashSet<SmoothRestarterUi> AllComponents;
-            static Dictionary<int, string>    UiSecondsCache;
-            static Dictionary<float, string>  UiProgressbarCache;
+            static Dictionary<string, string> UiSecondsCache;
+            static Dictionary<string, string> UiProgressbarCache;
 
             string     mainPanel;
             BasePlayer player;
             bool       isVisible;
+            string     locale;
 
             bool IsVisible
             {
@@ -910,10 +934,10 @@ namespace Oxide.Plugins
 
             public static void Cleanup()
             {
-                //if (AllComponents != null)
-                //{
-
-                //}
+                if (AllComponents == null)
+                {
+                    return;
+                }
 
                 foreach (var component in AllComponents.ToArray())
                 {
@@ -923,7 +947,6 @@ namespace Oxide.Plugins
                 UiSecondsCache = null;
                 UiProgressbarCache = null;
                 AllComponents = null;
-                //mainPanel = null;
             }
 
             #region Unity methods
@@ -941,6 +964,7 @@ namespace Oxide.Plugins
                 //}
 
                 player = GetComponent<BasePlayer>();
+                locale = Instance.lang.GetLanguage(player.UserIDString);
 
                 var uiTitle = Instance.GetMessage(player.IPlayer, M_UI_TITLE);
 
@@ -998,12 +1022,12 @@ namespace Oxide.Plugins
 
                 if (UiSecondsCache == null)
                 {
-                    UiSecondsCache = new Dictionary<int, string>();
+                    UiSecondsCache = new Dictionary<string, string>();
                 }
 
                 if (UiProgressbarCache == null)
                 {
-                    UiProgressbarCache = new Dictionary<float, string>();
+                    UiProgressbarCache = new Dictionary<string, string>();
                 }
 
                 AllComponents.Add(this);
@@ -1070,7 +1094,7 @@ namespace Oxide.Plugins
             void UpdateSeconds(double secondsLeft)
             {
                 CuiHelper.DestroyUi(player, UI_SECONDS);
-                CuiHelper.AddUi(player, LookupUiDictionary((int)secondsLeft, UiSecondsCache, CreateSeconds));
+                CuiHelper.AddUi(player, LookupUiDictionary(locale, (int)secondsLeft, UiSecondsCache, CreateSeconds));
             }
 
             void UpdateProgressBar(float fraction)
@@ -1078,7 +1102,7 @@ namespace Oxide.Plugins
                 Debug.Assert(fraction >= 0f && fraction <= 1, "Progress bar fraction is outside of 0..1 range: " + fraction);
 
                 CuiHelper.DestroyUi(player, UI_PROGRESS_BAR);
-                CuiHelper.AddUi(player, LookupUiDictionary(fraction, UiProgressbarCache, CreateProgressBar));
+                CuiHelper.AddUi(player, LookupUiDictionary("any", fraction, UiProgressbarCache, CreateProgressBar));
             }
 
             string CreateSeconds(int secondsLeft)
@@ -1100,7 +1124,11 @@ namespace Oxide.Plugins
                                     Align = TextAnchor.MiddleCenter,
                                     Font = "robotocondensed-bold.ttf",
                                     FontSize = 16,
-                                    Text = secondsLeft.ToString()
+                                    Text = string.Format(
+                                        SmoothTimeFormatter.Instance,
+                                        Instance.GetMessage(player.IPlayer, M_UI_COUNTDOWN),
+                                        secondsLeft
+                                    )
                                 },
                                 new CuiRectTransformComponent
                                 {
@@ -1166,26 +1194,27 @@ namespace Oxide.Plugins
 
                 if (fraction > 0.5f)
                 {
-                    r = Mathf.Lerp(.85f, .15f, (float)fraction / 2);
+                    r = Mathf.Lerp(.85f, .15f, fraction / 2);
                     g = 0.85f;
                 }
                 else
                 {
                     r = 0.85f;
-                    g = Mathf.Lerp(.15f, .85f, (float)fraction * 2);
+                    g = Mathf.Lerp(.15f, .85f, fraction * 2);
                 }
 
                 return $"{r} {g} 0.2 1";
             }
 
-            string LookupUiDictionary<T>(T value, Dictionary<T, string> dict, Func<T, string> createFunction)
+            static string LookupUiDictionary<T>(string locale, T value, Dictionary<string, string> dict, Func<T, string> createFunction)
             {
+                string key = $"{locale}->{value}";
                 string returnVal;
 
-                if (!dict.TryGetValue(value, out returnVal))
+                if (!dict.TryGetValue(key, out returnVal))
                 {
                     returnVal = createFunction(value);
-                    dict[value] = returnVal;
+                    dict[key] = returnVal;
                 }
 
                 return returnVal;
@@ -1437,6 +1466,7 @@ namespace Oxide.Plugins
                     //    Instance.MessageRaw(player, message);
                     //}
 
+                    // I rewrote the messaging system :/
                     Instance.AnnounceWithCustomFormatter(
                         SmoothTimeFormatter.Instance,
                         M_ANNOUNCE_COUNTDOWN_TICK,
@@ -1466,6 +1496,7 @@ namespace Oxide.Plugins
                 while (totalSecondsLeft > 0)
                 {
                     var nextCd = GetNextCountdownValue(Mathf.CeilToInt(totalSecondsLeft - 1f));
+
                     yield return new WaitForSecondsRealtime(totalSecondsLeft - nextCd);
 
                     OnRestartTick(nextCd);
@@ -1494,9 +1525,29 @@ namespace Oxide.Plugins
             {
                 Debug.Assert(secondsLeft > 0, "GetNextCountdownValue: Seconds left <= 0");
 
+                if (secondsLeft > Instance.settings.RestartCountdownMax)
+                {
+                    return Instance.settings.RestartCountdownMax;
+                }
+
+                if (Instance.settings.UseCustomCountdownRefPts)
+                {
+                    Debug.Assert(Instance.settings.CountdownRefPts.Length != 0, "Empty countdown refpts array");
+
+                    var next = Instance.settings.CountdownRefPts.FirstOrDefault(p => p < secondsLeft);
+
+                    if (next < 0)
+                    {
+                        Debug.LogAssertion("Custom cdrefpt is < 0");
+                        next = 0;
+                    }
+
+                    return next;
+                }
+
                 var divider = secondsLeft > 400 ? 100 :
                     secondsLeft > 150 ? 50 :
-                    secondsLeft > 60 ? 25 :
+                    secondsLeft > 70 ? 25 :
                     secondsLeft > 20 ? 10 :
                     secondsLeft > 10 ? 5 : 1;
 
@@ -1508,26 +1559,47 @@ namespace Oxide.Plugins
 
         #endregion
 
+        #region SmoothTimeFormatter
+
         class SmoothTimeFormatter : IFormatProvider, ICustomFormatter
         {
             public static SmoothTimeFormatter Instance = new SmoothTimeFormatter();
 
             public string Format(string format, object arg, IFormatProvider formatProvider)
             {
-                if (arg is int || arg is double || arg is float)
+                if (format != null && format.StartsWith("sfmt::"))
                 {
+                    format = format.Remove(0, 6);
                     if (string.IsNullOrWhiteSpace(format))
                     {
                         format = "<sec::t>";
                     }
 
-                    double nArg = (double)arg;
-                    return Format(TimeSpan.FromSeconds(nArg), format);
+                    if (arg is TimeSpan)
+                    {
+                        return Format((TimeSpan)arg, format);
+                    }
+
+                    if (arg is int || arg is double || arg is float)
+                    {
+                        double nArg = Convert.ToDouble(arg);
+                        return Format(TimeSpan.FromSeconds(nArg), format);
+                    }
                 }
 
                 try
                 {
-                    return ((IFormattable)arg).ToString(format, CultureInfo.InvariantCulture);
+                    if (arg is string)
+                    {
+                        return (string)arg;
+                    }
+
+                    if (arg is IFormattable)
+                    {
+                        return ((IFormattable)arg).ToString(format, CultureInfo.InvariantCulture);
+                    }
+
+                    throw new Exception();
                 }
                 catch
                 {
@@ -1589,26 +1661,18 @@ namespace Oxide.Plugins
                         replaceValue += format.Substring(tIndex + templateFull.Length, length - templateFull.Length - 1);
                     }
 
-                    Debug.Log(length);
-                    Debug.Log(replaceValue.Length);
-
                     builder.Remove(tIndex, length);
-
-                    Debug.Log("Removed value: " + $"'{builder}'");
-
 
                     builder.Insert(tIndex, replaceValue);
 
-                    Debug.Log("Inserted value: " + $"'{builder}'");
-
-                    tIndex = cl + (templateFull.Length - length - 2);
-
-                    Debug.Log(tIndex);
+                    tIndex = cl + (replaceValue.Length - length) + 1;
 
                     format = builder.ToString();
                 }
             }
         }
+
+        #endregion
 
         #endregion
     }
