@@ -1,55 +1,66 @@
 ﻿// Requires: ImageLibrary
 
+// #define UNITY_ASSERTIONS
+
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+
 using Oxide.Game.Rust.Cui;
 using Newtonsoft.Json;
+
+using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
 using UnityEngine;
+
 using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.0.6")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.1.0")]
     [Description("Displays an indicator on screen if a player is in godmode")]
-    class GodmodeIndicator : RustPlugin
+    class GodmodeIndicator : CovalencePlugin
     {
-        #region -Configuration and fields-
+        #region Configuration and fields
 
-        static GodmodeIndicator Instance { get; set; }
+        const string UI_MAIN_PANEL_NAME = "godmodeindicator.ui::main_panel";
 
-        [PluginReference] Plugin ImageLibrary;
+        static            GodmodeIndicator Instance;
+        [PluginReference] Plugin           ImageLibrary;
+        [PluginReference] Plugin           Godmode;
+        string                             uiCached;
 
-        [PluginReference] Plugin Godmode;
+        Dictionary<string, GodmodeUi> idToComponent;
 
-        List<BasePlayer> ActiveIndicator { get; set; }
-
-        PluginSettings Settings { get; set; }
+        PluginSettings settings;
 
         class PluginSettings
         {
-            [JsonProperty(PropertyName = "UI X position")]
-            internal float UI_X { get; set; }
-            [JsonProperty(PropertyName = "UI Y position")]
-            internal float UI_Y { get; set; }
-            [JsonProperty(PropertyName = "UI URL")]
-            internal string UI_URL { get; set; }
-            [JsonProperty(PropertyName = "UI Color")]
-            internal string UI_Color { get; set; }
+            [JsonProperty("UI X position")]
+            public float UiX { get; set; }
+            [JsonProperty("UI Y position")]
+            public float UiY { get; set; }
+            [JsonProperty("UI URL")]
+            public string UiUrl { get; set; }
+            [JsonProperty("UI Color")]
+            public string UiColor { get; set; }
+            [DefaultValue(1.0f)]
+            [JsonProperty("UI Scale", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public float UiScale { get; set; }
         }
 
-        PluginSettings GetDefaultSettings() => new PluginSettings
-        {
-            UI_X = 0.01f,
-            UI_Y = 0.86f,
-            UI_Color = "1 1 1 1",
-            UI_URL = "https://i.imgur.com/SF6lN2N.png"
+        PluginSettings GetDefaultSettings() => new PluginSettings {
+            UiX = 0.05f,
+            UiY = 0.85f,
+            UiColor = "1 1 1 1",
+            UiUrl = "https://i.imgur.com/SF6lN2N.png",
+            UiScale = 1.0f
         };
 
         protected override void LoadDefaultConfig()
         {
             Config.Clear();
-            Settings = GetDefaultSettings();
-            Puts("Creating new configuration file...");
+            settings = GetDefaultSettings();
             SaveConfig();
         }
 
@@ -58,9 +69,10 @@ namespace Oxide.Plugins
             base.LoadConfig();
             try
             {
-                Settings = Config.ReadObject<PluginSettings>();
-                if (Settings == null)
+                settings = Config.ReadObject<PluginSettings>();
+                if (settings == null)
                     throw new JsonException("Unable to load configuration file...");
+                SaveConfig();
             }
             catch
             {
@@ -68,131 +80,199 @@ namespace Oxide.Plugins
             }
         }
 
-        protected override void SaveConfig() => Config.WriteObject(Settings, true);
+        protected override void SaveConfig() => Config.WriteObject(settings, true);
 
         #endregion
 
-        #region -Hooks-
+        #region Oxide hooks
 
         void Init()
         {
-            ActiveIndicator = new List<BasePlayer>();
             Instance = this;
+            idToComponent = new Dictionary<string, GodmodeUi>();
         }
 
         void OnServerInitialized()
         {
-            timer.Once(1f, () => BuildUI());
-            timer.Once(3f, () =>
+            BuildUi();
+            foreach (var player in players.Connected)
             {
-                foreach (BasePlayer player in BasePlayer.activePlayerList)
-                    player.gameObject.AddComponent<GodmodeComponent>();
-            });
+                OnUserConnected(player);
+            }
         }
 
-        void OnPlayerConnected(BasePlayer player) => player.gameObject.AddComponent<GodmodeComponent>().IsWaiting = true;
+        void OnUserConnected(IPlayer user)
+        {
+            var player = (BasePlayer)user.Object;
+            player.gameObject.AddComponent<GodmodeUi>();
+        }
 
         void OnPlayerSleepEnded(BasePlayer player)
         {
-            var component = player.gameObject.GetComponent<GodmodeComponent>();
-            if (component != null && component.IsWaiting) timer.Once(2f, () => component.IsWaiting = false);
+            Debug.Assert(idToComponent.ContainsKey(player.UserIDString));
+            idToComponent[player.UserIDString].OnSleepEnded();
         }
 
-        void OnPlayerDisconnected(BasePlayer player, string reason)
+        void OnUserDisconnected(IPlayer user)
         {
-            if (ActiveIndicator.Contains(player)) ActiveIndicator.Remove(player);
-            player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent();
+            var component = idToComponent[user.Id];
+            UnityEngine.Object.Destroy(component);
         }
 
-        void Unload() { foreach (var player in BasePlayer.activePlayerList) player.gameObject.GetComponent<GodmodeComponent>()?.DetachComponent(); }
-
-        #endregion
-
-        #region -UI-
-
-        CuiElementContainer MainUI { get; set; }
-
-        const string mainPanel = "godmodeindicator.mainui";
-
-        void BuildUI()
+        void Unload()
         {
-            string image = mainPanel + ".image";
-            ImageLibrary?.Call("AddImage", Settings.UI_URL, image);
-            MainUI = new CuiElementContainer();
-
-            timer.Once(1f, () =>
+            foreach (var player in players.Connected)
             {
-                MainUI.Add(new CuiElement
-                {
-                    Name = mainPanel,
-                    Parent = "Hud",
-                    Components =
-                    {
-                        new CuiRawImageComponent
-                        {
-                            Color = Settings.UI_Color,
-                            Sprite = "assets/content/textures/generic/fulltransparent.tga",
-                            Png = (string)ImageLibrary?.Call("GetImage", image),
-                            FadeIn = 0.4f
-                        },
-                        new CuiRectTransformComponent
-                        {
-                            AnchorMin = $"{Settings.UI_X} {Settings.UI_Y}",
-                            AnchorMax = $"{Settings.UI_X + 0.07f} {Settings.UI_Y + 0.1f}"
-                        }
-                    },
-                    FadeOut = 0.4f
-                });
-                UIBuilt = true;
-            });
+                OnUserDisconnected(player);
+            }
+
+            uiCached = null;
+            Instance = null;
+        }
+
+        void OnGodmodeToggled(string playerId, bool enabled)
+        {
+            Debug.Assert(idToComponent.ContainsKey(playerId));
+
+            idToComponent[playerId].GodmodePluginStatus = enabled;
         }
 
         #endregion
 
-        #region -Component-
-
-        bool UIBuilt { get; set; }
-
-        class GodmodeComponent : MonoBehaviour
+        void BuildUi()
         {
-            BasePlayer Player { get; set; }
-            bool IsInGodMode { get; set; }
-            internal bool IsWaiting { get; set; }
-            float LastUpdate { get; set; }
+            string icon = UI_MAIN_PANEL_NAME + "::icon";
+            ulong id = (ulong)icon.GetHashCode();
+            ImageLibrary.Call(
+                "AddImage",
+                settings.UiUrl,
+                icon,
+                id,
+                new Action(
+                    () => {
+                        var container = new CuiElementContainer();
 
-            void Awake() => Player = GetComponent<BasePlayer>();
+                        container.Add(
+                            new CuiElement {
+                                Name = UI_MAIN_PANEL_NAME,
+                                Parent = "Hud",
+                                Components =
+                                {
+                                    new CuiRawImageComponent
+                                    {
+                                        Color = settings.UiColor,
+                                        Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                                        Png = (string)ImageLibrary?.Call("GetImage", icon, id),
+                                        FadeIn = 0.4f
+                                    },
+                                    new CuiRectTransformComponent
+                                    {
+                                        AnchorMin = $"{settings.UiX - .04f * settings.UiScale} {settings.UiY - .056f * settings.UiScale}",
+                                        AnchorMax =
+                                            $"{settings.UiX + .04f * settings.UiScale} {settings.UiY + .056f * settings.UiScale}"
+                                    }
+                                },
+                                FadeOut = 0.4f
+                            }
+                        );
 
-            void Update()
-            {
-                if (Time.realtimeSinceStartup - LastUpdate > 1f)
-                {
-                    if (Player == null || !Player.IsConnected) DetachComponent();
-                    else
-                    {
-                        if (Player.IsGod()) IsInGodMode = true;
-                        else
+                        uiCached = ToJson(container);
+
+                        foreach (var component in idToComponent.Values)
                         {
-                            if (Instance.Godmode != null && Instance.Godmode.IsLoaded && Instance.Godmode.Call<bool>("IsGod", Player.UserIDString)) IsInGodMode = true;
-                            else IsInGodMode = false;
+                            component.OnUiBuilt();
                         }
                     }
-                    if (IsInGodMode && !Instance.ActiveIndicator.Contains(Player) && Instance.UIBuilt && !IsWaiting)
-                    {
-                        Instance.ActiveIndicator.Add(Player);
-                        AddUi(Player, Instance.MainUI);
-                    }
-                    else if (!IsInGodMode && Instance.ActiveIndicator.Contains(Player))
-                    {
-                        Instance.ActiveIndicator.Remove(Player);
-                        DestroyUi(Player, mainPanel);
-                    }
-                    LastUpdate = Time.realtimeSinceStartup;
+                )
+            );
+        }
+
+        #region GodmodeUi
+
+        class GodmodeUi : MonoBehaviour
+        {
+            BasePlayer player;
+            bool       uiVisible;
+            bool       isInPluginGod;
+
+            public bool GodmodePluginStatus
+            {
+                set
+                {
+                    isInPluginGod = value;
                 }
             }
 
-            internal void DetachComponent() => Destroy(this);
+            bool IsGod => isInPluginGod || player.IsGod();
 
-            void OnDestroy() => DestroyUi(Player, mainPanel);
+            public void OnSleepEnded()
+            {
+                if (!IsInvoking(nameof(Tick)))
+                    InvokeRepeating(nameof(Tick), 1f, 1f);
+            }
+
+            public void OnUiBuilt()
+            {
+                if (!IsInvoking(nameof(Tick)) && !player.IsSleeping())
+                    InvokeRepeating(nameof(Tick), 1f, 1f);
+            }
+
+            #region MonoBehaviour lifecycle
+
+            void Awake()
+            {
+                player = GetComponent<BasePlayer>();
+
+                Instance.idToComponent[player.UserIDString] = this;
+            }
+
+            void Start()
+            {
+                isInPluginGod = Instance.Godmode && Instance.Godmode.Call<bool>("IsGod", player.UserIDString);
+                if (!player.IsSleeping() && Instance.uiCached != null)
+                    InvokeRepeating(nameof(Tick), 1f, 1f);
+            }
+
+            void OnDestroy()
+            {
+                if (uiVisible && player.IsConnected)
+                {
+                    SetVisible(false);
+                }
+
+                Instance?.idToComponent?.Remove(player.UserIDString);
+            }
+
+            #endregion
+
+            void SetVisible(bool bVisible)
+            {
+                Debug.Assert(bVisible != uiVisible, "Double setting visible to " + bVisible);
+                Debug.Assert(player && player.IsConnected, "Player is null or disconnected");
+
+                if (bVisible)
+                {
+                    AddUi(player, Instance.uiCached);
+                }
+                else
+                {
+                    DestroyUi(player, UI_MAIN_PANEL_NAME);
+                }
+
+                uiVisible = bVisible;
+            }
+
+            void Tick()
+            {
+                if (!IsGod && uiVisible)
+                {
+                    SetVisible(false);
+                }
+                else if (IsGod && !uiVisible)
+                {
+                    SetVisible(true);
+                }
+            }
         }
 
         #endregion
