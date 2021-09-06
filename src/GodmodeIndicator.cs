@@ -17,7 +17,7 @@ using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.1.0")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.1.1")]
     [Description("Displays an indicator on screen if a player is in godmode")]
     class GodmodeIndicator : CovalencePlugin
     {
@@ -104,7 +104,7 @@ namespace Oxide.Plugins
         void OnUserConnected(IPlayer user)
         {
             var player = (BasePlayer)user.Object;
-            player.gameObject.AddComponent<GodmodeUi>();
+            idToComponent[player.UserIDString] = player.gameObject.AddComponent<GodmodeUi>();
         }
 
         void OnPlayerSleepEnded(BasePlayer player)
@@ -223,7 +223,7 @@ namespace Oxide.Plugins
             {
                 player = GetComponent<BasePlayer>();
 
-                Instance.idToComponent[player.UserIDString] = this;
+                //Instance.idToComponent[player.UserIDString] = this;
             }
 
             void Start()
