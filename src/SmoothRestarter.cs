@@ -1,4 +1,4 @@
-﻿#define UNITY_ASSERTIONS // Uncomment this if you have any issues with the plugin, assertion log can help locate problematic code
+﻿// #define UNITY_ASSERTIONS // Uncomment this if you have any issues with the plugin, assertion log can help locate problematic code
 // #define SIMULATE_OXIDE_PATCH
 
 using System;
@@ -23,6 +23,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 using Debug = UnityEngine.Debug;
+using Pool = Facepunch.Pool;
 
 namespace Oxide.Plugins
 {
@@ -107,16 +108,16 @@ namespace Oxide.Plugins
             [M_RESTART_REASON_OXIDE] = "New Oxide update is out",
             [M_RESTART_REASON_COMMAND] = "Command from <color=#dbc30b>{0}</color>",
             [M_RESTART_REASON_API] = "API call from <color=#dbc30b>{0}</color>",
-            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0:sfmt::<hr? hr ><min> min <sec> sec}</color> ({1})",
-            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0:sfmt::<hr? hours ><min? minutes ><sec? seconds>}</color> left before server restart",
+            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> ({1})",
+            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0:sfmt::<hr?+h ><min?+min ><sec?+s>}</color> left before server restart",
             [M_ANNOUNCE_RESTART_CANCELLED] = "Server restart was cancelled",
             [M_RESTART_SUCCESS] = "Restart initiated successfully",
             [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:0}</color> seconds left",
             [M_STATUS_RESTARTING_NATIVE] = "Server is restarting natively",
-            [M_STATUS_PLANNED] = "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<min::t> minutes <sec> seconds}</color> left)",
+            [M_STATUS_PLANNED] = "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> left)",
             [M_STATUS_NO_PLANNED] = "Server is not restarting, no planned restarts found",
             [M_UI_TITLE] = "SmoothRestarter",
-            [M_UI_COUNTDOWN] = "{0:sfmt::<min>:<sec>} left"
+            [M_UI_COUNTDOWN] = "{0:sfmt::<min#2>:<sec#2>} left"
         };
 
         #endregion
@@ -152,6 +153,8 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PERMISSION_CANCEL, this);
 
             AddCovalenceCommand(settings.Commands, "CommandHandler");
+
+            //Log("{0}", BitConverter.GetBytes(decimal.GetBits(0.123m)[3])[2]);
         }
 
         void OnServerInitialized()
@@ -753,9 +756,8 @@ namespace Oxide.Plugins
 
             public static PluginSettings GetDefaults()
             {
-                return new PluginSettings
-                {
-                    DailyRestart = new[] {"0:00"},
+                return new PluginSettings {
+                    DailyRestart = new[] { "0:00" },
                     OxideUpdateRestart = true,
                     RestartCountdownMax = 300,
                     EnableUi = true,
@@ -771,7 +773,7 @@ namespace Oxide.Plugins
                     },
                     DisableChatCountdown = false,
                     UseCustomCountdownRefPts = false,
-                    CountdownRefPts = new[] {60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}
+                    CountdownRefPts = new[] { 60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 }
                 };
             }
 
@@ -831,13 +833,13 @@ namespace Oxide.Plugins
 
                 if (CountdownRefPts == null)
                 {
-                    CountdownRefPts = new[] {60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+                    CountdownRefPts = new[] { 60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
                     valid = false;
                 }
 
                 if (UseCustomCountdownRefPts && CountdownRefPts.Length == 0)
                 {
-                    CountdownRefPts = new[] {30, 10, 5};
+                    CountdownRefPts = new[] { 30, 10, 5 };
                     valid = false;
                 }
 
@@ -1189,6 +1191,8 @@ namespace Oxide.Plugins
 
             string GetFractionColor(float fraction)
             {
+                Debug.Assert(fraction <= 1 && fraction >= 0, "GetFractionColor: fraction is not clamped");
+
                 float r;
                 float g;
 
@@ -1534,7 +1538,7 @@ namespace Oxide.Plugins
                 {
                     Debug.Assert(Instance.settings.CountdownRefPts.Length != 0, "Empty countdown refpts array");
 
-                    var next = Instance.settings.CountdownRefPts.FirstOrDefault(p => p < secondsLeft);
+                    var next = Instance.settings.CountdownRefPts.FirstOrDefault(p => p <= secondsLeft);
 
                     if (next < 0)
                     {
@@ -1565,6 +1569,11 @@ namespace Oxide.Plugins
         {
             public static SmoothTimeFormatter Instance = new SmoothTimeFormatter();
 
+            static readonly Regex TemplateRegex = new Regex(
+                @"<(?<tmpl>hr|min|sec)(?:#(?<pl>\d+)(?:\.(?<pr>\d+))?)?(?<mod>[!?])?(?:\+(?<append>.*?))?>",
+                RegexOptions.Compiled
+            );
+
             public string Format(string format, object arg, IFormatProvider formatProvider)
             {
                 if (format != null && format.StartsWith("sfmt::"))
@@ -1572,7 +1581,7 @@ namespace Oxide.Plugins
                     format = format.Remove(0, 6);
                     if (string.IsNullOrWhiteSpace(format))
                     {
-                        format = "<sec::t>";
+                        format = "<sec!>";
                     }
 
                     if (arg is TimeSpan)
@@ -1615,60 +1624,256 @@ namespace Oxide.Plugins
                 return this;
             }
 
-            static string Format(TimeSpan ts, string format)
+            static int GetDigits(int number)
             {
-                var strSecondsTotal = ts.TotalSeconds.ToString("0");
-                var strMinutesTotal = ts.TotalMinutes.ToString("0.##");
-                var strHoursTotal = ts.TotalHours.ToString("0.###");
+                if (number < 10) return 1;
+                if (number < 100) return 2;
+                if (number < 1000) return 3;
+                if (number < 10000) return 4;
+                if (number < 100000) return 5;
+                if (number < 1000000) return 6;
 
-                var strHours = ts.Hours.ToString("0");
-                var strMinutes = ts.Minutes.ToString("0");
-                var strSeconds = ts.Seconds.ToString("0");
-
-                var sb = new StringBuilder(format);
-
-                sb.Replace("<sec::t>", strSecondsTotal);
-                sb.Replace("<min::t>", strMinutesTotal);
-                sb.Replace("<hr::t>", strHoursTotal);
-
-                sb.Replace("<hr>", strHours);
-                sb.Replace("<min>", strMinutes);
-                sb.Replace("<sec>", strSeconds);
-
-                ReplaceOptionalTemplate(sb, "hr", ts.Hours > 0 ? strHours : string.Empty);
-                ReplaceOptionalTemplate(sb, "min", ts.Minutes > 0 ? strMinutes : string.Empty);
-                ReplaceOptionalTemplate(sb, "sec", ts.Seconds > 0 ? strSeconds : string.Empty);
-
-                return sb.ToString();
+                throw new ArgumentOutOfRangeException(nameof(number), "GetDigits does not support values >= 10e6");
             }
 
-            static void ReplaceOptionalTemplate(StringBuilder builder, string template, string replaceValue)
+            static int GetDigits(double number)
             {
-                string templateFull = "<" + template + "?";
-                string format = builder.ToString();
+                return BitConverter.GetBytes(decimal.GetBits(new decimal(Math.Round(number, 6)))[3])[2];
+            }
 
-                int tIndex = 0;
-                while ((tIndex = format.IndexOf(templateFull, tIndex)) != -1)
+            static string PadNumber(double value, int padding, int precision)
+            {
+                //string padding = "";
+                int intPart = (int)value;
+                int intPartDigits = GetDigits(intPart);
+                int floatPartDigits = GetDigits(value);
+                int floatPart = (int)(Math.Pow(10, floatPartDigits) * (value - intPart));
+
+                SmoothRestarter.Instance.Log("Int part of {0} is {1}, digits - {2}", value, intPart, intPartDigits);
+                SmoothRestarter.Instance.Log("Float part of {0} is {1}, digits - {2}", value, floatPart, floatPartDigits);
+
+                StringBuilder builder = new StringBuilder();
+
+                if (intPartDigits < padding)
                 {
-                    var cl = format.IndexOf('>', tIndex);
-                    if (cl == -1)
-                        cl = format.Length - 1;
+                    builder.Append('0', padding - intPartDigits);
+                }
 
-                    var length = cl - tIndex + 1;
+                builder.Append(intPart);
 
-                    if (length > templateFull.Length + 1 && replaceValue.Length != 0)
+                if (precision != 0)
+                {
+                    builder.Append('.');
+                    int fpi = builder.Length;
+                    builder.Append(floatPart);
+
+                    if (precision > floatPartDigits)
                     {
-                        replaceValue += format.Substring(tIndex + templateFull.Length, length - templateFull.Length - 1);
+                        builder.Append('0', precision - floatPartDigits);
+                    }
+                    else if (precision < floatPartDigits)
+                    {
+                        var num = fpi + precision - 1;
+                        builder.Remove(num + 1, builder.Length - num - 1);
                     }
 
-                    builder.Remove(tIndex, length);
+                    //int floatPartIndex = builder.Length;
 
-                    builder.Insert(tIndex, replaceValue);
-
-                    tIndex = cl + (replaceValue.Length - length) + 1;
-
-                    format = builder.ToString();
+                    //if (precision > 0 && floatPartDigits < precision)
+                    //{
+                    //    builder.Append(floatPart);
+                    //    builder.Append('0', precision - floatPartDigits);
+                    //}
+                    //else if (precision < 0 && floatPartDigits > (precision *= -1))
+                    //{
+                    //    builder.Append(floatPart);
+                    //    int num = floatPartIndex + precision;
+                    //    builder.Remove(num, builder.Length - num - 1);
+                    //}
                 }
+
+                SmoothRestarter.Instance.Log("Padded number {0} is {1}", value, builder.ToString());
+
+                return builder.ToString();
+            }
+
+            static string Format(TimeSpan ts, string format)
+            {
+                var templates = Pool.GetList<Template>();
+                templates.AddRange(OrderTemplates(GetTemplates(format)));
+
+                var stringBuilder = new StringBuilder(format);
+
+                for (var i = 0; i < templates.Count; i++)
+                {
+                    var tmpl = templates[i];
+
+                    string replaceValue;
+
+                    double value;
+                    switch (tmpl.Name)
+                    {
+                        case "sec":
+                            if (tmpl.Type == TemplateType.Total)
+                                value = ts.TotalSeconds;
+                            else
+                                value = ts.Seconds;
+                            break;
+
+                        case "min":
+                            if (tmpl.Type == TemplateType.Total)
+                                value = ts.TotalMinutes;
+                            else
+                                value = ts.Minutes;
+                            break;
+
+                        default:
+                            if (tmpl.Type == TemplateType.Total)
+                                value = ts.TotalHours;
+                            else
+                                value = ts.Hours;
+                            break;
+                    }
+
+                    if (tmpl.Type == TemplateType.Optional && value == 0)
+                    {
+                        replaceValue = string.Empty;
+                    }
+                    else
+                    {
+                        replaceValue = PadNumber(value, tmpl.PadLeft, tmpl.PadRight);
+
+                        replaceValue += tmpl.Appender;
+                    }
+
+                    stringBuilder.Remove(tmpl.StartIndex, tmpl.Length);
+
+                    stringBuilder.Insert(tmpl.StartIndex, replaceValue);
+
+                    var lMut = replaceValue.Length - tmpl.Length;
+
+                    for (var j = i + 1; j < templates.Count; j++)
+                    {
+                        var t = templates[j];
+                        t.StartIndex += lMut;
+                        //t.EndIndex += lMut;
+
+                        templates[j] = t;
+                    }
+                }
+
+                Pool.FreeList(ref templates);
+
+                return stringBuilder.ToString();
+
+                //var strSecondsTotal = ts.TotalSeconds.ToString("0");
+                //var strMinutesTotal = ts.TotalMinutes.ToString("0.##");
+                //var strHoursTotal = ts.TotalHours.ToString("0.###");
+
+                //var strHours = ts.Hours.ToString("0");
+                //var strMinutes = ts.Minutes.ToString("0");
+                //var strSeconds = ts.Seconds.ToString("0");
+
+                //var sb = new StringBuilder(format);
+
+                //sb.Replace("<sec::t>", strSecondsTotal);
+                //sb.Replace("<min::t>", strMinutesTotal);
+                //sb.Replace("<hr::t>", strHoursTotal);
+
+                //sb.Replace("<hr>", strHours);
+                //sb.Replace("<min>", strMinutes);
+                //sb.Replace("<sec>", strSeconds);
+
+                //ReplaceOptionalTemplate(sb, "hr", ts.Hours > 0 ? strHours : string.Empty);
+                //ReplaceOptionalTemplate(sb, "min", ts.Minutes > 0 ? strMinutes : string.Empty);
+                //ReplaceOptionalTemplate(sb, "sec", ts.Seconds > 0 ? strSeconds : string.Empty);
+
+                //return sb.ToString();
+            }
+
+            //static void ReplaceOptionalTemplate(StringBuilder builder, string template, string replaceValue)
+            //{
+            //    string templateFull = "<" + template + "?";
+            //    string format = builder.ToString();
+
+            //    int tIndex = 0;
+            //    while ((tIndex = format.IndexOf(templateFull, tIndex)) != -1)
+            //    {
+            //        var cl = format.IndexOf('>', tIndex);
+            //        if (cl == -1)
+            //            cl = format.Length - 1;
+
+            //        var length = cl - tIndex + 1;
+
+            //        if (length > templateFull.Length + 1 && replaceValue.Length != 0)
+            //        {
+            //            replaceValue += format.Substring(tIndex + templateFull.Length, length - templateFull.Length - 1);
+            //        }
+
+            //        builder.Remove(tIndex, length);
+
+            //        builder.Insert(tIndex, replaceValue);
+
+            //        tIndex = cl + (replaceValue.Length - length) + 1;
+
+            //        format = builder.ToString();
+            //    }
+            //}
+
+            static IEnumerable<Template> GetTemplates(string format)
+            {
+                var matches = TemplateRegex.Matches(format);
+
+                for (var i = 0; i < matches.Count; i++)
+                {
+                    var match = matches[i];
+
+                    var template = new Template();
+
+                    template.Name = match.Groups["tmpl"].Value;
+                    template.Type = !match.Groups["mod"].Success ? TemplateType.Normal :
+                        match.Groups["mod"].Value == "!" ? TemplateType.Total : TemplateType.Optional;
+
+                    if (match.Groups["pl"].Success)
+                    {
+                        template.PadLeft = int.Parse(match.Groups["pl"].Value);
+                    }
+
+                    if (match.Groups["pr"].Success)
+                    {
+                        template.PadRight = int.Parse(match.Groups["pr"].Value);
+                    }
+
+                    template.Appender = match.Groups["append"].Value;
+
+                    template.StartIndex = match.Index;
+                    template.Length = match.Length;
+
+                    yield return template;
+                }
+            }
+
+            static IEnumerable<Template> OrderTemplates(IEnumerable<Template> templates)
+            {
+                return templates.OrderBy(t => t.StartIndex);
+            }
+
+            enum TemplateType
+            {
+                Normal,
+                Total,
+                Optional
+            }
+
+            struct Template
+            {
+                public string       Name;
+                public TemplateType Type;
+                public int          PadLeft;
+                public int          PadRight;
+                public string       Appender;
+                public int          StartIndex;
+                public int          Length;
             }
         }
 
