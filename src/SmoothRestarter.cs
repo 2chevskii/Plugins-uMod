@@ -112,12 +112,12 @@ namespace Oxide.Plugins
             [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0:sfmt::<hr?+h ><min?+min ><sec?+s>}</color> left before server restart",
             [M_ANNOUNCE_RESTART_CANCELLED] = "Server restart was cancelled",
             [M_RESTART_SUCCESS] = "Restart initiated successfully",
-            [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:0}</color> seconds left",
+            [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:sfmt::<min#0.0!+ min ><sec?+ seconds>}</color> left",
             [M_STATUS_RESTARTING_NATIVE] = "Server is restarting natively",
             [M_STATUS_PLANNED] = "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> left)",
             [M_STATUS_NO_PLANNED] = "Server is not restarting, no planned restarts found",
             [M_UI_TITLE] = "SmoothRestarter",
-            [M_UI_COUNTDOWN] = "{0:sfmt::<min#2>:<sec#2>} left"
+            [M_UI_COUNTDOWN] = "{0:sfmt::<min#2!>:<sec#2>} left"
         };
 
         #endregion
@@ -1649,8 +1649,8 @@ namespace Oxide.Plugins
                 int floatPartDigits = GetDigits(value);
                 int floatPart = (int)(Math.Pow(10, floatPartDigits) * (value - intPart));
 
-                SmoothRestarter.Instance.Log("Int part of {0} is {1}, digits - {2}", value, intPart, intPartDigits);
-                SmoothRestarter.Instance.Log("Float part of {0} is {1}, digits - {2}", value, floatPart, floatPartDigits);
+                //SmoothRestarter.Instance.Log("Int part of {0} is {1}, digits - {2}", value, intPart, intPartDigits);
+                //SmoothRestarter.Instance.Log("Float part of {0} is {1}, digits - {2}", value, floatPart, floatPartDigits);
 
                 StringBuilder builder = new StringBuilder();
 
@@ -1692,7 +1692,7 @@ namespace Oxide.Plugins
                     //}
                 }
 
-                SmoothRestarter.Instance.Log("Padded number {0} is {1}", value, builder.ToString());
+                //SmoothRestarter.Instance.Log("Padded number {0} is {1}", value, builder.ToString());
 
                 return builder.ToString();
             }
