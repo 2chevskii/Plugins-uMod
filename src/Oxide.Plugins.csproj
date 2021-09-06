@@ -48,6 +48,7 @@
     <Compile Include="SmoothRestarter.cs" />
     <Compile Include="TeleportGun.cs" />
     <Compile Include="TickrateLimiter.cs" />
+    <Compile Include="UModVersionChecker.cs" />
     <Compile Include="WhereIsMyHorse.cs" />
     <Compile Include="WipeDataCleaner.cs" />
   </ItemGroup>
