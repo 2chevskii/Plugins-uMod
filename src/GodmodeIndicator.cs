@@ -17,7 +17,7 @@ using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.1.1")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.1.2")]
     [Description("Displays an indicator on screen if a player is in godmode")]
     class GodmodeIndicator : CovalencePlugin
     {
@@ -104,13 +104,17 @@ namespace Oxide.Plugins
         void OnUserConnected(IPlayer user)
         {
             var player = (BasePlayer)user.Object;
-            idToComponent[player.UserIDString] = player.gameObject.AddComponent<GodmodeUi>();
+            player.gameObject.AddComponent<GodmodeUi>();
         }
 
         void OnPlayerSleepEnded(BasePlayer player)
         {
             Debug.Assert(idToComponent.ContainsKey(player.UserIDString));
-            idToComponent[player.UserIDString].OnSleepEnded();
+
+            if (idToComponent.ContainsKey(player.UserIDString)) // Ok we check it here now to get rid of errors, but I STILL DONT HAVE ANY FUCKING CLUE why they are possible in the first place
+            {
+                idToComponent[player.UserIDString].OnSleepEnded();
+            }
         }
 
         void OnUserDisconnected(IPlayer user)
@@ -223,7 +227,7 @@ namespace Oxide.Plugins
             {
                 player = GetComponent<BasePlayer>();
 
-                //Instance.idToComponent[player.UserIDString] = this;
+                Instance.idToComponent[player.UserIDString] = this;
             }
 
             void Start()
