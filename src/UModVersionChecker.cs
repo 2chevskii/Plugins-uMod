@@ -9,7 +9,7 @@ using Oxide.Core.Plugins;
 
 namespace Oxide.Plugins
 {
-    [Info("uMod Version Checker", "2CHEVSKII", "0.1.0")]
+    [Info("uMod Version Checker", "2CHEVSKII", "0.1.0")] // Rename to Oxide-version-checker
     [Description("Utility methods for getting uMod versions")]
     public class UModVersionChecker : CovalencePlugin
     {
