@@ -2,7 +2,7 @@
 <!-- markdownlint-disable-next-line md041 -->
 [![Logo][logo]][umod_plugins_page]
 
-# Oxide/uMod plugins collection<br>
+# <div align="center">**[Oxide & uMod plugins][oxide_umod]**</div>
 
 <!-- Disable MDL on badges -->
 <!-- markdownlint-disable-next-line md013 -->
@@ -41,3 +41,4 @@
 [twitch_channel]: https://www.twitch.tv/2chevskii_here
 [twitter_profile]: https://twitter.com/bitard1942
 [paypal_me_link]: https://www.paypal.com/paypalme2/2chevskii
+[oxide_umod]: https://umod.org/
