@@ -2,7 +2,7 @@
 <!-- markdownlint-disable-next-line md041 -->
 [![Logo][logo]][umod_plugins_page]
 
-# <center>Oxide/uMod plugins collection</center>
+# Oxide/uMod plugins collection<br>
 
 <!-- Disable MDL on badges -->
 <!-- markdownlint-disable-next-line md013 -->

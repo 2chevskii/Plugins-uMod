@@ -19,7 +19,7 @@
       "list_items": false
     },
     "no-inline-html": {
-      "allowed_elements": ["br", "center"]
+      "allowed_elements": ["br"]
     },
     "hr-style": {
       "style": "---"
