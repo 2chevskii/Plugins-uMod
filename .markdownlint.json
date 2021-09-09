@@ -1,0 +1,33 @@
+{
+    "heading-style": {
+      "style": "atx"
+    },
+    "ul-style": {
+      "style": "dash"
+    },
+    "line-length": {
+      "code_blocks": false
+    },
+    "commands-show-output": false,
+    "no-duplicate-heading": {
+      "siblings_only": true
+    },
+    "ol-prefix": {
+      "style": "ordered"
+    },
+    "blanks-around-fences": {
+      "list_items": false
+    },
+    "no-inline-html": {
+      "allowed_elements": ["br", "div"]
+    },
+    "hr-style": {
+      "style": "---"
+    },
+    "code-block-style": {
+      "style": "fenced"
+    },
+    "code-fence-style": {
+      "style": "backtick"
+    }
+  }

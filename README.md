@@ -1,22 +1,30 @@
+<!-- Disable MDL on logo -->
+<!-- markdownlint-disable-next-line md041 -->
+[![Logo][logo]][umod_plugins_page]
 
-[![][logo]][umod_plugins_page]
-# Oxide/uMod plugins collection [![][license_shield]][license] ![][stars_badge] ![][last_commit_badge] [![][discord_badge]][discord]
+# <div align="center">**[Oxide & uMod plugins][oxide_umod]**</div>
+
+<!-- Disable MDL on badges -->
+<!-- markdownlint-disable-next-line md013 -->
+[![License badge][license_shield]][license] ![Latest commit badge][last_commit_badge] [![Discord badge][discord_badge]][discord] <!-- ![GitHub Stars badge][stars_badge] -->
 
 ## Contact me
+
 - Discord (Plugin requests, questions, business)
-  - [My server][discord]
-  - *My discord tag:* `2CHEVSKII#9066`
+  - **[Server][discord]**
+  - **Profile:** `2CHEVSKII#9066`
 - Plugin distribution platforms
-  - [RustWorkshop][rws_profile]
   - [uMod][umod_profile]
+  <!-- - [RustWorkshop][rws_profile] -->
 - Social
   - [YouTube][yt_channel]
-  - [Twitch][twitch_channel]
   - [Twitter][twitter_profile]
+  <!-- - [Twitch][twitch_channel] -->
 
 ## Support me
+
 - PayPal
-  - *Email:* `prsroman3@gmail.com`
+  - **Email:** `prsroman3@gmail.com`
   - [PayPal.me][paypal_me_link]
 
 [logo]: https://i.imgur.com/mqPOWtp.png
@@ -33,3 +41,4 @@
 [twitch_channel]: https://www.twitch.tv/2chevskii_here
 [twitter_profile]: https://twitter.com/bitard1942
 [paypal_me_link]: https://www.paypal.com/paypalme2/2chevskii
+[oxide_umod]: https://umod.org/
