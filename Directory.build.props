@@ -9,6 +9,7 @@
 
     <PropertyGroup>
         <ReferenceDir Condition="'$(CustomRefPath)' != ''">$(CustomRefPath)</ReferenceDir>
+        <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(ProjectDir)/References/')">$(ProjectDir)/References/</ReferenceDir>
         <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(SolutionDir)/References/')">$(SolutionDir)/References/</ReferenceDir>
         <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(SolutionDir)/../References/')">$(SolutionDir)/../References/</ReferenceDir>
     </PropertyGroup>
