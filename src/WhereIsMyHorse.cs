@@ -1,148 +1,289 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Newtonsoft.Json;
+
 using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
+
 using UnityEngine;
+
+using Layer = Rust.Layer;
+using Physics = UnityEngine.Physics;
+using Pool = Facepunch.Pool;
+using Time = UnityEngine.Time;
 
 namespace Oxide.Plugins
 {
-	[Info("Where is My Horse", "2CHEVSKII", "0.2.2")]
-	[Description("Here is your horse, sir!")]
-	internal class WhereIsMyHorse : RustPlugin
-	{
-		#region -uMod Hooks-
+    [Info("Where is My Horse", "2CHEVSKII", "1.0.0")]
+    [Description("Here is your horse, sir!")]
+    class WhereIsMyHorse : CovalencePlugin
+    {
+        #region Fields
 
+        const string PERMISSION_USE    = "whereismyhorse.use";
+        const string PERMISSION_USE_ON = "whereismyhorse.useon";
+        const int    DEFAULT_COOLDOWN  = 300;
+        const string HORSE_PREFAB      = "assets/rust.ai/nextai/testridablehorse.prefab";
 
-		private void Init()
-		{
-			permission.RegisterPermission("whereismyhorse.use", this);
-			permission.RegisterPermission("whereismyhorse.nocooldown", this);
-			cmd.AddChatCommand("horse", this, "SpawnHorse");
-		}
+        readonly int layerMask = LayerMask.GetMask(
+            nameof(Layer.Terrain),
+            nameof(Layer.Construction),
+            nameof(Layer.World),
+            nameof(Layer.Clutter)
+        );
 
+        readonly Dictionary<string, float> lastUsed = new Dictionary<string, float>();
 
-		#endregion
+        PluginSettings settings;
 
-		#region -Core-
+        #endregion
 
+        #region Oxide hooks
 
-		private void SpawnHorse(BasePlayer player, string command, string[] args)
-		{
-			object escape = !useNoEscape ? null : Interface.CallHook("IsEscapeBlocked", player.UserIDString);
-			if(!Cooldowns.ContainsKey(player.userID)) Cooldowns.Add(player.userID, -1f);
-			RaycastHit hitPoint = default(RaycastHit);
+        void Init()
+        {
+            permission.RegisterPermission(PERMISSION_USE, this);
+            permission.RegisterPermission(PERMISSION_USE_ON, this);
 
-			if(!permission.UserHasPermission(player.UserIDString, "whereismyhorse.use"))
-			{
-				MessagePlayer(player, "No permission");
-			}
-			else if(!player.IsOutside() && !allowInside)
-			{
-				MessagePlayer(player, "Can't spawn indoors");
-			}
-			else if(!Physics.Raycast(player.eyes.HeadRay(), out hitPoint, 20f))
-			{
-				MessagePlayer(player, "No point for spawn");
-			}
-			else if((int)(Time.realtimeSinceStartup - Cooldowns[player.userID]) < cooldown && !permission.UserHasPermission(player.UserIDString, "whereismyhorse.nocooldown"))
-			{
-				MessagePlayer(player, "Cooldown");
-			}
-			else if(escape != null && (bool)escape == true)
-			{
-				MessagePlayer(player, "NoEscape");
-			}
-			else
-			{
-				List<RidableHorse> list = new List<RidableHorse>();
-				Vis.Entities(hitPoint.point, 3f, list);
+            foreach (var perm in settings.CooldownGroups.Keys)
+            {
+                permission.RegisterPermission(ConstructPermission(perm), this);
+            }
 
-				if(list.Count > 0)
-				{
-					MessagePlayer(player, "Horse nearby");
+            AddCovalenceCommand("horse", nameof(SpawnHorse));
+        }
 
-					return;
-				}
+        #endregion
 
-				Vector3 vector = new Vector3();
+        #region Core
 
-				vector = hitPoint.point;
-				vector.y = TerrainMeta.HeightMap.GetHeight(vector);
+        string ConstructPermission(string perm)
+        {
+            return "whereismyhorse." + perm;
+        }
 
-				BaseEntity horse = GameManager.server.CreateEntity("assets/rust.ai/nextai/testridablehorse.prefab", vector);
+        bool CheckPermission(IPlayer player, string perm, bool allowServer = false)
+        {
+            if (player.IsServer)
+            {
+                return allowServer;
+            }
 
-				if(horse)
-				{
-					horse.Spawn();
-					MessagePlayer(player, "Spawned");
-					Cooldowns[player.userID] = Time.realtimeSinceStartup;
-				}
-				else
-				{
-					MessagePlayer(player, "NRE");
-				}
-			}
-		}
+            if (!player.HasPermission(perm))
+            {
+                Message(player, "No permission");
+                return false;
+            }
 
+            return true;
+        }
 
-		#endregion
+        int GetSmallestCooldown(IPlayer player)
+        {
+            var perms = settings.CooldownGroups.Keys.Where(p => player.HasPermission(ConstructPermission(p))).ToArray();
 
-		#region -Constants and global variables-
+            if (perms.Length == 0)
+            {
+                return DEFAULT_COOLDOWN;
+            }
 
+            var min = perms.Select(p => settings.CooldownGroups[p]).Min();
 
-		private const string PERMISSIONUSE  = "whereismyhorse.use";
-		private const string PERMISSIONNOCD = "whereismyhorse.nocooldown";
+            return min;
+        }
 
-		private bool allowInside = false;
-		private int  cooldown    = 300;
-		private bool useNoEscape = false;
+        bool CheckCooldown(IPlayer player)
+        {
+            if (!lastUsed.ContainsKey(player.Id))
+            {
+                return true;
+            }
 
-		private Dictionary<ulong, float> Cooldowns { get; } = new Dictionary<ulong, float>();
+            var cd = GetSmallestCooldown(player);
+            var timeSince = Time.realtimeSinceStartup - lastUsed[player.Id];
 
+            if (timeSince > cd)
+            {
+                return true;
+            }
 
-		#endregion
+            Message(player, "Cooldown", (int)(cd - timeSince));
 
-		#region -Configuration-
+            return false;
+        }
 
+        void CommandHandler(IPlayer player, string command, string[] args)
+        {
+            if (args.Length == 0)
+            {
+                SpawnHorse(player);
+            }
+            else
+            {
+                var targetId = args[0];
+                var targetPlayer = players.FindPlayer(targetId);
 
-		protected override void LoadDefaultConfig() => PrintWarning("Default configuration has been loaded...");
+                if (targetPlayer == null || !targetPlayer.IsConnected || targetPlayer.IsSleeping || targetPlayer.Health <= 0)
+                {
+                    Message(player, "Player not found", targetId);
+                }
+                else
+                {
+                    SpawnHorse(player, true);
+                }
+            }
+        }
 
-		protected override void LoadConfig()
-		{
-			base.LoadConfig();
-			CheckCFG("Allow spawning horses inside the building", ref allowInside);
-			CheckCFG("Cooldown on usage", ref cooldown);
-			CheckCFG("Use NoEscape API", ref useNoEscape);
-			SaveConfig();
-		}
+        void SpawnHorse(IPlayer player, bool bypassChecks = false) // bypass permissions and other stuff
+        {
+            if (!CheckPermission(player, PERMISSION_USE))
+            {
+                return;
+            }
 
-		private void CheckCFG<T>(string key, ref T var)
-		{
-			if(Config[key] is T) var = (T)Config[key];
-			else Config[key] = var;
-		}
+            if (!CheckCooldown(player))
+            {
+                return;
+            }
 
+            if (settings.UseNoEscape && Interface.CallHook("IsEscapeBlocked", player.Id) != null)
+            {
+                Message(player, "NoEscape");
+                return;
+            }
 
-		#endregion
+            var basePlayer = (BasePlayer)player.Object;
 
-		#region -LangAPI-
+            if (!settings.AllowInside && !basePlayer.IsOutside())
+            {
+                Message(player, "Can't spawn indoors");
+                return;
+            }
 
+            RaycastHit hit;
 
-		private Dictionary<string, string> DefaultMessages_EN { get; } = new Dictionary<string, string> {
-			{ "No permission", "You have no access to that command." },
-			{ "No point for spawn", "No raycast hit! Look at something." },
-			{ "Can't spawn indoors", "You can use that command only when outside!" },
-			{ "Spawned", "Your horse has been spawned, sir! Don't forget to feed it!" },
-			{ "Cooldown", "You have called you horse recently, wait a bit, please." },
-			{ "Prefix", "[WHERE IS MY HORSE]" },
-			{ "NoEscape", "Can't use command while escape blocked!" },
-			{ "NRE", "Could not spawn a horse, it's null. Maybe next time?" },
-			{ "Horse nearby", "There is a horse very close, consider using it instead." }
-		};
+            if (!Physics.Raycast(basePlayer.eyes.HeadRay(), out hit, 20f, layerMask))
+            {
+                Message(player, "No point for spawn");
+                return;
+            }
 
-		private void MessagePlayer(BasePlayer player, string message) => player?.ChatMessage($"{lang.GetMessage("Prefix", this, player.UserIDString)} {lang.GetMessage(message, this, player.UserIDString)}");
+            var list = Pool.GetList<RidableHorse>();
 
-		protected override void LoadDefaultMessages() => lang.RegisterMessages(DefaultMessages_EN, this, "en");
+            Vis.Entities(hit.point, 3f, list);
 
+            var hc = list.Count;
 
-		#endregion
-	}
+            Pool.FreeList(ref list);
+
+            if (hc > 0)
+            {
+                Message(player, "Horse nearby");
+                return;
+            }
+
+            var rot = Quaternion.LookRotation(-basePlayer.eyes.BodyForward(), Vector3.up);
+
+            var horse = GameManager.server.CreateEntity(HORSE_PREFAB, hit.point, rot);
+
+            if (!horse)
+            {
+                Message(player, "NRE");
+            }
+            else
+            {
+                horse.transform.Rotate(Vector3.up, 90f);
+                lastUsed[player.Id] = Time.realtimeSinceStartup;
+                Message(player, "Spawned");
+                horse.Spawn();
+            }
+        }
+
+        #endregion
+
+        #region Configuration
+
+        protected override void LoadDefaultConfig()
+        {
+            Log("Loading default configuration...");
+            settings = PluginSettings.Default;
+            SaveConfig();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+
+            try
+            {
+                settings = Config.ReadObject<PluginSettings>();
+
+                if (settings == null || settings.CooldownGroups == null)
+                {
+                    throw new Exception("Configuration load error");
+                }
+            }
+            catch (Exception e)
+            {
+                LogError(e.Message);
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(settings);
+        }
+
+        #endregion
+
+        #region LangAPI
+
+        void Message(IPlayer player, string langKey, params object[] args)
+        {
+            player.Message(lang.GetMessage(langKey, this, player.Id), lang.GetMessage("Prefix", this, player.Id), args);
+        }
+
+        protected override void LoadDefaultMessages() => lang.RegisterMessages(new Dictionary<string, string> {
+            { "No permission", "You have no access to that command." },
+            { "No point for spawn", "No raycast hit! Look at something." },
+            { "Can't spawn indoors", "You can use that command only when outside!" },
+            { "Spawned", "Your horse has been spawned, sir! Don't forget to feed it!" },
+            { "Cooldown", "You have called you horse recently, wait a bit, please. ({0} seconds left)" },
+            { "Prefix", "[WHERE IS MY HORSE]" },
+            { "NoEscape", "Can't use command while escape blocked!" },
+            { "NRE", "Could not spawn a horse, it's null. Maybe next time?" },
+            { "Horse nearby", "There is a horse very close, consider using it instead." },
+            { "Player not found", "Player {0} was not found." },
+            { "Horse spawned", "Horse was spawned for player {0}" }
+        }, this, "en");
+
+        #endregion
+
+        #region Nested types
+
+        class PluginSettings
+        {
+            public static PluginSettings Default =>
+                new PluginSettings {
+                    CooldownGroups = new Dictionary<string, int> {
+                        ["nocooldown"] = 0,
+                        ["vip"] = 30
+                    },
+                    AllowInside = false,
+                    UseNoEscape = true
+                };
+
+            [JsonProperty("Cooldowns")]
+            public Dictionary<string, int> CooldownGroups { get; set; }
+            [JsonProperty("Allow usage inside building")]
+            public bool AllowInside { get; set; }
+            [JsonProperty("Use NoEscape")]
+            public bool UseNoEscape { get; set; }
+        }
+
+        #endregion
+    }
 }
