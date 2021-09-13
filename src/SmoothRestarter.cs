@@ -27,7 +27,7 @@ using Pool = Facepunch.Pool;
 
 namespace Oxide.Plugins
 {
-    [Info("SmoothRestarter", "2CHEVSKII", "3.1.0")]
+    [Info("SmoothRestarter", "2CHEVSKII", "3.1.1")]
     [Description("A reliable way to shutdown your server when you need it")]
     public class SmoothRestarter : CovalencePlugin
     {
@@ -1421,6 +1421,12 @@ namespace Oxide.Plugins
 
             bool NeedsRestartOnTime(out DateTime restartTime)
             {
+                if (restartQueue == null || restartQueue.Count == 0)
+                {
+                    restartTime = default(DateTime);
+                    return false;
+                }
+
                 double diff;
                 restartTime = FindNextRestartTime(out diff);
 
