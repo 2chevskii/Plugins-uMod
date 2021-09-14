@@ -9,8 +9,7 @@ using Oxide.Core.Libraries.Covalence;
 
 using UnityEngine;
 
-using Layer = Rust.Layer;
-using Physics = UnityEngine.Physics;
+//using Layer = Rust.Layer;
 using Pool = Facepunch.Pool;
 using Time = UnityEngine.Time;
 
@@ -27,12 +26,29 @@ namespace Oxide.Plugins
         const int    DEFAULT_COOLDOWN  = 300;
         const string HORSE_PREFAB      = "assets/rust.ai/nextai/testridablehorse.prefab";
 
-        readonly int layerMask = LayerMask.GetMask(
-            nameof(Layer.Terrain),
-            nameof(Layer.Construction),
-            nameof(Layer.World),
-            nameof(Layer.Clutter)
-        );
+        const string M_CHAT_PREFIX        = "Prefix",
+                     M_NO_PERMISSION      = "No permission",
+                     M_CANT_SPAWN_INDOORS = "Can't spawn indoors",
+                     M_SPAWNED            = "Spawned",
+                     M_COOLDOWN           = "Cooldown",
+                     M_NO_ESCAPE          = "NoEscape",
+                     M_NRE                = "NRE",
+                     M_HORSE_NEARBY       = "Horse nearby",
+                     M_PLAYER_NOT_FOUND   = "Player not found",
+                     M_HORSE_SPAWNED      = "Horse spawned (on player)",
+                     M_NO_POINT_FOR_SPAWN = "No point for spawn";
+
+        const float /*RAYCAST_DISTANCE   = 20f,*/
+                    HORSE_NEARBY_RANGE = 5f;
+
+        //readonly int layerMask = LayerMask.GetMask(
+        //    nameof(Layer.Terrain),
+        //    nameof(Layer.Construction),
+        //    nameof(Layer.World),
+        //    nameof(Layer.Clutter)
+        //);
+
+        //readonly int layerMaskConstruction = LayerMask.GetMask(nameof(Layer.Construction));
 
         readonly Dictionary<string, float> lastUsed = new Dictionary<string, float>();
 
@@ -52,12 +68,58 @@ namespace Oxide.Plugins
                 permission.RegisterPermission(ConstructPermission(perm), this);
             }
 
-            AddCovalenceCommand("horse", nameof(SpawnHorse));
+            AddCovalenceCommand("horse", nameof(CommandHandler));
         }
 
         #endregion
 
         #region Core
+
+        bool FindSpawnPoint(BasePlayer targetPlayer, out Vector3 spawnPoint, float spawnDistance = 3f) // move horse on top of the construction block if present
+        {
+            var refPos = targetPlayer.ServerPosition;
+            var refRot = targetPlayer.eyes.rotation;
+
+            var mod = 1;
+            for (var i = 0; i <= 90; i++)
+            {
+                var rotation = refRot * Quaternion.Inverse(Quaternion.AngleAxis(i * mod, Vector3.up));
+                var direction = rotation * Vector3.forward * spawnDistance;
+                var pos = refPos + direction;
+
+                float height = TerrainMeta.HeightMap.GetHeight(pos);
+
+                var list = Pool.GetList<BuildingBlock>();
+                Vis.Entities(pos, 1f, list);
+
+                if (list.Count != 0)
+                {
+                    var bb = list[0];
+                    height = bb.transform.position.y;
+                }
+
+                Pool.FreeList<BuildingBlock>(ref list);
+
+                if (height > 0 && Math.Abs(height - refPos.y) <= 5f)
+                {
+                    pos.y = height;
+                    spawnPoint = pos;
+                    return true;
+                }
+
+                if (i == 90)
+                {
+                    if (mod == -1)
+                    {
+                        break;
+                    }
+
+                    i = mod = -1;
+                }
+            }
+            spawnPoint = default(Vector3);
+            return false;
+        }
 
         string ConstructPermission(string perm)
         {
@@ -66,18 +128,12 @@ namespace Oxide.Plugins
 
         bool CheckPermission(IPlayer player, string perm, bool allowServer = false)
         {
-            if (player.IsServer)
+            if (player.IsServer && allowServer || !player.IsServer && player.HasPermission(perm))
             {
-                return allowServer;
+                return true;
             }
-
-            if (!player.HasPermission(perm))
-            {
-                Message(player, "No permission");
-                return false;
-            }
-
-            return true;
+            Message(player, M_NO_PERMISSION);
+            return false;
         }
 
         int GetSmallestCooldown(IPlayer player)
@@ -109,96 +165,144 @@ namespace Oxide.Plugins
                 return true;
             }
 
-            Message(player, "Cooldown", (int)(cd - timeSince));
+            Message(player, M_COOLDOWN, (int)(cd - timeSince));
 
             return false;
         }
 
-        void CommandHandler(IPlayer player, string command, string[] args)
+        bool CheckNoEscape(IPlayer player)
+        {
+            if (!settings.UseNoEscape)
+            {
+                return true;
+            }
+
+            var callResult = Interface.CallHook("IsEscapeBlocked", player.Id);
+            if (callResult == null || callResult is bool && (bool)callResult == false)
+            {
+                return true;
+            }
+
+            Message(player, M_NO_ESCAPE);
+            return false;
+        }
+
+        bool CheckOutside(BasePlayer player)
+        {
+            if (settings.AllowInside || player.IsOutside())
+            {
+                return true;
+            }
+
+            Message(player.IPlayer, M_CANT_SPAWN_INDOORS);
+            return false;
+        }
+
+        void CommandHandler(IPlayer player, string _, string[] args)
         {
             if (args.Length == 0)
             {
-                SpawnHorse(player);
+                if (!CheckPermission(player, PERMISSION_USE))
+                {
+                    return;
+                }
+
+                if (!CheckCooldown(player))
+                {
+                    return;
+                }
+
+                if (!CheckNoEscape(player))
+                {
+                    return;
+                }
+
+                var basePlayer = (BasePlayer)player.Object;
+
+                if (!CheckOutside(basePlayer))
+                {
+                    return;
+                }
+
+                if (IsHorseNearby(basePlayer.transform.position))
+                {
+                    Message(player, M_HORSE_NEARBY);
+                    return;
+                }
+
+                Vector3 position;
+                if (!FindSpawnPoint(basePlayer, out position))
+                {
+                    Message(player, M_NO_POINT_FOR_SPAWN);
+                    return;
+                }
+
+                var rotation = GetHorseRotation(basePlayer.eyes.rotation);
+
+                //basePlayer.SendConsoleCommand("ddraw.text",);
+                SpawnHorse(position, rotation);
+                lastUsed[player.Id] = Time.realtimeSinceStartup;
+                Message(player, M_SPAWNED);
             }
             else
             {
+                if (!CheckPermission(player, PERMISSION_USE_ON, true))
+                {
+                    return;
+                }
+
                 var targetId = args[0];
                 var targetPlayer = players.FindPlayer(targetId);
 
                 if (targetPlayer == null || !targetPlayer.IsConnected || targetPlayer.IsSleeping || targetPlayer.Health <= 0)
                 {
-                    Message(player, "Player not found", targetId);
+                    Message(player, M_PLAYER_NOT_FOUND, targetId);
                 }
                 else
                 {
-                    SpawnHorse(player, true);
+                    Vector3 position;
+                    var basePlayer = (BasePlayer)targetPlayer.Object;
+
+                    if (!FindSpawnPoint(basePlayer, out position))
+                    {
+                        Message(player, M_NO_POINT_FOR_SPAWN);
+                        return;
+                    }
+
+                    var rotation = GetHorseRotation(basePlayer.eyes.rotation);
+
+                    SpawnHorse(position, rotation);
+                    Message(player, M_HORSE_SPAWNED, targetPlayer.Name);
+                    Message(targetPlayer, M_SPAWNED);
                 }
             }
         }
 
-        void SpawnHorse(IPlayer player, bool bypassChecks = false) // bypass permissions and other stuff
+        bool IsHorseNearby(Vector3 position)
         {
-            if (!CheckPermission(player, PERMISSION_USE))
-            {
-                return;
-            }
-
-            if (!CheckCooldown(player))
-            {
-                return;
-            }
-
-            if (settings.UseNoEscape && Interface.CallHook("IsEscapeBlocked", player.Id) != null)
-            {
-                Message(player, "NoEscape");
-                return;
-            }
-
-            var basePlayer = (BasePlayer)player.Object;
-
-            if (!settings.AllowInside && !basePlayer.IsOutside())
-            {
-                Message(player, "Can't spawn indoors");
-                return;
-            }
-
-            RaycastHit hit;
-
-            if (!Physics.Raycast(basePlayer.eyes.HeadRay(), out hit, 20f, layerMask))
-            {
-                Message(player, "No point for spawn");
-                return;
-            }
-
             var list = Pool.GetList<RidableHorse>();
+            var b = false;
 
-            Vis.Entities(hit.point, 3f, list);
+            Vis.Entities(position, HORSE_NEARBY_RANGE, list);
 
-            var hc = list.Count;
+            if (list.Count > 0)
+            {
+                b = true;
+            }
 
             Pool.FreeList(ref list);
+            return b;
+        }
 
-            if (hc > 0)
-            {
-                Message(player, "Horse nearby");
-                return;
-            }
+        Quaternion GetHorseRotation(Quaternion playerRotation)
+        {
+            return playerRotation * Quaternion.Inverse(Quaternion.AngleAxis(90, Vector3.up));
+        }
 
-            var rot = Quaternion.LookRotation(-basePlayer.eyes.BodyForward(), Vector3.up);
+        void SpawnHorse(Vector3 position, Quaternion rotation)
+        {
+            GameManager.server.CreateEntity(HORSE_PREFAB, position, rotation).Spawn();
 
-            var horse = GameManager.server.CreateEntity(HORSE_PREFAB, hit.point, rot);
-
-            if (!horse)
-            {
-                Message(player, "NRE");
-            }
-            else
-            {
-                horse.transform.Rotate(Vector3.up, 90f);
-                lastUsed[player.Id] = Time.realtimeSinceStartup;
-                Message(player, "Spawned");
-                horse.Spawn();
-            }
         }
 
         #endregion
@@ -247,17 +351,17 @@ namespace Oxide.Plugins
         }
 
         protected override void LoadDefaultMessages() => lang.RegisterMessages(new Dictionary<string, string> {
-            { "No permission", "You have no access to that command." },
-            { "No point for spawn", "No raycast hit! Look at something." },
-            { "Can't spawn indoors", "You can use that command only when outside!" },
-            { "Spawned", "Your horse has been spawned, sir! Don't forget to feed it!" },
-            { "Cooldown", "You have called you horse recently, wait a bit, please. ({0} seconds left)" },
-            { "Prefix", "[WHERE IS MY HORSE]" },
-            { "NoEscape", "Can't use command while escape blocked!" },
-            { "NRE", "Could not spawn a horse, it's null. Maybe next time?" },
-            { "Horse nearby", "There is a horse very close, consider using it instead." },
-            { "Player not found", "Player {0} was not found." },
-            { "Horse spawned", "Horse was spawned for player {0}" }
+            { M_NO_PERMISSION, "You have no access to that command." },
+            { M_NO_POINT_FOR_SPAWN, "Cannot spawn horse at the current position." },
+            { M_CANT_SPAWN_INDOORS, "You can use that command only when outside!" },
+            { M_SPAWNED, "Your horse has been spawned, sir! Don't forget to feed it!" },
+            { M_COOLDOWN, "You have called you horse recently, wait a bit, please. ({0} seconds left)" },
+            { M_CHAT_PREFIX, "[WHERE IS MY HORSE]" },
+            { M_NO_ESCAPE, "Can't use command while escape blocked!" },
+            { M_NRE, "Could not spawn a horse, it's null. Maybe next time?" },
+            { M_HORSE_NEARBY, "There is a horse very close, consider using it instead." },
+            { M_PLAYER_NOT_FOUND, "Player {0} was not found." },
+            { M_HORSE_SPAWNED, "Horse was spawned for player {0}" }
         }, this, "en");
 
         #endregion
