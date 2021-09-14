@@ -13,6 +13,10 @@ using UnityEngine;
 using Pool = Facepunch.Pool;
 using Time = UnityEngine.Time;
 
+/*  API:
+ *  OnHorseSpawned(byPlayer, forPlayer, horse);
+ */
+
 namespace Oxide.Plugins
 {
     [Info("Where is My Horse", "2CHEVSKII", "1.0.0")]
@@ -69,6 +73,21 @@ namespace Oxide.Plugins
             }
 
             AddCovalenceCommand("horse", nameof(CommandHandler));
+
+            if (!settings.PreventLooting)
+            {
+                Unsubscribe(nameof(CanLootEntity));
+            }
+        }
+
+        object CanLootEntity(BasePlayer player, RidableHorse horse)
+        {
+            if (!horse.tag.Contains("wmhorse") || horse.OwnerID == player.userID)
+            {
+                return null;
+            }
+
+            return true;
         }
 
         #endregion
@@ -240,9 +259,11 @@ namespace Oxide.Plugins
                 var rotation = GetHorseRotation(basePlayer.eyes.rotation);
 
                 //basePlayer.SendConsoleCommand("ddraw.text",);
-                SpawnHorse(position, rotation);
+                var horse = SpawnHorse(position, rotation, basePlayer.OwnerID);
                 lastUsed[player.Id] = Time.realtimeSinceStartup;
                 Message(player, M_SPAWNED);
+
+                Interface.CallHook("OnHorseSpawned", player, player, horse);
             }
             else
             {
@@ -271,9 +292,16 @@ namespace Oxide.Plugins
 
                     var rotation = GetHorseRotation(basePlayer.eyes.rotation);
 
-                    SpawnHorse(position, rotation);
+                    var horse = SpawnHorse(position, rotation, basePlayer.OwnerID);
                     Message(player, M_HORSE_SPAWNED, targetPlayer.Name);
                     Message(targetPlayer, M_SPAWNED);
+
+                    Interface.CallHook(
+                        "OnHorseSpawned",
+                        player,
+                        targetPlayer,
+                        horse
+                    );
                 }
             }
         }
@@ -299,10 +327,15 @@ namespace Oxide.Plugins
             return playerRotation * Quaternion.Inverse(Quaternion.AngleAxis(90, Vector3.up));
         }
 
-        void SpawnHorse(Vector3 position, Quaternion rotation)
+        RidableHorse SpawnHorse(Vector3 position, Quaternion rotation, ulong ownerid)
         {
-            GameManager.server.CreateEntity(HORSE_PREFAB, position, rotation).Spawn();
+            var horse = (RidableHorse)GameManager.server.CreateEntity(HORSE_PREFAB, position, rotation);
+            horse.Spawn();
 
+            horse.tag += "wmhorse";
+            horse.OwnerID = ownerid;
+
+            return horse;
         }
 
         #endregion
@@ -386,6 +419,8 @@ namespace Oxide.Plugins
             public bool AllowInside { get; set; }
             [JsonProperty("Use NoEscape")]
             public bool UseNoEscape { get; set; }
+            [JsonProperty("Prevent looting for non-owner")]
+            public bool PreventLooting { get; set; }
         }
 
         #endregion
