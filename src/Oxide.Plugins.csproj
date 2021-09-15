@@ -39,6 +39,7 @@
     <Compile Include="RealisticExplosions.cs" />
     <Compile Include="Replenish.cs" />
     <Compile Include="SmoothRestarter.cs" />
+    <Compile Include="SmoothRestarterRejoinRewards.cs" />
     <Compile Include="TeleportGun.cs" />
     <Compile Include="TickrateLimiter.cs" />
     <Compile Include="UModVersionChecker.cs" />
