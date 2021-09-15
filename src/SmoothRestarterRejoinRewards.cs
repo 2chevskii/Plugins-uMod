@@ -1,12 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿// #define DEBUG
 
-using Facepunch;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 using Newtonsoft.Json;
 
 using Oxide.Core;
+using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
 
@@ -18,38 +20,26 @@ namespace Oxide.Plugins
     [Description("Reward players if they re-join after restart")]
     public class SmoothRestarterRejoinRewards : CovalencePlugin
     {
+        #region Fields
+
         const string PERMISSION_PREFIX = "smoothrestarterrejoinrewards.";
 
         const string M_PREFIX     = "Chat prefix",
                      M_REWARDS    = "Chance to claim rewards",
                      M_UNCLAIMED  = "Has unclaimed rewards",
-                     M_NO_REWARDS = "No unclaimed rewards";
+                     M_NO_REWARDS = "No unclaimed rewards",
+                     M_NO_SPACE   = "Not enough space",
+                     M_CLAIMED    = "All rewards claimed";
 
-        [PluginReference] Plugin                        SmoothRestarter;
-        PluginSettings                                  settings;
-        Dictionary<string, PluginSettings.RewardItem[]> delayedItems;
-        bool                                            srLoaded;
-        HashSet<string>                                 rewardClaimers;
-        Timer                                           notificationTimer;
+        [PluginReference] Plugin                            SmoothRestarter;
+        PluginSettings                                      settings;
+        Dictionary<string, List<PluginSettings.RewardItem>> delayedItems;
+        List<string>                                        rewardClaimers;
+        Timer                                               notificationTimer;
+        DateTime                                            currentRestartTime;
+        bool                                                isRestarting;
 
-        bool IsRestarting => SmoothRestarter.Call<bool>("IsSmoothRestarting");
-        DateTime? CurrentRestartTime => SmoothRestarter.Call<DateTime?>("GetCurrentRestartTime");
-
-        bool ShouldSavePlayer
-        {
-            get
-            {
-                if (settings.DisconnectThreshold <= 0)
-                {
-                    return true;
-                }
-
-                var restartTime = CurrentRestartTime.Value;
-
-                var timeRemaining = (restartTime - DateTime.Now).TotalSeconds;
-                return timeRemaining <= settings.DisconnectThreshold;
-            }
-        }
+        #endregion
 
         #region Oxide hooks
 
@@ -57,41 +47,61 @@ namespace Oxide.Plugins
         {
             foreach (var perm in settings.Rewards.Keys)
             {
+                if (perm == string.Empty)
+                {
+                    continue;
+                }
+
                 permission.RegisterPermission(ConstructPermission(perm), this);
             }
+
+            AddCovalenceCommand("rjrewards", nameof(CommandHandler));
+            rewardClaimers = new List<string>();
         }
 
         void OnServerInitialized()
         {
-            srLoaded = SmoothRestarter != null && SmoothRestarter.IsLoaded;
+            bool srLoaded = SmoothRestarter != null && SmoothRestarter.IsLoaded;
 
             if (!srLoaded)
             {
-                LogWarning("This plugin needs SmoothRestarter in order to work. " +
-                           "Install it from https://umod.org/plugins/smooth-restarter and reload the plugin");
+                LogWarning(
+                    "This plugin needs SmoothRestarter in order to work. " +
+                    "Install it from https://umod.org/plugins/smooth-restarter and reload the plugin"
+                );
             }
 
             delayedItems = LoadRewards();
+
+            if (settings.ReconnectThreshold > 0)
+            {
+                timer.Once(
+                    settings.ReconnectThreshold,
+                    delegate { delayedItems.Clear(); }
+                );
+            }
         }
 
         void OnUserDisconnected(IPlayer player)
         {
-            if (!srLoaded || !IsRestarting || !ShouldSavePlayer)
+            if (isRestarting)
             {
-                return;
+                AddRewardClaimer(player);
             }
-
-            SaveRewardClaimer(player);
         }
 
         void Unload()
         {
-            if (rewardClaimers != null)
-                Interface.Oxide.DataFileSystem.GetFile(nameof(SmoothRestarterRejoinRewards)).WriteObject(rewardClaimers);
+            SaveData();
         }
 
         void OnPlayerSleepEnded(BasePlayer player)
         {
+            if (!player || player.IsDead())
+            {
+                return;
+            }
+
             NotifyUnclaimedRewards(player.IPlayer);
         }
 
@@ -99,11 +109,17 @@ namespace Oxide.Plugins
 
         void OnSmoothRestartInit()
         {
+            currentRestartTime = SmoothRestarter.Call<DateTime>("GetCurrentRestartTime");
+            isRestarting = true;
+
+            Debug("Restart initiated, restartTime: {0}", currentRestartTime);
+
             NotifyRewardsChance();
             if (settings.NotificationFrequency > 0)
             {
                 notificationTimer = timer.Every(settings.NotificationFrequency, NotifyRewardsChance);
             }
+
         }
 
         void OnSmoothRestartTick()
@@ -116,28 +132,28 @@ namespace Oxide.Plugins
 
         void OnSmoothRestartCancelled()
         {
-            if (notificationTimer != null && !notificationTimer.Destroyed)
-            {
-                timer.Destroy(ref notificationTimer);
-            }
+            isRestarting = false;
+
+            Debug("Restart cancelled");
+
+            timer.Destroy(ref notificationTimer);
+
+            rewardClaimers.Clear();
         }
 
         #endregion
 
         #endregion
 
+        #region Notifications
+
         void NotifyRewardsChance()
         {
-            if (!ShouldSavePlayer)
-            {
-                return;
-            }
-
             foreach (var player in players.Connected)
             {
-                var rewards = GetRewardsFor(player.Id);
+                var rewards = GetRewardsForPlayer(player.Id);
 
-                if (rewards.Length > 0)
+                if (rewards.Count > 0)
                 {
                     var fmt = string.Join(", ", rewards);
 
@@ -153,60 +169,186 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var rewards = GetRewardsFor(player.Id);
+            var rewards = delayedItems[player.Id];
             var fmt = string.Join(", ", rewards);
 
             Message(player, M_UNCLAIMED, fmt);
         }
 
-        bool HasUnclaimedRewards(IPlayer player)
+        #endregion
+
+        #region Command handler
+
+        void CommandHandler(IPlayer player)
         {
-            return delayedItems.ContainsKey(player.Id) && delayedItems[player.Id].Length > 0;
+            if (!HasUnclaimedRewards(player))
+            {
+                Message(player, M_NO_REWARDS);
+            }
+            else
+            {
+                var rewards = delayedItems[player.Id];
+                var basePlayer = (BasePlayer)player.Object;
+
+                while (rewards.Count > 0)
+                {
+                    var container = GetFreeContainer(basePlayer);
+
+                    if (container == null)
+                    {
+                        break;
+                    }
+
+                    var item = rewards.First().CreateItem();
+                    rewards.RemoveAt(0);
+
+                    item.MoveToContainer(container, ignoreStackLimit: true);
+                    item.MarkDirty();
+                    container.MarkDirty();
+                    basePlayer.SendConsoleCommand(
+                        "note.inv",
+                        item.info.itemid,
+                        item.amount,
+                        item.name,
+                        2
+                    );
+                }
+
+                if (rewards.Count > 0)
+                {
+                    Message(player, M_NO_SPACE, rewards.Count);
+                }
+                else
+                {
+                    delayedItems.Remove(player.Id);
+                    Message(player, M_CLAIMED);
+                }
+            }
         }
 
-        void SaveRewardClaimer(IPlayer player)
+        #endregion
+
+        #region Util
+
+        bool HasSlotsInInventory(BasePlayer player, bool beltContainer = false)
         {
-            if (rewardClaimers == null)
+            if (!beltContainer)
             {
-                rewardClaimers = new HashSet<string>();
+                return player.inventory.containerMain.capacity - player.inventory.containerMain.itemList.Count > 0;
+            }
+
+            return player.inventory.containerBelt.capacity - player.inventory.containerBelt.itemList.Count > 0;
+        }
+
+        ItemContainer GetFreeContainer(BasePlayer player)
+        {
+            if (HasSlotsInInventory(player, false))
+            {
+                return player.inventory.containerMain;
+            }
+
+            if (HasSlotsInInventory(player, true))
+            {
+                return player.inventory.containerBelt;
+            }
+
+            return null;
+        }
+
+        bool HasUnclaimedRewards(IPlayer player)
+        {
+            return delayedItems.ContainsKey(player.Id);
+        }
+
+        void AddRewardClaimer(IPlayer player)
+        {
+            if (rewardClaimers.Contains(player.Id))
+            {
+                return;
             }
 
             rewardClaimers.Add(player.Id);
         }
 
-        Dictionary<string, PluginSettings.RewardItem[]> LoadRewards()
+        [Conditional("DEBUG")]
+        void Debug(string format, params object[] args)
         {
-            if (!Interface.Oxide.DataFileSystem.ExistsDatafile(nameof(SmoothRestarterRejoinRewards)))
+            Log(string.Format("DEBUG: " + format, args));
+        }
+
+        #endregion
+
+        #region Data
+
+        void SaveData()
+        {
+            var dataFile = Interface.Oxide.DataFileSystem.GetFile(nameof(SmoothRestarterRejoinRewards));
+
+            dataFile.WriteObject((IEnumerable<string>)rewardClaimers ?? Array.Empty<string>());
+        }
+
+        List<string> LoadData()
+        {
+            var list = new List<string>();
+            DynamicConfigFile dataFile;
+
+            if (Interface.Oxide.DataFileSystem.ExistsDatafile(nameof(SmoothRestarterRejoinRewards)))
             {
-                return new Dictionary<string, PluginSettings.RewardItem[]>();
+                dataFile = Interface.Oxide.DataFileSystem.GetFile(nameof(SmoothRestarterRejoinRewards));
+
+                try
+                {
+                    var strings = dataFile.ReadObject<List<string>>();
+
+                    if (strings == null)
+                    {
+                        throw new Exception("Data is null");
+                    }
+
+                    list.AddRange(strings.Where(s => !string.IsNullOrWhiteSpace(s)));
+                }
+                catch
+                {
+                    LogError("Failed to load plugin data, rewards for previous restart will not be available.");
+                }
+            }
+            else
+            {
+                dataFile = Interface.Oxide.DataFileSystem.GetFile(nameof(SmoothRestarterRejoinRewards));
             }
 
-            var dataFile = Interface.Oxide.DataFileSystem.GetFile(nameof(SmoothRestarterRejoinRewards));
-            var dictionary = new Dictionary<string, PluginSettings.RewardItem[]>();
+            dataFile.Clear();
+            dataFile.WriteObject(Array.Empty<string>());
 
-            try
+            return list;
+        }
+
+        #endregion
+
+        #region Rewards
+
+        Dictionary<string, List<PluginSettings.RewardItem>> LoadRewards()
+        {
+            var dictionary = new Dictionary<string, List<PluginSettings.RewardItem>>();
+
+            var userids = LoadData();
+
+            foreach (var userid in userids)
             {
-                var userids = dataFile.ReadObject<HashSet<string>>();
+                var rewards = GetRewardsForPlayer(userid);
 
-                foreach (var userid in userids)
+                if (rewards.Count > 0)
                 {
-                    var rewards = GetRewardsFor(userid);
                     dictionary.Add(userid, rewards);
                 }
             }
-            catch (Exception e)
-            {
-                LogError("Data file corrupt! Could not load rewards.\n" + e.Message);
-            }
-
-            dataFile.WriteObject(Array.Empty<string>());
 
             return dictionary;
         }
 
-        PluginSettings.RewardItem[] GetRewardsFor(string userid)
+        List<PluginSettings.RewardItem> GetRewardsForPlayer(string userid)
         {
-            var list = Pool.GetList<PluginSettings.RewardItem>();
+            var list = new List<PluginSettings.RewardItem>();
 
             list.AddRange(GetDefaultRewards());
 
@@ -217,32 +359,35 @@ namespace Oxide.Plugins
                 list.AddRange(GetRewardsForPermission(perm));
             }
 
-            var array = list.ToArray();
-            Pool.FreeList(ref list);
-            return array;
+            return list;
         }
 
-        PluginSettings.RewardItem[] GetDefaultRewards()
+        IEnumerable<PluginSettings.RewardItem> GetDefaultRewards()
         {
-            if (settings.Rewards.ContainsKey(""))
-            {
-                return settings.Rewards[""];
-            }
-
-            return Array.Empty<PluginSettings.RewardItem>();
+            return GetRewards(string.Empty);
         }
 
-        PluginSettings.RewardItem[] GetRewardsForPermission(string perm)
+        IEnumerable<PluginSettings.RewardItem> GetRewardsForPermission(string perm)
         {
             var p = DeconstructPermission(perm);
 
-            if (settings.Rewards.ContainsKey(p))
+            return GetRewards(p);
+        }
+
+        PluginSettings.RewardItem[] GetRewards(string key)
+        {
+            PluginSettings.RewardItem[] rewards;
+            if (!settings.Rewards.TryGetValue(key, out rewards))
             {
-                return settings.Rewards[p];
+                rewards = Array.Empty<PluginSettings.RewardItem>();
             }
 
-            return Array.Empty<PluginSettings.RewardItem>();
+            return rewards;
         }
+
+        #endregion
+
+        #region Permissions
 
         IEnumerable<string> GetPermissionGroups(string userid)
         {
@@ -256,8 +401,10 @@ namespace Oxide.Plugins
 
         string DeconstructPermission(string perm)
         {
-            return perm.Split('.')[1];
+            return perm.Substring(PERMISSION_PREFIX.Length);
         }
+
+        #endregion
 
         #region LangAPI
 
@@ -266,10 +413,13 @@ namespace Oxide.Plugins
             lang.RegisterMessages(
                 new Dictionary<string, string>
                 {
-                    { M_PREFIX, "RejoinRewards:" },
+                    { M_PREFIX, "<color=#ffa04f>Rejoin Rewards</color>:" },
                     { M_REWARDS, "If you rejoin after the server restart, you will receive rewards:\n{0}" },
                     { M_UNCLAIMED, "You currently have unclaimed rejoin rewards, use /rjrewards to claim them" },
-                    { M_NO_REWARDS, "You do not have any unclaimed rewards" }
+                    { M_NO_REWARDS, "You do not have any unclaimed rewards" },
+                    { M_NO_SPACE, "You do not have enough space in your inventory, some rewards ({0}) were not claimed. " +
+                                  "Free up some space and use /rjrewards to claim the remaining items" },
+                    { M_CLAIMED, "All rewards were claimed" }
                 },
                 this
             );
@@ -300,9 +450,9 @@ namespace Oxide.Plugins
             {
                 settings = Config.ReadObject<PluginSettings>();
 
-                if (settings == null)
+                if (settings == null || settings.Rewards == null)
                 {
-                    throw new Exception("Configuration is null");
+                    throw new Exception("Configuration or rewards dictionary is null");
                 }
             }
             catch (Exception e)
@@ -326,10 +476,9 @@ namespace Oxide.Plugins
             public static PluginSettings Default =>
                 new PluginSettings {
                     NotificationFrequency = 30f,
-                    DisconnectThreshold = 0f,
                     ReconnectThreshold = 600f,
                     Rewards = new Dictionary<string, RewardItem[]> {
-                        [""] = new[]
+                        [string.Empty] = new[]
                         {
                             new RewardItem
                             {
@@ -351,8 +500,6 @@ namespace Oxide.Plugins
 
             [JsonProperty("Notification frequency")]
             public float NotificationFrequency { get; set; }
-            [JsonProperty("Disconnect threshold")]
-            public float DisconnectThreshold { get; set; }
             [JsonProperty("Reconnect threshold")]
             public float ReconnectThreshold { get; set; }
             [JsonProperty("Rewards")]
