@@ -16,7 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmoothRestarterRejoinRewards", "2CHEVSKII", "1.0.0")]
+    [Info("Smooth Restarter Rejoin Rewards", "2CHEVSKII", "1.0.1")]
     [Description("Reward players if they re-join after restart")]
     public class SmoothRestarterRejoinRewards : CovalencePlugin
     {
