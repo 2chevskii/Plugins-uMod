@@ -10,7 +10,7 @@ using Random = UnityEngine.Random;
 namespace Oxide.Plugins
 {
 	[Info("High Wall Barricades", "2CHEVSKII", "2.3.1")]
-	[Description("Makes hgih external walls decay")]
+	[Description("Configurable decay speed for certain barricades")]
 	public class HighWallBarricades : RustPlugin
 	{
 		#region -Component-
