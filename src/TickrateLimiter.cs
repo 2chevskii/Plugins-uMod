@@ -131,7 +131,7 @@ namespace Oxide.Plugins
 				this.Server = server;
 				this.Client = client;
 			}
-		}	
+		}
 
 
 		#endregion
