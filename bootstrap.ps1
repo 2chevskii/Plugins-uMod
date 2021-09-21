@@ -1,113 +1,41 @@
-[CmdletBinding()]
-param (
-    [Parameter()]
-    [ValidateNotNullOrEmpty()]
-    [string] $ReferencePath = '',
+$solution_dir = $PSScriptRoot
+$project_dir = Join-Path $solution_dir 'src'
+$custom_ref_path = Join-Path $solution_dir 'ReferenceDir.props'
+$reference_dir
+$custom_ref_path_enabled = $false
+$upd_refs_script = Join-Path $solution_dir 'Update-References.ps1'
 
-    [Parameter()]
-    [ValidateNotNullOrEmpty()]
-    [string] $DepotDownloaderPath = ''
-)
-
-$DefaultReferencePath = "../References"
-$RefPathProps = "./ReferenceDir.props"
-
-$reference_path = $null
-$customrefdirprops_exist = Test-Path $RefPathProps
-
-$depotdownloader_latest_release_url = 'https://github.com/SteamRE/DepotDownloader/releases/latest'
-
-$app_id = 258550
-$depot_id = 258551
-
-function Get-DepotDownloaderUrl {
-    $releases = 'https://api.github.com/repos/steamre/depotdownloader/releases'
-
-    $tag = Invoke-WebRequest -Uri $releases -UseBasicParsing | ConvertFrom-Json | Select-Object -ExpandProperty 'tag_name' -First 1
-
-    Write-Information "Latest depotdownloader tag: $tag"
-
-    $download_url = "https://github.com/steamre/depotdownloader/releases/download/$tag/$($tag -replace '_','-').zip"
-
-    Write-Information "Download URL: $download_url"
-
-    return $download_url
+function Find-DefaultReferencePath {
+  if (Test-Path "$project_dir/References") {
+    return "$project_dir/References"
+  } elseif (Test-Path "$solution_dir/References") {
+    return "$solution_dir/References"
+  } else {
+    return [System.IO.Path]::GetFullPath('../References', $solution_dir)
+  }
 }
 
-function Get-CustomRefDir {
-    if(!$customrefdirprops_exist) {
-        return $null
-    }
+if (Test-Path $custom_ref_path) {
+  $x = Get-Content $custom_ref_path | Select-Xml -XPath '//CustomReferenceDir'
 
-    return Get-Content $RefPathProps -Raw | Select-Xml -XPath 'Project/PropertyGroup/CustomReferenceDir'
+  if (![string]::IsNullOrWhiteSpace($x)) {
+    $custom_ref_path_enabled = $true
+    $reference_dir = [System.IO.Path]::GetFullPath($custom_ref_path, $solution_dir)
+  }
 }
 
-function Set-CustomRefDir {
-    param (
-        [string] $dir
-    )
-
-    $xml = [xml](@"
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <PropertyGroup>
-    <CustomReferenceDir></CustomReferenceDir>
-    </PropertyGroup>
-</Project>
-"@)
-
-    $xml.Project.PropertyGroup.CustomReferenceDir = $dir
-
-    $xml.Save($RefPathProps)
+if (!$custom_ref_path_enabled) {
+  $reference_dir = Find-DefaultReferencePath
 }
 
-# Resolve reference path
+Write-Host ('Bootstrapping reference directory: {0}' -f $reference_dir)
 
-if([string]::IsNullOrWhiteSpace($ReferencePath) -eq $false) {
-    $reference_path = $ReferencePath
+. $upd_refs_script -Path $reference_dir -ReferenceType Oxide -Clean
 
-    if($customrefdirprops_exist) {
-        Set-CustomRefDir $reference_path
-    }
-} elseif($customrefdirprops_exist) {
-    $crd = Get-CustomRefDir
-
-    if([string]::IsNullOrWhiteSpace($crd)) {
-        $reference_path = $DefaultReferencePath
-        Set-CustomRefDir $reference_path
-    } else {
-        $reference_path = $crd
-    }
+if ($LASTEXITCODE -eq 0) {
+  Write-Host 'Bootstrap successful'
+  exit 0
 } else {
-    $reference_path = $DefaultReferencePath
+  Write-Error ('Bootstrap failed: {0}' -f $LASTEXITCODE)
+  exit 1
 }
-
-Write-Information "Reference directory set to: $reference_path"
-
-if([string]::IsNullOrWhiteSpace($DepotDownloaderPath) -eq $true) {
-    $DepotDownloaderPath = 'tools/DepotDownloader'
-}
-
-$DepotDownloaderPath = Join-Path -Path $PSScriptRoot -ChildPath $DepotDownloaderPath
-
-Write-Information "DepotDownloader directory set to: $DepotDownloaderPath"
-
-if(!(Test-Path $DepotDownloaderPath)) {
-    mkdir $DepotDownloaderPath
-}
-
-$DepotDownloaderLatestArchive = Join-Path $DepotDownloaderPath 'latest.zip'
-
-$DepotDownloaderExecutable = Join-Path $DepotDownloaderPath 'DepotDownloader.dll'
-
-$depot_download_url = Get-DepotDownloaderUrl
-
-Write-Information 'Downloading latest DepotDownloader release...'
-
-Invoke-WebRequest $depot_download_url -UseBasicParsing -OutFile $DepotDownloaderLatestArchive
-
-Write-Information 'Extracting DD archive...'
-
-Expand-Archive -Path $DepotDownloaderLatestArchive -DestinationPath $DepotDownloaderPath -Force
-
-dotnet $DepotDownloaderExecutable -app $app_id -depot $depot_id -dir $reference_path -filelist .references
