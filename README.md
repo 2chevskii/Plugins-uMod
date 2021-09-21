@@ -27,6 +27,13 @@
   - **Email:** `prsroman3@gmail.com`
   - [PayPal.me][paypal_me_link]
 
+## Contributing
+
+- [Fork this repository](https://github.com/2chevskii/Plugins-uMod/fork)
+- Clone the fork with `git clone https://github.com/2chevskii/Plugins-uMod.git` (`your username` instead of `2chevskii`)
+- Run `bootstrap.ps1` in the repo root to get all references automatically downloaded
+- Code!
+
 [logo]: https://i.imgur.com/mqPOWtp.png
 [umod_plugins_page]: https://umod.org/user/2CHEVSKII#plugins
 [license_shield]: https://img.shields.io/github/license/2chevskii/Plugins-umod?color=blue
