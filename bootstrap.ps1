@@ -28,4 +28,14 @@ if (!$custom_ref_path_enabled) {
   $reference_dir = Find-DefaultReferencePath
 }
 
+Write-Host ('Bootstrapping reference directory: {0}' -f $reference_dir)
+
 . $upd_refs_script -Path $reference_dir -ReferenceType Oxide -Clean
+
+if ($LASTEXITCODE -eq 0) {
+  Write-Host 'Bootstrap successful'
+  exit 0
+} else {
+  Write-Error ('Bootstrap failed: {0}' -f $LASTEXITCODE)
+  exit 1
+}
