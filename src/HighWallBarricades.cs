@@ -1,31 +1,22 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-
 using Newtonsoft.Json;
-
 using Oxide.Core;
-
 using Rust;
-
 using UnityEngine;
-
 using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-
-	[Info("HighWallBarricades", "Guilty Spark & 2CHEVSKII", "2.3.0")]
-	[Description("Configurable decay speed for certain barricades.")]
-	internal class HighWallBarricades : RustPlugin
+	[Info("High Wall Barricades", "2CHEVSKII", "2.3.1")]
+	[Description("Configurable decay speed for certain barricades")]
+	public class HighWallBarricades : RustPlugin
 	{
-
 		#region -Component-
-
 
 		private class BarricadeDecay : FacepunchBehaviour
 		{
-
 			private float defaultProtection;
 			private float lastTickTime;
 
@@ -40,7 +31,6 @@ namespace Oxide.Plugins
 					Invoke(() => Barricade.Kill(BaseNetworkable.DestroyMode.Gib), 0.5f);
 
 					return;
-
 				}
 
 				UpdateTickTime();
@@ -57,7 +47,6 @@ namespace Oxide.Plugins
 
 			private void CheckDecay()
 			{
-
 				if(Barricade.GetBuildingPrivilege() == null)
 				{
 					TickDecay();
@@ -87,7 +76,6 @@ namespace Oxide.Plugins
 				}
 
 				UpdateTickTime();
-
 			}
 
 			public void RemoveComponent() => DestroyImmediate(this);
@@ -96,10 +84,9 @@ namespace Oxide.Plugins
 
 			private void TickDecay()
 			{
-
 				if(Time.realtimeSinceStartup - lastTickTime < Singleton.Settings.DecayTime) return;
 
-				Barricade.healthFraction -= Singleton.Settings.DecayDamage * Mathf.FloorToInt((Time.realtimeSinceStartup - lastTickTime) / Singleton.Settings.DecayTime);
+				Barricade.health -= Barricade.MaxHealth() * (Singleton.Settings.DecayDamage * Mathf.FloorToInt((Time.realtimeSinceStartup - lastTickTime) / Singleton.Settings.DecayTime));
 
 				if(Barricade.healthFraction <= 0) Invoke(() => Barricade.Kill(BaseNetworkable.DestroyMode.Gib), 0.5f);
 
@@ -118,14 +105,11 @@ namespace Oxide.Plugins
 				}, 1f);
 				Barricade.baseProtection.amounts[(int)DamageType.Decay] = defaultProtection;
 			}
-
 		}
-
 
 		#endregion
 
 		#region -Fields-
-
 
 		private Configuration Settings { get; set; }
 
@@ -133,15 +117,12 @@ namespace Oxide.Plugins
 
 		private HashSet<BarricadeDecay> Barricades { get; set; }
 
-
 		#endregion
 
 		#region -Configuration-
 
-
 		private class Configuration
 		{
-
 			[JsonProperty(PropertyName = "Time between decay ticks")]
 			internal int DecayTime { get; set; }
 
@@ -165,7 +146,6 @@ namespace Oxide.Plugins
 
 			[JsonProperty(PropertyName = "Configuration version (Needed for auto-update, don't modify)")]
 			internal VersionNumber ConfigVersion { get; set; }
-
 		}
 
 		private Configuration GetDefaultConfig() =>
@@ -257,11 +237,9 @@ namespace Oxide.Plugins
 
 		protected override void SaveConfig() => Config.WriteObject(Settings);
 
-
 		#endregion
 
 		#region -Oxide hooks-
-
 
 		private void Init()
 		{
@@ -297,9 +275,6 @@ namespace Oxide.Plugins
 			foreach(BarricadeDecay barricadeDecay in Barricades) barricadeDecay.RemoveComponent();
 		}
 
-
 		#endregion
-
 	}
-
 }
