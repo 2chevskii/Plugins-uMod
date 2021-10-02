@@ -32,7 +32,7 @@ namespace Oxide.Plugins
                      M_NO_REWARDS         = "No unclaimed rewards",
                      M_NO_SPACE           = "Not enough space",
                      M_CLAIMED            = "All rewards claimed",
-                     M_RECEIVED_ITEMS     = "Received items", // TODO add these to lang dictionary
+                     M_RECEIVED_ITEMS     = "Received items",
                      M_RECEIVED_ECONOMICS = "Received Economics points",
                      M_RECEIVED_SR_POINTS = "Received ServerRewards points";
 
@@ -109,7 +109,7 @@ namespace Oxide.Plugins
 
         void OnPlayerSleepEnded(BasePlayer player)
         {
-            if (!player || player.IsDead())
+            if (!player || player.IsDead() || !player.userID.IsSteamId())
             {
                 return;
             }
@@ -181,11 +181,11 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var rewards = delayedItems[player.Id];
-            var fmt = string.Join(", ", rewards);
+            //var rewards = delayedItems[player.Id];
+            //var fmt = string.Join(", ", rewards);
 
 
-            Message(player, M_UNCLAIMED, fmt);
+            Message(player, M_UNCLAIMED);
         }
 
         void NotifyReceivedRewards(IPlayer player, List<PluginSettings.RewardItem> items, PluginSettings.PointReward points)
