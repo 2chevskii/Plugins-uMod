@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
+using Facepunch;
+
 using Newtonsoft.Json;
 
 using Oxide.Core;
@@ -16,7 +18,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Smooth Restarter Rejoin Rewards", "2CHEVSKII", "1.0.1")]
+    [Info("Smooth Restarter Rejoin Rewards", "2CHEVSKII", "1.1.0")]
     [Description("Reward players if they re-join after restart")]
     public class SmoothRestarterRejoinRewards : CovalencePlugin
     {
@@ -24,16 +26,22 @@ namespace Oxide.Plugins
 
         const string PERMISSION_PREFIX = "smoothrestarterrejoinrewards.";
 
-        const string M_PREFIX     = "Chat prefix",
-                     M_REWARDS    = "Chance to claim rewards",
-                     M_UNCLAIMED  = "Has unclaimed rewards",
-                     M_NO_REWARDS = "No unclaimed rewards",
-                     M_NO_SPACE   = "Not enough space",
-                     M_CLAIMED    = "All rewards claimed";
+        const string M_PREFIX             = "Chat prefix",
+                     M_REWARDS            = "Chance to claim rewards",
+                     M_UNCLAIMED          = "Has unclaimed rewards",
+                     M_NO_REWARDS         = "No unclaimed rewards",
+                     M_NO_SPACE           = "Not enough space",
+                     M_CLAIMED            = "All rewards claimed",
+                     M_RECEIVED_ITEMS     = "Received items",
+                     M_RECEIVED_ECONOMICS = "Received Economics points",
+                     M_RECEIVED_SR_POINTS = "Received ServerRewards points";
 
         [PluginReference] Plugin                            SmoothRestarter;
+        [PluginReference] Plugin                            ServerRewards;
+        [PluginReference] Plugin                            Economics;
         PluginSettings                                      settings;
         Dictionary<string, List<PluginSettings.RewardItem>> delayedItems;
+        Dictionary<string, PluginSettings.PointReward>      delayedPoints;
         List<string>                                        rewardClaimers;
         Timer                                               notificationTimer;
         DateTime                                            currentRestartTime;
@@ -72,12 +80,16 @@ namespace Oxide.Plugins
             }
 
             delayedItems = LoadRewards();
+            delayedPoints = LoadPoints();
 
             if (settings.ReconnectThreshold > 0)
             {
                 timer.Once(
                     settings.ReconnectThreshold,
-                    delegate { delayedItems.Clear(); }
+                    delegate {
+                        delayedItems.Clear();
+                        delayedPoints.Clear();
+                    }
                 );
             }
         }
@@ -97,7 +109,7 @@ namespace Oxide.Plugins
 
         void OnPlayerSleepEnded(BasePlayer player)
         {
-            if (!player || player.IsDead())
+            if (!player || player.IsDead() || !player.userID.IsSteamId())
             {
                 return;
             }
@@ -169,10 +181,29 @@ namespace Oxide.Plugins
                 return;
             }
 
-            var rewards = delayedItems[player.Id];
-            var fmt = string.Join(", ", rewards);
+            //var rewards = delayedItems[player.Id];
+            //var fmt = string.Join(", ", rewards);
 
-            Message(player, M_UNCLAIMED, fmt);
+
+            Message(player, M_UNCLAIMED);
+        }
+
+        void NotifyReceivedRewards(IPlayer player, List<PluginSettings.RewardItem> items, PluginSettings.PointReward points)
+        {
+            if (items.Any())
+            {
+                Message(player, M_RECEIVED_ITEMS, string.Join(", ", items.Select(item => item.ToString())));
+            }
+
+            if (points.serverRewardsPoints > 0)
+            {
+                Message(player, M_RECEIVED_SR_POINTS, points.serverRewardsPoints);
+            }
+
+            if (points.economicsPoints > 0)
+            {
+                Message(player, M_RECEIVED_ECONOMICS, points.economicsPoints);
+            }
         }
 
         #endregion
@@ -187,42 +218,68 @@ namespace Oxide.Plugins
             }
             else
             {
-                var rewards = delayedItems[player.Id];
+                List<PluginSettings.RewardItem> itemRewards = Pool.GetList<PluginSettings.RewardItem>();
+                PluginSettings.PointReward pointReward = default(PluginSettings.PointReward);
+
                 var basePlayer = (BasePlayer)player.Object;
 
-                while (rewards.Count > 0)
+                if (delayedItems.ContainsKey(player.Id))
                 {
-                    var container = GetFreeContainer(basePlayer);
+                    var rewards = delayedItems[player.Id];
 
-                    if (container == null)
+                    while (rewards.Count > 0)
                     {
-                        break;
+                        var container = GetFreeContainer(basePlayer);
+
+                        if (container == null)
+                        {
+                            break;
+                        }
+
+                        var rwd = rewards[0];
+
+                        itemRewards.Add(rwd);
+
+                        var item = rwd.CreateItem();
+                        rewards.RemoveAt(0);
+
+                        item.MoveToContainer(container, ignoreStackLimit: true);
+                        item.MarkDirty();
+                        container.MarkDirty();
+                        basePlayer.SendConsoleCommand(
+                            "note.inv",
+                            item.info.itemid,
+                            item.amount,
+                            item.name,
+                            2
+                        );
                     }
 
-                    var item = rewards.First().CreateItem();
-                    rewards.RemoveAt(0);
-
-                    item.MoveToContainer(container, ignoreStackLimit: true);
-                    item.MarkDirty();
-                    container.MarkDirty();
-                    basePlayer.SendConsoleCommand(
-                        "note.inv",
-                        item.info.itemid,
-                        item.amount,
-                        item.name,
-                        2
-                    );
+                    if (rewards.Count > 0)
+                    {
+                        Message(player, M_NO_SPACE, rewards.Count);
+                    }
+                    else
+                    {
+                        delayedItems.Remove(player.Id);
+                        NextTick(() => Message(player, M_CLAIMED)); // make all claimed message appear after notification about received rewards
+                    }
                 }
 
-                if (rewards.Count > 0)
+                if (delayedPoints.ContainsKey(player.Id))
                 {
-                    Message(player, M_NO_SPACE, rewards.Count);
+                    var reward = delayedPoints[player.Id];
+
+                    AddEconomicsPoints(player, reward.economicsPoints);
+                    AddServerRewardsPoints(basePlayer, reward.serverRewardsPoints);
+
+                    delayedPoints.Remove(player.Id);
+
+                    pointReward = reward;
                 }
-                else
-                {
-                    delayedItems.Remove(player.Id);
-                    Message(player, M_CLAIMED);
-                }
+
+                NotifyReceivedRewards(player, itemRewards, pointReward);
+                Pool.FreeList(ref itemRewards);
             }
         }
 
@@ -257,7 +314,7 @@ namespace Oxide.Plugins
 
         bool HasUnclaimedRewards(IPlayer player)
         {
-            return delayedItems.ContainsKey(player.Id);
+            return delayedItems.ContainsKey(player.Id) || delayedPoints.ContainsKey(player.Id);
         }
 
         void AddRewardClaimer(IPlayer player)
@@ -346,6 +403,47 @@ namespace Oxide.Plugins
             return dictionary;
         }
 
+        Dictionary<string, PluginSettings.PointReward> LoadPoints()
+        {
+            var dictionary = new Dictionary<string, PluginSettings.PointReward>();
+
+            var userids = LoadData();
+
+            foreach (var userid in userids)
+            {
+                var points = GetPointsForPlayer(userid);
+
+                if (points.serverRewardsPoints > 0 || points.economicsPoints > 0)
+                {
+                    dictionary.Add(userid, points);
+                }
+            }
+
+            return dictionary;
+        }
+
+        PluginSettings.PointReward GetPointsForPlayer(string userid)
+        {
+            var reward = new PluginSettings.PointReward();
+
+            var defaultReward = GetDefaultPoints();
+
+            reward.serverRewardsPoints += defaultReward.serverRewardsPoints;
+            reward.economicsPoints += defaultReward.economicsPoints;
+
+            var perms = GetPermissionGroups(userid);
+
+            foreach (var perm in perms)
+            {
+                var permReward = GetPointsForPermission(perm);
+
+                reward.serverRewardsPoints += permReward.serverRewardsPoints;
+                reward.economicsPoints += permReward.economicsPoints;
+            }
+
+            return reward;
+        }
+
         List<PluginSettings.RewardItem> GetRewardsForPlayer(string userid)
         {
             var list = new List<PluginSettings.RewardItem>();
@@ -362,6 +460,11 @@ namespace Oxide.Plugins
             return list;
         }
 
+        PluginSettings.PointReward GetDefaultPoints()
+        {
+            return GetPoints(string.Empty);
+        }
+
         IEnumerable<PluginSettings.RewardItem> GetDefaultRewards()
         {
             return GetRewards(string.Empty);
@@ -374,6 +477,13 @@ namespace Oxide.Plugins
             return GetRewards(p);
         }
 
+        PluginSettings.PointReward GetPointsForPermission(string perm)
+        {
+            var p = DeconstructPermission(perm);
+
+            return GetPoints(p);
+        }
+
         PluginSettings.RewardItem[] GetRewards(string key)
         {
             PluginSettings.RewardItem[] rewards;
@@ -383,6 +493,50 @@ namespace Oxide.Plugins
             }
 
             return rewards;
+        }
+
+        PluginSettings.PointReward GetPoints(string key)
+        {
+            PluginSettings.PointReward item;
+            if (!settings.RewardPoints.TryGetValue(key, out item))
+            {
+                item = default(PluginSettings.PointReward);
+            }
+
+            return item;
+        }
+
+        #endregion
+
+        #region ServerRewards integration
+
+        void AddServerRewardsPoints(BasePlayer player, int points)
+        {
+            if (ServerRewards != null && ServerRewards.IsLoaded)
+            {
+                var success = ServerRewards.Call("AddPoints", player.userID, points);
+                if (success == null)
+                {
+                    LogWarning("Could not add ServerRewards points for player {0} [{1}]", player.displayName, player.UserIDString);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Economics integration
+
+        void AddEconomicsPoints(IPlayer player, int points)
+        {
+            if (Economics != null && Economics.IsLoaded)
+            {
+                bool success = Economics.Call<bool>("Deposit", player.Id, points);
+
+                if (!success)
+                {
+                    LogWarning("Could not add Economics points for player {0} [{1}]", player.Name, player.Id);
+                }
+            }
         }
 
         #endregion
@@ -417,9 +571,15 @@ namespace Oxide.Plugins
                     { M_REWARDS, "If you rejoin after the server restart, you will receive rewards:\n{0}" },
                     { M_UNCLAIMED, "You currently have unclaimed rejoin rewards, use /rjrewards to claim them" },
                     { M_NO_REWARDS, "You do not have any unclaimed rewards" },
-                    { M_NO_SPACE, "You do not have enough space in your inventory, some rewards ({0}) were not claimed. " +
-                                  "Free up some space and use /rjrewards to claim the remaining items" },
-                    { M_CLAIMED, "All rewards were claimed" }
+                    {
+                        M_NO_SPACE,
+                        "You do not have enough space in your inventory, some rewards ({0}) were not claimed. " +
+                        "Free up some space and use /rjrewards to claim the remaining items"
+                    },
+                    { M_CLAIMED, "All rewards were claimed" },
+                    { M_RECEIVED_ITEMS, "You were rewarded with items: {0}" },
+                    { M_RECEIVED_ECONOMICS, "Your Economics balance was funded with {0} points" },
+                    { M_RECEIVED_SR_POINTS, "You've received {0} points on your ServerRewards balance" }
                 },
                 this
             );
@@ -427,9 +587,14 @@ namespace Oxide.Plugins
 
         void Message(IPlayer player, string langKey, params object[] args)
         {
-            var format = lang.GetMessage(langKey, this, player.Id);
+            var format = GetMessage(player, langKey);
 
-            player.Message(format, lang.GetMessage(M_PREFIX, this, player.Id), args);
+            player.Message(format, GetMessage(player, M_PREFIX), args);
+        }
+
+        string GetMessage(IPlayer player, string langKey)
+        {
+            return lang.GetMessage(langKey, this, player.Id);
         }
 
         #endregion
@@ -453,6 +618,11 @@ namespace Oxide.Plugins
                 if (settings == null || settings.Rewards == null)
                 {
                     throw new Exception("Configuration or rewards dictionary is null");
+                }
+
+                if (PluginSettings.NeedsUpdate(settings))
+                {
+                    SaveConfig();
                 }
             }
             catch (Exception e)
@@ -495,6 +665,12 @@ namespace Oxide.Plugins
                                 skin = 0ul
                             }
                         }
+                    },
+                    RewardPoints = new Dictionary<string, PointReward> {
+                        [string.Empty] = new PointReward {
+                            serverRewardsPoints = 0,
+                            economicsPoints = 0
+                        }
                     }
                 };
 
@@ -504,6 +680,36 @@ namespace Oxide.Plugins
             public float ReconnectThreshold { get; set; }
             [JsonProperty("Rewards")]
             public Dictionary<string, RewardItem[]> Rewards { get; set; }
+            [JsonProperty("ServerRewards and economics points")]
+            public Dictionary<string, PointReward> RewardPoints { get; set; }
+
+            public static bool NeedsUpdate(PluginSettings settings)
+            {
+                if (settings.RewardPoints == null)
+                {
+                    settings.RewardPoints = new Dictionary<string, PointReward> {
+                        [string.Empty] = new PointReward {
+                            serverRewardsPoints = 0,
+                            economicsPoints = 0
+                        }
+                    };
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            public struct PointReward
+            {
+                public int serverRewardsPoints;
+                public int economicsPoints;
+
+                public bool IsNotEmpty()
+                {
+                    return serverRewardsPoints > 0 || economicsPoints > 0;
+                }
+            }
 
             public struct RewardItem
             {
