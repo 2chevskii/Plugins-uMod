@@ -1,23 +1,17 @@
-#define DEBUG
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 
 using Facepunch;
 
-using Newtonsoft.Json;
-
-using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Entity Cleanup", "2CHEVSKII", "3.0.3")]
+    [Info("Entity Cleanup", "2CHEVSKII", "4.0.0")]
     [Description("Easy way to cleanup your server from unnecessary entities.")]
     public class EntityCleanup : CovalencePlugin
     {
@@ -25,13 +19,15 @@ namespace Oxide.Plugins
 
         const string M_PREFIX           = "Chat prefix",
                      M_NO_PERMISSION    = "No permission",
-                     M_HELP             = "Help message",
+                     M_INVALID_USAGE    = "Invalid usage",
                      M_CLEANUP_STARTED  = "Cleanup started",
                      M_CLEANUP_FINISHED = "Cleanup finished",
                      M_CLEANUP_RUNNING  = "Cleanup running";
 
         PluginSettings settings;
         CleanupHandler handler;
+
+        #region Command handler
 
         void CommandHandler(IPlayer player, string command, string[] args)
         {
@@ -44,27 +40,20 @@ namespace Oxide.Plugins
             switch (args.Length)
             {
                 case 0:
+                    if (!handler.TryStartCleanup())
+                    {
+                        Message(player, M_CLEANUP_RUNNING);
+                    }
 
                     return;
-
-                case 1:
-
+                default:
+                    Message(player, M_INVALID_USAGE);
                     break;
             }
-
-            Message(player, M_HELP);
-        }
-
-        #region Utility
-
-        [Conditional("DEBUG")]
-        static void LogDebug(string format, params object[] args)
-        {
-            Interface.Oxide.LogDebug("[EntityCleanup]" + format, args);
         }
 
         #endregion
-
+        
         #region Oxide hooks
 
         void Init()
@@ -76,7 +65,7 @@ namespace Oxide.Plugins
         void OnServerInitialized()
         {
             handler = ServerMgr.Instance.gameObject.AddComponent<CleanupHandler>();
-            handler.Init(settings);
+            handler.Init(this);
         }
 
         void Unload()
@@ -94,9 +83,9 @@ namespace Oxide.Plugins
                 new Dictionary<string, string> {
                     [M_PREFIX] = "[Entity Cleanup] ",
                     [M_NO_PERMISSION] = "<color=red>You have no access to this command</color>",
-                    [M_HELP] = "Usage: /entitycleanup <all|buildings|deployables|deployable prefab>",
+                    [M_INVALID_USAGE] = "Invalid command usage",
                     [M_CLEANUP_STARTED] = "Cleaning up old server entities...",
-                    [M_CLEANUP_FINISHED] = "Cleanup completed, purged <color=lightblue>{0}</color> old entities",
+                    [M_CLEANUP_FINISHED] = "Cleanup completed, purged <color=#34ebba>{0}</color> old entities",
                     [M_CLEANUP_RUNNING] = "Cleanup is already running, wait until it completes"
                 },
                 this
@@ -164,6 +153,8 @@ namespace Oxide.Plugins
 
         #region Nested types
 
+        #region CleanupHandler
+
         class CleanupHandler : MonoBehaviour
         {
             PluginSettings        settings;
@@ -173,23 +164,34 @@ namespace Oxide.Plugins
 
             bool IsCleanupRunning => cleanupRoutine != null;
 
-            public void Init(PluginSettings settings)
+            event Action      OnCleanupStarted;
+            event Action<int> OnCleanupComplete;
+
+            public void Init(EntityCleanup plugin)
             {
-                this.settings = settings;
+                settings = plugin.settings;
+
+                OnCleanupStarted = () =>
+                {
+                    plugin.Announce(M_CLEANUP_STARTED);
+                };
+
+                OnCleanupComplete = purgedEntityCount =>
+                {
+                    plugin.Announce(M_CLEANUP_FINISHED, purgedEntityCount);
+                };
+
                 entityList = Pool.GetList<BaseNetworkable>();
+                deployables = Pool.Get<HashSet<string>>();
 
                 var modDeployables = from itemDef in ItemManager.GetItemDefinitions()
                                      group itemDef by itemDef.GetComponent<ItemModDeployable>()
                                      into deps where deps.Key != null select deps.Key;
 
-                LogDebug("Found {0} deployable prefabs", modDeployables.Count());
-
                 foreach (var prefab in from depl in modDeployables select depl.entityPrefab.resourcePath)
                 {
                     deployables.Add(prefab);
                 }
-
-                LogDebug(JsonConvert.SerializeObject(deployables, Formatting.Indented));
             }
 
             public void Shutdown()
@@ -203,6 +205,8 @@ namespace Oxide.Plugins
                 }
 
                 Pool.FreeList(ref entityList);
+                deployables.Clear();
+                Pool.Free(ref deployables);
                 Destroy(this);
             }
 
@@ -240,11 +244,8 @@ namespace Oxide.Plugins
 
             void StartCleanup()
             {
-                LogDebug("Starting timed cleanup...");
-
                 if (IsCleanupRunning)
                 {
-                    LogDebug("Cleanup is already running.");
                     return;
                 }
 
@@ -256,7 +257,7 @@ namespace Oxide.Plugins
                 entityList.AddRange(BaseNetworkable.serverEntities);
                 int cleanedCount = 0;
 
-                LogDebug("Current entity count: {0}", entityList.Count);
+                OnCleanupStarted();
 
                 for (int i = 0; i < entityList.Count; i++)
                 {
@@ -264,7 +265,6 @@ namespace Oxide.Plugins
 
                     if (entity && IsCleanupCandidate(entity))
                     {
-                        LogDebug("Removing entity {0} [{1}]", entity.ShortPrefabName, entity.net.ID);
                         entity.Kill(BaseNetworkable.DestroyMode.Gib);
                         cleanedCount++;
                     }
@@ -272,20 +272,18 @@ namespace Oxide.Plugins
                     yield return new WaitForEndOfFrame();
                 }
 
-                LogDebug("Entities cleaned: {0}", cleanedCount);
-                LogDebug("Resulting entity count: {0}", BaseNetworkable.serverEntities.Count);
+                OnCleanupComplete(cleanedCount);
+
                 cleanupRoutine = null;
             }
 
             bool IsCleanupCandidate(BaseEntity entity)
             {
-                // ignore child entities to avoid accidental removing of things like codelocks
                 if (entity.parentEntity.IsSet())
                 {
                     return false;
                 }
 
-                // ignore server created entities to avoid monument entities removal
                 if (entity.OwnerID == 0ul)
                 {
                     return false;
@@ -299,42 +297,42 @@ namespace Oxide.Plugins
                     return false;
                 }
 
-                if (entity is BuildingBlock && !settings.CleanupBuildings)
+                if (entity is StabilityEntity && settings.CleanupBuildings ||
+                    deployables.Contains(entity.gameObject.name) && settings.CleanupDeployables)
                 {
-                    return false;
-                }
+                    BuildingPrivlidge buildingPrivilege = entity.GetBuildingPrivilege();
+                    bool hasBuildingPrivilege = buildingPrivilege != null;
 
-                if (deployables.Contains(entity.gameObject.name) && !settings.CleanupDeployables)
-                {
-                    return false;
-                }
+                    if (hasBuildingPrivilege)
+                    {
+                        if (!settings.RemoveInsidePrivilege)
+                        {
+                            return false;
+                        }
 
-                BuildingPrivlidge buildingPrivilege = entity.GetBuildingPrivilege();
-                bool hasBuildingPrivilege = buildingPrivilege != null;
+                        if (settings.CheckOwnerIdPrivilegeAuthorized && buildingPrivilege.IsAuthed(entity.OwnerID))
+                        {
+                            return false;
+                        }
 
-                if (hasBuildingPrivilege)
-                {
+                        return settings.InsideHealthFractionTheshold == 0f || entity.Health() / entity.MaxHealth() < settings.InsideHealthFractionTheshold;
+                    }
+
                     if (!settings.RemoveOutsidePrivilege)
                     {
                         return false;
                     }
-
-                    if (settings.CheckOwnerIdPrivilegeAuthorized && buildingPrivilege.IsAuthed(entity.OwnerID))
-                    {
-                        return false;
-                    }
-
-                    return entity.Health() / entity.MaxHealth() < settings.OutsideHealthFractionTheshold;
+                    
+                    return settings.OutsideHealthFractionTheshold == 0f || entity.Health() / entity.MaxHealth() < settings.OutsideHealthFractionTheshold;;
                 }
 
-                if (!settings.RemoveInsidePrivilege)
-                {
-                    return false;
-                }
-
-                return entity.Health() / entity.MaxHealth() < settings.InsideHealthFractionTheshold;
+                return false;
             }
         }
+
+        #endregion
+
+        #region PluginSettings
 
         class PluginSettings
         {
@@ -350,327 +348,19 @@ namespace Oxide.Plugins
                 CheckOwnerIdPrivilegeAuthorized = true
             };
 
-            public int Interval { get; set; }
-            public bool CleanupBuildings { get; set; }
-            public bool CleanupDeployables { get; set; }
-            public bool RemoveOutsidePrivilege { get; set; }
-            public float OutsideHealthFractionTheshold { get; set; }
-            public bool RemoveInsidePrivilege { get; set; }
-            public float InsideHealthFractionTheshold { get; set; }
-            public string[] Whitelist { get; set; }
-            public bool CheckOwnerIdPrivilegeAuthorized { get; set; }
+            public int      Interval                        { get; set; }
+            public bool     CleanupBuildings                { get; set; }
+            public bool     CleanupDeployables              { get; set; }
+            public bool     RemoveOutsidePrivilege          { get; set; }
+            public float    OutsideHealthFractionTheshold   { get; set; }
+            public bool     RemoveInsidePrivilege           { get; set; }
+            public float    InsideHealthFractionTheshold    { get; set; }
+            public string[] Whitelist                       { get; set; }
+            public bool     CheckOwnerIdPrivilegeAuthorized { get; set; }
         }
 
         #endregion
 
-        //        #region Fields
-
-        //        private PluginSettings Settings { get; set; }
-        //        private const string PERMISSION = "entitycleanup.use";
-
-        //        private HashSet<string> Deployables { get; } = new HashSet<string>();
-        //        private Timer ScheduleTimer { get; set; }
-
-        //        #endregion
-
-        //        #region Config
-
-        //        private class PluginSettings
-        //        {
-        //            [JsonProperty(PropertyName = "Scheduled cleanup seconds (x <= 0 to disable)")]
-        //            internal int ScheduledCleanup { get; set; }
-        //            [JsonProperty(PropertyName = "Scheduled cleanup building blocks")]
-        //            internal bool ScheduledCleanupBuildings { get; set; }
-        //            [JsonProperty(PropertyName = "Scheduled cleanup deployables")]
-        //            internal bool ScheduledCleanupDeployables { get; set; }
-        //            [JsonProperty(PropertyName = "Scheduled cleanup outside cupboard range")]
-        //            internal bool ScheduledCleanupOutsideCupRange { get; set; }
-        //            [JsonProperty(PropertyName = "Scheduled cleanup entities with hp less than specified (x = [0.0-1.0])")]
-        //            internal float ScheduledCleanupDamaged { get; set; }
-        //        }
-
-        //        protected override void LoadConfig()
-        //        {
-        //            base.LoadConfig();
-        //            try
-        //            {
-        //                Settings = Config.ReadObject<PluginSettings>();
-        //                if (Settings == null)
-        //                    throw new JsonException("Can't read config...");
-        //                else
-        //                    Puts("Configuration loaded...");
-        //            }
-        //            catch
-        //            {
-        //                LoadDefaultConfig();
-        //            }
-        //        }
-
-        //        protected override void LoadDefaultConfig()
-        //        {
-        //            Config.Clear();
-        //            Settings = GetDefaultSettings();
-        //            SaveConfig();
-        //            PrintWarning("Default configuration created...");
-        //        }
-
-        //        protected override void SaveConfig() => Config.WriteObject(Settings, true);
-
-        //        private PluginSettings GetDefaultSettings() => new PluginSettings
-        //        {
-        //            ScheduledCleanup = 3600,
-        //            ScheduledCleanupBuildings = true,
-        //            ScheduledCleanupDeployables = true,
-        //            ScheduledCleanupOutsideCupRange = true,
-        //            ScheduledCleanupDamaged = 0f
-        //        };
-
-        //        #endregion
-
-        //        #region LangAPI
-
-        //        private const string mhelp = "Help message";
-        //        private const string mnoperm = "No permissions";
-        //        private const string mannounce = "Announcement";
-
-        //        private Dictionary<string, string> DefaultMessages_EN { get; } = new Dictionary<string, string>
-        //        {
-        //            { mhelp, "Usage: cleanup (<all/buildings/deployables/deployable partial name>) (all)" },
-        //            { mnoperm, "You have no access to that command" },
-        //            { mannounce, "Server is cleaning up <color=#00FF5D>{0}</color> entities..." }
-        //        };
-
-        //        protected override void LoadDefaultMessages() => lang.RegisterMessages(DefaultMessages_EN, this, "en");
-
-        //        private string GetReply(BasePlayer player, string message, params object[] args) => string.Format(lang.GetMessage(message, this, player?.UserIDString), args);
-
-        //        #endregion
-
-        //        #region Hooks
-
-        //        private void Init()
-        //        {
-        //            permission.RegisterPermission(PERMISSION, this);
-        //            permission.GrantGroupPermission("admin", PERMISSION, this);
-        //            cmd.AddConsoleCommand("cleanup", this, delegate (Arg arg)
-        //            {
-        //                return CommandHandler(arg);
-        //            });
-        //            InitDeployables();
-        //        }
-
-        //        private void OnServerInitialized()
-        //        {
-        //            if (Settings.ScheduledCleanup > 0)
-        //                StartScheduleTimer();
-        //        }
-
-        //        #endregion
-
-        //        #region Commands
-
-        //        private bool CommandHandler(Arg arg)
-        //        {
-        //            BasePlayer player = arg.Player();
-
-        //            if (player && !permission.UserHasPermission(player.UserIDString, PERMISSION))
-        //                arg.ReplyWith(GetReply(player, mnoperm));
-        //            else if (!arg.HasArgs())
-        //                ScheduledCleanup();
-        //            else
-        //            {
-        //                switch (arg.Args.Length)
-        //                {
-        //                    case 1:
-        //                        switch (arg.Args[0].ToLower())
-        //                        {
-        //                            case "all":
-        //                                ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>()));
-        //                                break;
-        //                            default:
-        //                                ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>(), false, arg.Args[0]));
-        //                                break;
-        //                        }
-        //                        break;
-        //                    case 2:
-        //                        switch (arg.Args[0].ToLower())
-        //                        {
-        //                            case "all":
-        //                                if (arg.Args[1].ToLower() == "all")
-        //                                    ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>(), true));
-        //                                else
-        //                                    arg.ReplyWith(GetReply(player, mhelp));
-        //                                break;
-        //                            default:
-        //                                if (arg.Args[1].ToLower() == "all")
-        //                                    ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>(), true, arg.Args[1]));
-        //                                else
-        //                                    arg.ReplyWith(GetReply(player, mhelp));
-        //                                break;
-        //                        }
-        //                        break;
-        //                    default:
-        //                        arg.ReplyWith(GetReply(player, mhelp));
-        //                        break;
-        //                }
-        //            }
-        //            return true;
-        //        }
-
-        //        #endregion
-
-        //        #region Core
-
-        //        private IEnumerator CollectData(List<BaseEntity> entities, bool all = false, string name = null)
-        //        {
-        //            IEnumerator<BaseNetworkable> enumerator = BaseNetworkable.serverEntities.GetEnumerator();
-        //#if DEBUG
-        //			Puts("Started data collect");
-        //#endif
-        //            while (enumerator.MoveNext())
-        //            {
-        //                BaseEntity baseEntity = enumerator.Current as BaseEntity;
-
-        //                var parentEntity = baseEntity?.GetParentEntity();
-
-        //                while (parentEntity != null && !parentEntity.IsDestroyed)
-        //                {
-        //                    baseEntity = parentEntity;
-        //                    parentEntity = baseEntity?.GetParentEntity();
-        //                }
-
-        //                if (baseEntity == null)
-        //                {
-        //#if DEBUG
-        //					Puts("Skipped not a baseEntity");
-        //#endif
-        //                    yield return new WaitForEndOfFrame();
-        //                    continue;
-        //                }
-
-        //                if (baseEntity.OwnerID == 0)
-        //                {
-        //#if DEBUG
-        //					Puts("Skipped baseEntity without ownerid");
-        //#endif
-        //                    yield return new WaitForEndOfFrame();
-
-        //                    continue;
-        //                }
-
-        //                if (baseEntity.GetBuildingPrivilege() != null && !all && (baseEntity.Health() / baseEntity.MaxHealth()) > Settings.ScheduledCleanupDamaged)
-        //                {
-        //#if DEBUG
-        //					Puts("Skipped BE with BP or HP");
-        //#endif
-        //                    yield return new WaitForEndOfFrame();
-        //                    continue;
-        //                }
-
-        //                if ((name == null || name.ToLower() == "buildings") && baseEntity is StabilityEntity)
-        //                {
-        //#if DEBUG
-        //					Puts("Added building block");
-        //#endif
-        //                    entities.Add(baseEntity);
-        //                    yield return new WaitForEndOfFrame();
-        //                    continue;
-        //                }
-
-        //                if (((name == null || name.ToLower() == "deployables") && Deployables.Contains(baseEntity.gameObject.name))
-        //                    || (name != null && baseEntity.gameObject.name.Contains(name, CompareOptions.IgnoreCase)))
-        //                {
-        //#if DEBUG
-        //					Puts("Added deployable");
-        //#endif
-        //                    entities.Add(baseEntity);
-        //                    yield return new WaitForEndOfFrame();
-        //                    continue;
-        //                }
-        //            }
-
-        //            if (entities.Count < 1)
-        //            {
-        //#if DEBUG
-        //				Puts("Attempting to clean, but nothing to be cleaned");
-        //#endif
-        //                yield break;
-        //            }
-
-        //            ServerMgr.Instance.StartCoroutine(Cleanup(entities));
-        //        }
-
-        //        private IEnumerator Cleanup(List<BaseEntity> entities)
-        //        {
-        //            Server.Broadcast(GetReply(null, mannounce, entities.Count));
-
-        //            for (int i = 0; i < entities.Count; i++)
-        //            {
-        //                if (!entities[i].IsDestroyed)
-        //                {
-        //                    entities[i].Kill(BaseNetworkable.DestroyMode.None);
-        //                    yield return new WaitForSeconds(0.05f);
-        //                }
-        //            }
-        //#if DEBUG
-        //			Puts($"Cleanup finished, {entities.Count} entities cleaned.");
-        //#endif
-        //        }
-
-        //        #endregion
-
-        //        #region Utility
-
-        //        private void InitDeployables()
-        //        {
-        //            IEnumerable<ItemModDeployable> deps = from def in ItemManager.GetItemDefinitions()
-        //                                                  where def.GetComponent<ItemModDeployable>() != null
-        //                                                  select def.GetComponent<ItemModDeployable>();
-
-        //            Puts($"Found {deps.Count()} deployables definitions");
-
-        //            foreach (ItemModDeployable dep in deps)
-        //                if (!Deployables.Contains(dep.entityPrefab.resourcePath))
-        //                    Deployables.Add(dep.entityPrefab.resourcePath);
-        //        }
-
-        //        private void StartScheduleTimer()
-        //        {
-        //            if (ScheduleTimer != null && !ScheduleTimer.Destroyed)
-        //                ScheduleTimer.Destroy();
-        //            ScheduleTimer = timer.Once(Settings.ScheduledCleanup, () => ScheduledCleanup());
-        //        }
-
-        //        private void ScheduledCleanup()
-        //        {
-        //#if DEBUG
-        //			Puts("Scheduled CU triggered");
-        //#endif
-        //            if (Settings.ScheduledCleanupBuildings && Settings.ScheduledCleanupDeployables)
-        //            {
-        //#if DEBUG
-        //				Puts("Scheduled CU all");
-        //#endif
-        //                ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>()));
-        //            }
-        //            else if (Settings.ScheduledCleanupBuildings)
-        //            {
-        //#if DEBUG
-        //				Puts("Scheduled CU building");
-        //#endif
-        //                ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>(), false, "buildings"));
-        //            }
-        //            else if (Settings.ScheduledCleanupDeployables)
-        //            {
-        //#if DEBUG
-        //				Puts("Scheduled CU deployable");
-        //#endif
-        //                ServerMgr.Instance.StartCoroutine(CollectData(new List<BaseEntity>(), false, "deployables"));
-        //                if (Settings.ScheduledCleanup > 0)
-        //                    StartScheduleTimer();
-        //            }
-        //        }
-
-        //        #endregion
+        #endregion
     }
 }
