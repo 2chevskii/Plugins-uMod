@@ -1,4 +1,4 @@
-﻿// #define UNITY_ASSERTIONS // Uncomment this if you have any issues with the plugin, assertion log can help locate problematic code
+// #define UNITY_ASSERTIONS // Uncomment this if you have any issues with the plugin, assertion log can help locate problematic code
 // #define SIMULATE_OXIDE_PATCH
 
 using System;
