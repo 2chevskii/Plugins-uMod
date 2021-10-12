@@ -932,7 +932,7 @@ namespace Oxide.Plugins
             [JsonProperty("Respawn container if it is destroyed")]
             public bool RespawnContainer { get; set; }
 
-            [JsonProperty("Required container to be empty (destroyed)")]
+            [JsonProperty("Requires container to be empty (destroyed)")]
             public bool RequiresEmpty { get; set; }
         }
 
