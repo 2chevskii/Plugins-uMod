@@ -1,9 +1,10 @@
+#define DEBUG
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
-
-using Facepunch;
 
 using Newtonsoft.Json;
 
@@ -11,31 +12,37 @@ using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 
 using UnityEngine;
+using UnityEngine.Assertions;
 
 namespace Oxide.Plugins
 {
-    [Info("Replenish", "Skrallex & 2CHEVSKII", "2.0.0")]
+    [Info("Replenish", "2CHEVSKII", "2.0.0")]
     [Description("Save and restore items in selected containers")]
     class Replenish : CovalencePlugin
     {
         PluginSettings      settings;
-        List<ContainerData> data;
+        ReplenishController controller;
 
         const string PERMISSION_USE = "replenish.use";
+
+        const string DATAFILE_NAME = "replenish.data";
 
         const string M_PREFIX              = "Chat prefix",
                      M_NO_PERMISSION       = "No permission",
                      M_HELP                = "Help message",
-                     M_CONTAINER_NOT_EMPTY = "Container is not empty",
-                     M_CONTAINER_INFO      = "Container info",
                      M_CONTAINER_SET       = "Container set for replenish",
                      M_CONTAINER_UNSET     = "Container removed from replenish list",
+                     M_CONTAINER_INFO      = "Container info",
+                     M_CONTAINER_NOT_EMPTY = "Container is not empty",
                      M_TIMED               = "Timed restore",
                      M_WIPE_ONLY           = "Wipe restore",
                      M_COMMAND_ONLY        = "Command restore",
                      M_CONTAINER_NOT_FOUND = "Container not found",
                      M_CONTAINER_NOT_SAVED = "Container not saved",
-                     M_NO_CONTAINERS_SAVED = "No saved containers";
+                     M_NO_CONTAINERS_SAVED = "No saved containers",
+                     M_CONTAINER_RESTORED  = "Container restored",
+                     M_ALL_RESTORED        = "All containers restored",
+                     M_ALL_REMOVED         = "All containers removed from restore";
 
         static Replenish Instance;
 
@@ -43,7 +50,7 @@ namespace Oxide.Plugins
 
         #region Command Handler
 
-        void CommandHandler(IPlayer player, string _, string[] args)
+        void CommandHandler(IPlayer player, string _, string[] args) // TODO: This method requires some serious refactoring
         {
             if (player.IsServer || !player.HasPermission(PERMISSION_USE))
             {
@@ -60,53 +67,62 @@ namespace Oxide.Plugins
                         if (!container)
                         {
                             Message(player, M_CONTAINER_NOT_FOUND);
-                            return;
                         }
                         else
                         {
                             if (args.Length == 1)
                             {
-                                SaveContainer(container, settings.DefaultReplenishTimer);
+                                var cData = controller.SaveContainer(container, settings.DefaultReplenishTimer);
 
-                                string msg = GetSaveTimeMessage(settings.DefaultReplenishTimer);
+                                string msg = GetSaveTimeMessage(cData.Mode);
 
-                                Message(player, M_CONTAINER_SET, string.Format(msg, settings.DefaultReplenishTimer.ToString("0")));
-                                return;
+                                Message(player, M_CONTAINER_SET, string.Format(msg, cData.RestoreTime));
                             }
-
-                            switch (args[1].ToLower())
+                            else
                             {
-                                case "cmd":
-                                    SaveContainer(container, 0f);
+                                switch (args[1].ToLower())
+                                {
+                                    case "cmd":
+                                        controller.SaveContainer(container, 0f);
 
-                                    Message(player, M_CONTAINER_SET, M_COMMAND_ONLY);
-                                    return;
+                                        Message(player, M_CONTAINER_SET, GetMessage(player, M_COMMAND_ONLY));
+                                        break;
 
-                                case "wipe":
-                                    SaveContainer(container, -1f);
+                                    case "wipe":
+                                        controller.SaveContainer(container, -1f);
 
-                                    Message(player, M_CONTAINER_SET, M_WIPE_ONLY);
-                                    return;
+                                        Message(player, M_CONTAINER_SET, GetMessage(player, M_WIPE_ONLY));
+                                        break;
 
-                                default:
-                                    float seconds;
-                                    if (float.TryParse(
-                                        args[1],
-                                        NumberStyles.Number,
-                                        CultureInfo.InvariantCulture,
-                                        out seconds
-                                    ))
-                                    {
-                                        SaveContainer(container, seconds);
+                                    default:
+                                        float seconds;
+                                        if (float.TryParse(
+                                            args[1],
+                                            NumberStyles.Number,
+                                            CultureInfo.InvariantCulture,
+                                            out seconds
+                                        ))
+                                        {
+                                            var cData = controller.SaveContainer(container, seconds);
 
-                                        string msg = GetSaveTimeMessage(seconds);
+                                            string msg = GetSaveTimeMessage(cData.Mode);
 
-                                        Message(player, M_CONTAINER_SET, string.Format(msg, seconds.ToString("0")));
-                                        return;
-                                    }
-                                    break;
+                                            Message(
+                                                player,
+                                                M_CONTAINER_SET,
+                                                string.Format(GetMessage(player, msg), cData.RestoreTime)
+                                            );
+                                        }
+                                        else
+                                        {
+                                            Message(player, M_HELP);
+                                        }
+
+                                        break;
+                                }
                             }
                         }
+
                         break;
 
                     case "remove":
@@ -118,14 +134,13 @@ namespace Oxide.Plugins
                                 return;
                             }
 
-                            if (!RemoveContainer(container))
+                            if (!controller.RemoveContainer(container))
                             {
                                 Message(player, M_CONTAINER_NOT_SAVED);
                                 return;
                             }
 
                             Message(player, M_CONTAINER_UNSET);
-                            return;
                         }
                         else
                         {
@@ -133,16 +148,17 @@ namespace Oxide.Plugins
 
                             if (int.TryParse(args[1], out id))
                             {
-                                if (!RemoveContainer(id))
+                                if (!controller.RemoveContainer(id))
                                 {
                                     Message(player, M_CONTAINER_NOT_SAVED);
-                                    return;
                                 }
-
-                                Message(player,M_CONTAINER_UNSET);
-                                return;
+                                else
+                                {
+                                    Message(player, M_CONTAINER_UNSET);
+                                }
                             }
                         }
+
                         break;
 
                     case "info":
@@ -151,7 +167,7 @@ namespace Oxide.Plugins
                         {
                             if (container)
                             {
-                                var cData = FindContainerByEntity(container);
+                                var cData = controller.FindDataByEntity(container);
 
                                 if (cData == null)
                                 {
@@ -159,49 +175,36 @@ namespace Oxide.Plugins
                                 }
                                 else
                                 {
-                                    MessageRaw(
-                                        player,
-                                        BuildContainerInfo(
-                                            player,
-                                            data.IndexOf(cData),
-                                            cData.Position,
-                                            cData.NetId,
-                                            cData.ReplenishTimer
-                                        )
-                                    );
+                                    MessageRaw(player, BuildContainerInfo(player, cData));
                                 }
                             }
                             else
                             {
                                 Message(player, M_CONTAINER_NOT_FOUND);
-                                return;
                             }
                         }
-                        else if(int.TryParse(args[0], out cId))
+                        else if (int.TryParse(args[1], out cId))
                         {
-                            var cData = FindContainerById(cId);
+                            var cData = controller.FindDataById(cId);
 
                             if (cData == null)
                             {
-                                Message(player,M_CONTAINER_NOT_FOUND);
-                                return;
+                                Message(player, M_CONTAINER_NOT_FOUND);
                             }
                             else
                             {
-                                MessageRaw(
-                                    player,
-                                    BuildContainerInfo(
-                                        player,
-                                        data.IndexOf(cData),
-                                        cData.Position,
-                                        cData.NetId,
-                                        cData.ReplenishTimer
-                                    )
-                                );
+                                MessageRaw(player, BuildContainerInfo(player, cData));
                             }
                         }
+                        else
+                        {
+                            Message(player, M_HELP);
+                        }
+
                         break;
                     case "list":
+                        var data = controller.GetSaveData();
+
                         if (data.Count == 0)
                         {
                             Message(player, M_NO_CONTAINERS_SAVED);
@@ -210,83 +213,123 @@ namespace Oxide.Plugins
                         {
                             StringBuilder builder = new StringBuilder();
 
+                            builder.AppendLine();
+
                             for (int i = 0; i < data.Count; i++)
                             {
                                 var cData = data[i];
 
-                                var info = BuildContainerInfo(
-                                    player,
-                                    i,
-                                    cData.Position,
-                                    cData.NetId,
-                                    cData.ReplenishTimer
-                                );
+                                var info = BuildContainerInfo(player, cData);
 
                                 builder.AppendLine(info);
                             }
 
                             MessageRaw(player, builder.ToString());
                         }
+
+                        break;
+                    case "restore":
+                        int containerId;
+                        if (args.Length == 1)
+                        {
+                            if (!container)
+                            {
+                                Message(player, M_CONTAINER_NOT_FOUND);
+                            }
+                            else
+                            {
+                                var containerData = controller.FindDataByEntity(container);
+
+                                if (containerData == null)
+                                {
+                                    Message(player, M_CONTAINER_NOT_SAVED);
+                                }
+                                else
+                                {
+                                    if (!controller.RestoreNow(containerData))
+                                    {
+                                        Message(player,M_CONTAINER_NOT_EMPTY);
+                                    }
+                                    else
+                                    {
+                                        Message(player, M_CONTAINER_RESTORED);
+                                    }
+                                }
+                            }
+                        }
+                        else if (int.TryParse(args[1], out containerId))
+                        {
+                            var containerData = controller.FindDataById(containerId);
+
+                            if (containerData == null)
+                            {
+                                Message(player, M_CONTAINER_NOT_FOUND);
+                            }
+                            else
+                            {
+                                if (!controller.RestoreNow(containerData))
+                                {
+                                    Message(player, M_CONTAINER_NOT_EMPTY);
+                                }
+                                else
+                                {
+                                    Message(player, M_CONTAINER_RESTORED);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Message(player, M_HELP);
+                        }
+
+                        break;
+
+                    case "restoreall":
+                        var saved = controller.GetSaveData();
+
+                        if (saved.Count == 0)
+                        {
+                            Message(player, M_NO_CONTAINERS_SAVED);
+                        }
+                        else
+                        {
+                            for (int i = saved.Count - 1; i >= 0; i--)
+                            {
+                                controller.RestoreNow(saved[i]);
+                            }
+
+                            Message(player, M_ALL_RESTORED);
+                        }
+
+                        break;
+
+                    default:
+                        Message(player, M_HELP);
+                        break;
+                    case "clear":
+                        var savedData = controller.GetSaveData();
+
+                        if (savedData.Count == 0)
+                        {
+                            Message(player, M_NO_CONTAINERS_SAVED);
+                        }
+                        else
+                        {
+                            for (int i = savedData.Count - 1; i >= 0; i--)
+                            {
+                                controller.RemoveContainer(controller.GetDataIndex(savedData[i]));
+                            }
+
+                            Message(player, M_ALL_REMOVED);
+                        }
                         break;
                 }
             }
-
-            Message(player, M_HELP);
         }
 
-            #endregion
+        #endregion
 
-        ContainerData FindContainerById(int id)
-        {
-            if (id > data.Count || id <= 0)
-            {
-                return null;
-            }
-
-            return data[id - 1];
-        }
-
-        ContainerData FindContainerByEntity(StorageContainer container)
-        {
-            return data.Find(c => c.NetId == container.net.ID);
-        }
-
-        bool RemoveContainer(StorageContainer container)
-        {
-            var cData = FindContainerByEntity(container);
-
-            if (cData == null)
-            {
-                return false;
-            }
-
-
-        }
-
-        bool RemoveContainer(int id)
-        {
-            var cData = FindContainerById(id);
-
-            if (cData == null)
-            {
-                return false;
-            }
-        }
-
-        void SaveContainer(StorageContainer container, float timer)
-        {
-
-        }
-
-        void ListRestoreContainers(IPlayer player)
-        {
-
-        }
-
-        void ShowContainerInfo(IPlayer player, StorageContainer container)
-        {
-
-        }
+        #region Utility methods
 
         StorageContainer GetContainerInSight(IPlayer player)
         {
@@ -306,32 +349,7 @@ namespace Oxide.Plugins
             return null;
         }
 
-        bool CanRestoreContainer(StorageContainer container, out string reason)
-        {
-
-        }
-
-        void DoContainerRestore(StorageContainer container, IEnumerable<SerializableItem> items)
-        {
-            List<Item> itemList = Pool.GetList<Item>();
-
-            foreach (var item in items)
-            {
-                itemList.Add(item.ToItem());
-            }
-
-            for (int i = 0; i < itemList.Count; i++)
-            {
-                itemList[i].MoveToContainer(container.inventory, ignoreStackLimit: true);
-            }
-
-            Pool.FreeList(ref itemList);
-        }
-
-        void SetupRestore(List<ContainerData> dataList)
-        {
-
-        }
+        #endregion
 
         #region Oxide hooks
 
@@ -346,9 +364,18 @@ namespace Oxide.Plugins
 
         void OnServerInitialized()
         {
-            data = LoadData();
+            controller = ServerMgr.Instance.gameObject.AddComponent<ReplenishController>();
 
-            SetupRestore(data);
+            controller.Init(LoadData());
+        }
+
+        void Unload()
+        {
+            SaveData(controller.GetSaveData());
+
+            UnityEngine.Object.Destroy(controller);
+
+            Instance = null;
         }
 
         void OnNewSave()
@@ -362,61 +389,64 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultMessages()
         {
-            lang.RegisterMessages(new Dictionary<string, string> {
-                [M_PREFIX] = "[Replenish]",
-                [M_NO_PERMISSION] = "You have no access to this command",
-                [M_HELP] = "Usage: /replenish [command] <args>\n" +
-                           "Commands:\n" +
-                           "save (<digit|'wipe'|'cmd'>) - Save container you are currently looking at or change settings for container\n" +
-                           "remove (<digit>) - Remove container from replenish\n" +
-                           "info (<digit>) - Get information about container\n" +
-                           "list - Get list of saved containers\n" +
-                           "restore (<digit>) - Restore specified container\n" +
-                           "restoreall - Restore all containers",
-                [M_CONTAINER_SET] = "Replenish set for container #{0} {1}:{2} - {3}",
-                [M_CONTAINER_UNSET] = "Replenish was unsed for container {0}:{1}",
-                [M_CONTAINER_INFO] = "#{0}: {1}, {2} | {3}",
-                [M_CONTAINER_NOT_EMPTY] = "Container must be empty",
-                [M_TIMED] = "Restore every {0} seconds",
-                [M_WIPE_ONLY] = "Restore every new wipe",
-                [M_COMMAND_ONLY] = "Restore on command",
-                [M_CONTAINER_NOT_FOUND] = "Container not found",
-                [M_CONTAINER_NOT_SAVED] = "This container is not saved"
-            }, this);
+            lang.RegisterMessages(
+                new Dictionary<string, string> {
+                    [M_PREFIX] = "[Replenish] ",
+                    [M_NO_PERMISSION] = "You have no access to this command",
+                    [M_HELP] = "Usage: /replenish [command] <args>\n" +
+                               "Commands:\n" +
+                               "save (<digit|'wipe'|'cmd'>) - Save container you are currently looking at or change settings for container\n" +
+                               "remove (<digit>) - Remove container from replenish\n" +
+                               "info (<digit>) - Get information about container\n" +
+                               "list - Get list of saved containers\n" +
+                               "restore (<digit>) - Restore specified container\n" +
+                               "restoreall - Restore all containers\n" +
+                               "clear - Remove all containers from replenish",
+                    [M_CONTAINER_SET] = "Container set to '{0}'",
+                    [M_CONTAINER_UNSET] = "Container removed from replenish",
+                    [M_CONTAINER_INFO] = "#{0}: {1}, {2} | {3}",
+                    [M_CONTAINER_NOT_EMPTY] = "Container must be empty",
+                    [M_TIMED] = "Restore every {0:0} seconds",
+                    [M_WIPE_ONLY] = "Restore every new wipe",
+                    [M_COMMAND_ONLY] = "Restore on command",
+                    [M_CONTAINER_NOT_FOUND] = "Container not found",
+                    [M_CONTAINER_NOT_SAVED] = "This container is not saved",
+                    [M_NO_CONTAINERS_SAVED] = "Server has no saved containers",
+                    [M_CONTAINER_RESTORED] = "Container was restored",
+                    [M_ALL_RESTORED] = "Restored all containers",
+                    [M_ALL_REMOVED] = "All containers were removed from replenish"
+                },
+                this
+            );
         }
 
-        string BuildContainerInfo(
-            IPlayer player,
-            int index,
-            Vector3 position,
-            uint netId,
-            float restoreTimer
-        )
+        string BuildContainerInfo(IPlayer player, ContainerData data)
         {
             string fmt = GetMessage(player, M_CONTAINER_INFO);
-
             string msg = string.Format(
                 fmt,
-                index,
-                $"{position.x:0}.{position.y:0}.{position.z:0}",
-                netId,
-                GetMessage(player, GetSaveTimeMessage(restoreTimer))
+                controller.GetDataIndex(data),
+                $"[{data.Position.x:0}, {data.Position.y:0}, {data.Position.z:0}]",
+                data.NetId,
+                string.Format(GetMessage(player, GetSaveTimeMessage(data.Mode)), data.RestoreTime)
             );
 
             return msg;
         }
 
-        string GetSaveTimeMessage(float time)
+        string GetSaveTimeMessage(ContainerData.RestoreMode mode)
         {
-            if (time == 0)
+            switch (mode)
             {
-                return M_COMMAND_ONLY;
+                case ContainerData.RestoreMode.Timed:
+                    return M_TIMED;
+                case ContainerData.RestoreMode.Wipe:
+                    return M_WIPE_ONLY;
+                case ContainerData.RestoreMode.Command:
+                    return M_COMMAND_ONLY;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(mode), mode, null);
             }
-
-            if (time < 0)
-                return M_WIPE_ONLY;
-
-            return M_TIMED;
         }
 
         void MessageRaw(IPlayer player, string message)
@@ -448,13 +478,9 @@ namespace Oxide.Plugins
 
         List<ContainerData> LoadData()
         {
-            const string filename = "Replenish";
-
             try
             {
-                var dataFile = Interface.Oxide.DataFileSystem.GetFile(filename);
-
-                var list = dataFile.ReadObject<List<ContainerData>>();
+                var list = Interface.Oxide.DataFileSystem.ReadObject<List<ContainerData>>(DATAFILE_NAME);
 
                 if (list == null)
                 {
@@ -473,13 +499,7 @@ namespace Oxide.Plugins
 
         void SaveData(List<ContainerData> list)
         {
-            const string filename = "Replenish";
-
-            var datafile = Interface.Oxide.DataFileSystem.GetFile(filename);
-
-            datafile.Clear();
-
-            datafile.WriteObject(list);
+            Interface.Oxide.DataFileSystem.WriteObject(DATAFILE_NAME, list);
         }
 
         #endregion
@@ -521,22 +541,299 @@ namespace Oxide.Plugins
 
         #region Nested types
 
+        #region ReplenishController
+
+        class ReplenishController : MonoBehaviour
+        {
+            List<ContainerData> allContainers;
+            ContainerData       nextRestoreContainer;
+
+            public ContainerData FindDataById(int id)
+            {
+                if (id <= 0 || id > allContainers.Count)
+                {
+                    return null;
+                }
+
+                return allContainers[id - 1];
+            }
+
+            public ContainerData FindDataByEntity(BaseNetworkable entity)
+            {
+                return allContainers.Find(c => c.NetId == entity.net.ID);
+            }
+
+            public int GetDataIndex(ContainerData data)
+            {
+                return allContainers.IndexOf(data) + 1;
+            }
+
+            public void Init(List<ContainerData> data)
+            {
+                data.ForEach(d => d.OnRestored());
+                allContainers = data;
+            }
+
+            public List<ContainerData> GetSaveData()
+            {
+                return allContainers;
+            }
+
+            public ContainerData SaveContainer(StorageContainer container, float timer)
+            {
+                ContainerData cData = FindDataByEntity(container);
+
+                if (cData == null)
+                {
+                    cData = new ContainerData(container, timer);
+                    allContainers.Add(cData);
+                }
+                else
+                {
+                    cData.RestoreTime = timer;
+                    cData.ItemList.Clear();
+                    cData.ItemList.AddRange(container.inventory.itemList.Select(SerializableItem.FromItem));
+                    cData.OnRestored();
+                }
+
+                UpdateQueue();
+
+                return cData;
+            }
+
+            public bool RemoveContainer(StorageContainer container)
+            {
+                return RemoveSavedContainer(FindDataByEntity(container));
+            }
+
+            public bool RemoveContainer(int containerId)
+            {
+                return RemoveSavedContainer(FindDataById(containerId));
+            }
+
+            public bool RestoreNow(ContainerData data)
+            {
+                Assert.IsTrue(nextRestoreContainer != null, "NextRestoreContainer is null in RestoreTick!");
+
+                var ent = BaseNetworkable.serverEntities.Find(data.NetId) as StorageContainer;
+
+                bool shouldRestore = false;
+
+                if (!ent)
+                {
+                    if (Instance.settings.RespawnContainer)
+                    {
+                        ent = RespawnContainer(data);
+                        shouldRestore = true;
+                    }
+                    else
+                    {
+                        allContainers.Remove(data);
+                    }
+                }
+                else
+                {
+                    shouldRestore = CheckEmpty(ent, data);
+                }
+
+                if (shouldRestore)
+                {
+                    BeforeRestore(ent);
+
+                    RestoreContainer(ent, data);
+
+                    AfterRestore(data);
+                }
+
+                return shouldRestore;
+            }
+
+            bool RemoveSavedContainer(ContainerData data)
+            {
+                if (data == null)
+                {
+                    return false;
+                }
+
+                if (nextRestoreContainer == data)
+                {
+                    nextRestoreContainer = null;
+                }
+
+                allContainers.Remove(data);
+
+                UpdateQueue();
+
+                return true;
+            }
+
+            void Start()
+            {
+                Invoke(nameof(UpdateQueue), 0.1f);
+
+                if (Instance.isNewWipe)
+                {
+                    RestoreWipeContainers();
+                }
+            }
+
+            StorageContainer RespawnContainer(ContainerData data)
+            {
+                var container = (StorageContainer)GameManager.server.CreateEntity(data.PrefabName, data.Position);
+
+                container.Spawn();
+
+                data.NetId = container.net.ID;
+
+                return container;
+            }
+
+            void RestoreWipeContainers()
+            {
+                var list = allContainers.FindAll(c => c.Mode == ContainerData.RestoreMode.Wipe);
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var data = list[i];
+
+                    var container = BaseNetworkable.serverEntities.Find(data.NetId) as StorageContainer;
+
+                    if (!container)
+                    {
+                        if (!Instance.settings.RespawnContainer)
+                        {
+                            allContainers.Remove(data);
+                            continue;
+                        }
+
+                        container = RespawnContainer(data);
+                    }
+                    else if (!CheckEmpty(container, data))
+                    {
+                        continue;
+                    }
+
+                    BeforeRestore(container);
+
+                    RestoreContainer(container, data);
+                }
+            }
+
+            void RestoreTick()
+            {
+                Assert.IsTrue(nextRestoreContainer != null, "NextRestoreContainer is null in RestoreTick!");
+
+                var ent = BaseNetworkable.serverEntities.Find(nextRestoreContainer.NetId) as StorageContainer;
+
+                bool shouldRestore = false;
+
+                if (!ent)
+                {
+                    if (Instance.settings.RespawnContainer)
+                    {
+                        ent = RespawnContainer(nextRestoreContainer);
+                        shouldRestore = true;
+                    }
+                    else
+                    {
+                        allContainers.Remove(nextRestoreContainer);
+                    }
+                }
+                else
+                {
+                    shouldRestore = CheckEmpty(ent, nextRestoreContainer);
+                }
+
+                if (shouldRestore)
+                {
+                    BeforeRestore(ent);
+
+                    RestoreContainer(ent, nextRestoreContainer);
+                }
+
+                AfterRestore(nextRestoreContainer);
+            }
+
+            bool CheckEmpty(StorageContainer container, ContainerData data)
+            {
+                if (Instance.settings.RequiresEmpty && container.inventory.itemList.Any())
+                {
+                    return false;
+                }
+
+                if (data.ItemList.Count > container.inventory.capacity - container.inventory.itemList.Count)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            void BeforeRestore(StorageContainer container)
+            {
+                if (Instance.settings.ClearContainerInventory)
+                {
+                    container.inventory.Clear();
+                    ItemManager.DoRemoves();
+                }
+            }
+
+            void RestoreContainer(StorageContainer container, ContainerData data)
+            {
+                for (int i = 0; i < data.ItemList.Count; i++)
+                {
+                    var item = data.ItemList[i].ToItem();
+
+                    item.MoveToContainer(container.inventory);
+                }
+            }
+
+            void AfterRestore(ContainerData data)
+            {
+                data.OnRestored();
+                nextRestoreContainer = null;
+
+                UpdateQueue();
+            }
+
+            void UpdateQueue()
+            {
+                CancelInvoke(nameof(RestoreTick));
+
+                nextRestoreContainer = null;
+
+                if (allContainers.Count == 0)
+                {
+                    return;
+                }
+
+                var data = allContainers.OrderBy(c => c.TimeLeftBeforeRestore()).FirstOrDefault();
+
+                if (data != null)
+                {
+                    nextRestoreContainer = data;
+                    Invoke(nameof(RestoreTick), data.TimeLeftBeforeRestore());
+                }
+            }
+        }
+
+        #endregion
+
+        #region SerializableItem
+
         struct SerializableItem
         {
             public int   ItemId;
             public int   Amount;
             public ulong SkinId;
 
-            public SerializableItem(Item item, bool destroyItem = false)
+            public static SerializableItem FromItem(Item item)
             {
-                ItemId = item.info.itemid;
-                Amount = item.amount;
-                SkinId = item.skin;
-
-                if (destroyItem)
-                {
-                    item.Remove();
-                }
+                return new SerializableItem {
+                    ItemId = item.info.itemid,
+                    Amount = item.amount,
+                    SkinId = item.skin
+                };
             }
 
             public Item ToItem()
@@ -547,23 +844,31 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
+        #region ContainerData
+
         class ContainerData
         {
             public uint                   NetId;
             public Vector3                Position;
             public List<SerializableItem> ItemList;
-            public float                  ReplenishTimer;
+            public string                 PrefabName;
+            public float                  RestoreTime;
+
+            [JsonIgnore] public float NextRestoreTime;
 
             [JsonIgnore]
-            public bool RestoreOnWipe => ReplenishTimer < 0;
-            [JsonIgnore]
-            public bool RestoreOnCommand => ReplenishTimer == 0;
+            public RestoreMode Mode => RestoreTime < 0 ? RestoreMode.Wipe :
+                RestoreTime == 0 ? RestoreMode.Command : RestoreMode.Timed;
+
+            public ContainerData() { }
 
             public ContainerData(StorageContainer container, float timer)
             {
                 NetId = container.net.ID;
                 Position = container.transform.position;
-                ReplenishTimer = timer;
+                RestoreTime = timer;
                 ItemList = new List<SerializableItem>();
 
                 var items = container.inventory.itemList;
@@ -572,12 +877,42 @@ namespace Oxide.Plugins
                 {
                     var item = items[i];
 
-                    var sItem = new SerializableItem(item, false);
+                    ItemList.Add(SerializableItem.FromItem(item));
+                }
 
-                    ItemList.Add(sItem);
+                PrefabName = container.PrefabName;
+                OnRestored();
+            }
+
+            public float TimeLeftBeforeRestore()
+            {
+                if (Mode != 0)
+                {
+                    return float.MaxValue;
+                }
+
+                return NextRestoreTime - Time.realtimeSinceStartup;
+            }
+
+            public void OnRestored()
+            {
+                if (Mode == 0)
+                {
+                    NextRestoreTime = Time.realtimeSinceStartup + RestoreTime;
                 }
             }
+
+            public enum RestoreMode
+            {
+                Timed,
+                Wipe,
+                Command
+            }
         }
+
+        #endregion
+
+        #region PluginSettings
 
         class PluginSettings
         {
@@ -600,6 +935,8 @@ namespace Oxide.Plugins
             [JsonProperty("Required container to be empty (destroyed)")]
             public bool RequiresEmpty { get; set; }
         }
+
+        #endregion
 
         #endregion
     }
