@@ -197,7 +197,7 @@ namespace Oxide.Plugins
             public void Shutdown()
             {
                 CancelInvoke();
-
+                
                 if (IsCleanupRunning)
                 {
                     StopCoroutine(cleanupRoutine);
