@@ -1,5 +1,5 @@
-#define DEBUG
-#define UNITY_ASSERTIONS
+// #define DEBUG
+// #define UNITY_ASSERTIONS
 
 using System;
 using System.Collections.Generic;
@@ -10,6 +10,8 @@ using System.Text;
 using Facepunch;
 
 using Network;
+
+using Newtonsoft.Json;
 
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
@@ -125,42 +127,50 @@ namespace Oxide.Plugins
             {
                 Message(player, M_NO_PERMISSION);
             }
+            else if (Flag.IsEventLimitReached)
+            {
+                Message(player, M_EVENT_LIMIT);
+            }
             else if (arg == null)
             {
                 Vector3 pos = GetRandomSpawnPoint();
 
-                if (pos == Vector3.zero)
-                {
-                    Message(player, M_EVENT_LIMIT);
-                }
-                else
-                {
-                    Flag.CreateNewEvent(pos, player);
-                }
+                Flag.CreateNewEvent(pos, player);
+
+                //if (pos == Vector3.zero)
+                //{
+                //    Message(player, M_EVENT_LIMIT);
+                //}
+                //else
+                //{
+
+                //}
             }
             else if (hereSynonyms.Contains(arg.ToLower()))
             {
-                if (Flag.IsEventLimitReached)
+                //if (Flag.IsEventLimitReached)
+                //{
+                //    Message(player, M_EVENT_LIMIT);
+                //}
+                //else
+                //{
+
+                //}
+
+                Vector3 pos = GetViewPos(player);
+                Vector3 pos2 = GetClosestSpawnPoint(pos);
+
+                if (pos == Vector3.zero || !CanSpawnEvent(pos, pos2))
                 {
-                    Message(player, M_EVENT_LIMIT);
+                    Message(player, M_INVALID_POS);
+                }
+                else if (Flag.FindByGridCell(PhoneController.PositionToGridCoord(pos2)) != null)
+                {
+                    Message(player, M_EVENT_EXISTS);
                 }
                 else
                 {
-                    Vector3 pos = GetViewPos(player);
-                    Vector3 pos2 = GetClosestSpawnPoint(pos);
-
-                    if (pos == Vector3.zero || !CanSpawnEvent(pos, pos2))
-                    {
-                        Message(player, M_INVALID_POS);
-                    }
-                    else if (Flag.FindByGridCell(PhoneController.PositionToGridCoord(pos2)) != null)
-                    {
-                        Message(player, M_EVENT_EXISTS);
-                    }
-                    else
-                    {
-                        Flag.CreateNewEvent(pos2, player);
-                    }
+                    Flag.CreateNewEvent(pos2, player);
                 }
             }
             else
@@ -747,6 +757,8 @@ namespace Oxide.Plugins
         #endregion
 
         #region Nested types
+
+        #region Flag
 
         public class Flag : MonoBehaviour
         {
@@ -1471,6 +1483,8 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
         #region Configuration
 
         class PluginSettings
@@ -1490,17 +1504,29 @@ namespace Oxide.Plugins
                 EventLimit = -1
             };
 
+            [JsonProperty("Capture item shortname")]
             public string CaptureItemShortName { get; set; }
+            [JsonProperty("Capture item skin ID")]
             public ulong CaptureItemSkinId { get; set; }
+            [JsonProperty("Total event time")]
             public float TotalEventTime { get; set; }
+            [JsonProperty("Time needed to capture")]
             public float CaptureTime { get; set; }
+            [JsonProperty("Capture radius")]
             public float CaptureRadius { get; set; }
+            [JsonProperty("Allow capturing with teammates")]
             public bool AllowTeamCapture { get; set; }
+            [JsonProperty("Capture speed increase per teammate")]
             public float MultipleCapturersSpeedup { get; set; }
+            [JsonProperty("Enable map markers")]
             public bool EnableMapMarkers { get; set; }
+            [JsonProperty("Event status update notifications frequency")]
             public float EventTickNotificationFrequency { get; set; }
+            [JsonProperty("Event autospawn frequency")]
             public float EventAutoCreateFrequency { get; set; }
+            [JsonProperty("Allow autospawn if another event is present")]
             public bool AutoCreateIfAnyExists { get; set; }
+            [JsonProperty("Event count limit")]
             public int EventLimit { get; set; }
         }
 
