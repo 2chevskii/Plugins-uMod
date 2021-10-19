@@ -1,6 +1,5 @@
 #define DEBUG
 #define UNITY_ASSERTIONS
-#define PRE_RELEASE
 
 using System;
 using System.Collections.Generic;
@@ -23,7 +22,7 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-    [Info("CTFEvents", "2CHEVSKII", "0.3.0-alpha.1")]
+    [Info("CTFEvents", "2CHEVSKII", "1.0.0")]
     [Description("Adds 'capture the flag' type events to your server")]
     class CTFEvents : CovalencePlugin
     {
@@ -46,7 +45,9 @@ namespace Oxide.Plugins
                      M_EVENT_EXISTS            = "Event already exists",
                      M_EVENT_LIMIT             = "Event limit reached",
                      M_EVENT_TICK_CAPTURING    = "Event tick capture",
-                     M_EVENT_TICK_CONTESTED    = "Event tick contested";
+                     M_EVENT_TICK_CONTESTED    = "Event tick contested",
+                     M_PLAYER_CAPTURE_ENTER    = "Player entered capture zone",
+                     M_PLAYER_CAPTURE_LEAVE    = "Player left capture zone";
 
         const string COLOR_CLOSE   = "</color>",
                      COLOR_DEFOCUS = "#a2ad9c",
@@ -55,11 +56,25 @@ namespace Oxide.Plugins
                      COLOR_WARN    = "#f5cd2c",
                      COLOR_DANGER  = "#ff5526";
 
+        static readonly int EventSpawnMask = LayerMask.GetMask(
+            "Water",
+            "Deployed",
+            "Vehicle_World",
+            "World",
+            "Construction",
+            "Construction_Socket",
+            "Terrain",
+            "Clutter",
+            "Debris"
+        );
+
         static CTFEvents Instance;
 
         PluginSettings    settings;
         int               maxEventsPerMap;
-        readonly string[] hereSynonyms = { "here", "there", "sight", "place", "point", "atme" };
+        List<Vector3>     eventSpawnPoints;
+        readonly string[] hereSynonyms = { "here", "there", "sight", "place", "point", "atme", "spot", "on-this-spot", "within-reach", "hereabouts" };
+        readonly string[] allSynonyms  = { "all", "every", "entier", "everything", "total", "whole", "allpresent" };
 
         [Conditional("DEBUG")]
         static void LogDebug(string format, params object[] args)
@@ -112,7 +127,7 @@ namespace Oxide.Plugins
             }
             else if (arg == null)
             {
-                Vector3 pos = GetRandomPos();
+                Vector3 pos = GetRandomSpawnPoint();
 
                 if (pos == Vector3.zero)
                 {
@@ -132,18 +147,19 @@ namespace Oxide.Plugins
                 else
                 {
                     Vector3 pos = GetViewPos(player);
+                    Vector3 pos2 = GetClosestSpawnPoint(pos);
 
-                    if (pos == Vector3.zero || !CanSpawnEvent(pos))
+                    if (pos == Vector3.zero || !CanSpawnEvent(pos, pos2))
                     {
                         Message(player, M_INVALID_POS);
                     }
-                    else if (Flag.FindByGridCell(PhoneController.PositionToGridCoord(pos)) != null)
+                    else if (Flag.FindByGridCell(PhoneController.PositionToGridCoord(pos2)) != null)
                     {
                         Message(player, M_EVENT_EXISTS);
                     }
                     else
                     {
-                        Flag.CreateNewEvent(pos, player);
+                        Flag.CreateNewEvent(pos2, player);
                     }
                 }
             }
@@ -172,6 +188,15 @@ namespace Oxide.Plugins
                 else
                 {
                     Message(player, M_WRONG_USAGE);
+                }
+            }
+            else if (allSynonyms.Contains(arg.ToLower()))
+            {
+                Flag[] flags = Flag.GetAll();
+
+                for (int i = 0; i < flags.Length; i++)
+                {
+                    flags[i].ForceFinish(player);
                 }
             }
             else
@@ -260,49 +285,23 @@ namespace Oxide.Plugins
 
         #region Utility
 
-        Vector3 GetRandomPos()
+        Vector3 GetClosestSpawnPoint(Vector3 pos)
         {
-            if (Flag.IsEventLimitReached)
-            {
-                return Vector3.zero;
-            }
-
-            Vector3 position;
-            string gridCell;
-            var filter = SpawnHandler.Instance.AllSpawnPopulations.GetRandom().Filter;
-
-            do
-            {
-                var v2 = Random.insideUnitCircle * (TerrainMeta.Size.x / 2);
-                position = new Vector3(v2.x, 0, v2.y);
-                gridCell = PhoneController.PositionToGridCoord(position);
-            } while (!filter.Test(position) || Flag.FindByGridCell(gridCell));
-
-            return position;
+            return eventSpawnPoints.Except(Flag.GetOccupiedSpawnPoints())
+                                   .OrderBy(sp => Vector3.Distance(sp, pos))
+                                   .First();
         }
 
-        bool CanSpawnEvent(Vector3 pos)
+        Vector3 GetRandomSpawnPoint()
         {
-            var heightRaw = TerrainMeta.HeightMap.GetHeight(pos);
+            List<Vector3> occupied = Flag.GetOccupiedSpawnPoints();
 
-            if (heightRaw <= TerrainMeta.WaterMap.GetHeight(pos))
-            {
-                return false;
-            }
+            return eventSpawnPoints.FindAll(sp => !occupied.Contains(sp)).GetRandom();
+        }
 
-            RaycastHit hit;
-            if (Physics.Raycast(
-                pos,
-                Vector3.down,
-                out hit,
-                float.PositiveInfinity,
-                LayerMask.GetMask("Construction")
-            ))
-            {
-                return false;
-            }
-
-            return true;
+        bool CanSpawnEvent(Vector3 origPos, Vector3 closestSp)
+        {
+            return Vector3.Distance(origPos, closestSp) <= 75f;
         }
 
         Vector3 GetViewPos(IPlayer player)
@@ -311,12 +310,76 @@ namespace Oxide.Plugins
 
             RaycastHit hit;
 
-            if (!Physics.Raycast(basePlayer.eyes.HeadRay(), out hit, 100f, LayerMask.GetMask("Terrain")))
+            if (!Physics.Raycast(basePlayer.eyes.HeadRay(), out hit, 100f, EventSpawnMask))
             {
                 return Vector3.zero;
             }
 
             return hit.point;
+        }
+
+        List<Vector3> ScanTerrain()
+        {
+            Vector3 pos = new Vector3(-(TerrainMeta.Size.x / 2) + 75f, 0, TerrainMeta.Size.z / 2 - 75f);
+            const float GRID_SIZE = 150f;
+
+            List<Vector3> spawnPoints = new List<Vector3>();
+
+            while (pos.z > -(TerrainMeta.Size.z / 2 ))
+            {
+                Vector3 point;
+                if (ScanCell(pos, out point))
+                {
+                    spawnPoints.Add(point);
+                }
+
+                pos.x += GRID_SIZE;
+
+                if (pos.x > TerrainMeta.Size.x)
+                {
+                    pos.x = -(TerrainMeta.Size.x / 2) + 75f;
+                    pos.z -= GRID_SIZE;
+                }
+            }
+
+            return spawnPoints;
+        }
+
+        bool ScanCell(Vector3 pos, out Vector3 point)
+        {
+            LogDebug("Scanning grid cell {0}", PhoneController.PositionToGridCoord(pos));
+
+            const int SAMPLE_COUNT = 150;
+
+            for (int i = 0; i < SAMPLE_COUNT; i++)
+            {
+                Vector2 rand = Random.insideUnitCircle * 75f;
+                Vector3 sample = pos + new Vector3(rand.x, 0, rand.y);
+
+                RaycastHit hit;
+                sample.y = 300f;
+
+                Physics.Raycast(
+                    sample,
+                    Vector3.down,
+                    out hit,
+                    500f,
+                    EventSpawnMask
+                );
+
+                float height = hit.point.y;
+                float height2 = TerrainMeta.WaterMap.GetHeight(sample);
+
+                if (height > height2)
+                {
+                    point = sample;
+                    point.y = height;
+                    return true;
+                }
+            }
+
+            point = Vector3.zero;
+            return false;
         }
 
         #endregion
@@ -331,15 +394,14 @@ namespace Oxide.Plugins
             AddCovalenceCommand("ctf", nameof(CommandHandler));
 
             LogDebug("Debug messages enabled");
-
-#if PRE_RELEASE
-            LogDebug("This is an unstable version of the plugin ({0}). It contains debug messages, assertions and other stuff which affects not only logs, but also performance. It is not recommended to use this version on a production server", "0.3.0-alpha.1");
-#endif
         }
 
         void OnServerInitialized()
         {
-            maxEventsPerMap = Mathf.FloorToInt((float)Math.Pow(TerrainMeta.Size.x / 250, 2));
+            var points = ScanTerrain();
+
+            maxEventsPerMap = points.Count;
+            eventSpawnPoints = points;
 
             LogDebug("Max events per map: {0}", maxEventsPerMap);
 
@@ -369,7 +431,7 @@ namespace Oxide.Plugins
                             return;
                         }
 
-                        Flag.CreateNewEvent(GetRandomPos());
+                        Flag.CreateNewEvent(GetRandomSpawnPoint());
                     }
                 );
             }
@@ -508,6 +570,22 @@ namespace Oxide.Plugins
             Interface.Oxide.CallHook("OnCtfEventStateChange", flag.GridCell, prevState, newState);
         }
 
+        void OnPlayerEnterCaptureZone(Flag flag, BasePlayer player)
+        {
+            if (Interface.Oxide.CallHook("OnCtfPlayerEnterZone", flag.GridCell, player) == null)
+            {
+                Message(player.IPlayer, M_PLAYER_CAPTURE_ENTER, flag.GridCell);
+            }
+        }
+
+        void OnPlayerLeaveCaptureZone(Flag flag, BasePlayer player)
+        {
+            if (Interface.Oxide.CallHook("OnCtfPlayerLeaveZone", flag.GridCell, player) == null)
+            {
+                Message(player.IPlayer, M_PLAYER_CAPTURE_LEAVE, flag.GridCell);
+            }
+        }
+
         #endregion
 
         #region Public API
@@ -539,21 +617,21 @@ namespace Oxide.Plugins
                         $"{WrapInColor("start", COLOR_SUCCESS)} - Starts event at random position. Additional argument - {WrapInColor("here", COLOR_DEFOCUS)} might be specified to create event on the point you are currently looking at\n" +
                         $"{WrapInColor("end", COLOR_SUCCESS)} - Stops an event, needs to be provided with either id or grid cell as an argument",
                     [M_EVENT_INFO] =
-                        $"#{WrapInColor("{0}", COLOR_INFO)}: [{WrapInColor("{1}", COLOR_WARN)}], Time left: {WrapInColor("{2}", COLOR_DEFOCUS)}",
+                        $"#{WrapInColor("{0}", COLOR_INFO)}: [ {WrapInColor("{1}", COLOR_WARN)} ], Time left: {WrapInColor("{2}", COLOR_DEFOCUS)}",
                     [M_EVENT_NOT_FOUND] = WrapInColor("Event not found", COLOR_DANGER),
                     [M_NO_EVENTS] = WrapInColor("No events currently in process", COLOR_WARN),
                     [M_EVENT_STARTED] =
-                        $"Capture the flag event started at [{WrapInColor("{0}", COLOR_WARN)}], check your map!",
+                        $"Capture the flag event started at [ {WrapInColor("{0}", COLOR_WARN)} ], check your map!",
                     [M_EVENT_STARTED_BY] =
-                        $"Capture the flag event started by {WrapInColor("{1}", COLOR_INFO)} at [{WrapInColor("{0}", COLOR_WARN)}], check your map!",
+                        $"Capture the flag event started by {WrapInColor("{1}", COLOR_INFO)} at [ {WrapInColor("{0}", COLOR_WARN)} ], check your map!",
                     [M_EVENT_FINISHED_TIME] = WrapInColor(
-                        $"Capture the flag event at [{WrapInColor("{0}", COLOR_WARN)}] has ran out of time, no winner chosen",
+                        $"Capture the flag event at [ {WrapInColor("{0}", COLOR_WARN)} ] has ran out of time, no winner chosen",
                         COLOR_DEFOCUS
                     ),
                     [M_EVENT_FINISHED_FORCE] =
-                        $"Capture the flag event at [{WrapInColor("{0}", COLOR_DEFOCUS)}] was stopped by {WrapInColor("{1}", COLOR_WARN)}",
+                        $"Capture the flag event at [ {WrapInColor("{0}", COLOR_DEFOCUS)} ] was stopped by {WrapInColor("{1}", COLOR_WARN)}",
                     [M_EVENT_FINISHED_CAPTURED] =
-                        $"Capture the flag event at [{WrapInColor("{0}", COLOR_SUCCESS)}] was won by {{1}}",
+                        $"Capture the flag event at [ {WrapInColor("{0}", COLOR_SUCCESS)} ] was won by {{1}}",
                     [M_INVALID_POS] = WrapInColor("Event cannot be spawned here", COLOR_DANGER),
                     [M_EVENT_EXISTS] = WrapInColor(
                         "Event already exists near that position, try choosing another place",
@@ -564,9 +642,11 @@ namespace Oxide.Plugins
                         COLOR_DANGER
                     ),
                     [M_EVENT_TICK_CAPTURING] =
-                        $"You are capturing flag at [{WrapInColor("{0}", COLOR_SUCCESS)}], stay in the zone for {WrapInColor("{1}", COLOR_INFO)} more seconds",
+                        $"You are capturing flag at [ {WrapInColor("{0}", COLOR_SUCCESS)} ], stay in the zone for {WrapInColor("{1}", COLOR_INFO)} more seconds",
                     [M_EVENT_TICK_CONTESTED] =
-                        $"The objective at [{WrapInColor("{0}", COLOR_WARN)}] is being contested, make other {WrapInColor("{1}", COLOR_DANGER)} players leave the zone or put a bullet in their heads!"
+                        $"The objective at [ {WrapInColor("{0}", COLOR_WARN)} ] is being contested, make other {WrapInColor("{1}", COLOR_DANGER)} players leave the zone or put a bullet in their heads!",
+                    [M_PLAYER_CAPTURE_ENTER] = $"You've entered event zone [ {WrapInColor("{0}", COLOR_SUCCESS)} ]",
+                    [M_PLAYER_CAPTURE_LEAVE] = $"You've left event zone [ {WrapInColor("{0}", COLOR_DANGER)} ]"
                 },
                 this
             );
@@ -749,6 +829,13 @@ namespace Oxide.Plugins
                 allEvents = null;
             }
 
+            public static List<Vector3> GetOccupiedSpawnPoints()
+            {
+                return Instance.eventSpawnPoints.FindAll(
+                    sp => allEvents.Any(e => e.bindObject.transform.position == sp)
+                );
+            }
+
             public static Flag FindByGridCell(string gridCell)
             {
                 return allEvents.Find(e => e.gridCell == gridCell.ToUpper());
@@ -781,12 +868,16 @@ namespace Oxide.Plugins
             public static void CreateNewEvent(Vector3 pos)
             {
                 CreateEvent(pos);
+
+                LogDebug("Created new event at {0}", pos);
             }
 
             public static void CreateNewEvent(Vector3 pos, object initiator)
             {
                 Flag flag = CreateEvent(pos);
                 flag.SetInitiator(initiator);
+
+                LogDebug("Created new event at {0} with initiator {1}", pos, initiator);
             }
 
             static Flag CreateEvent(Vector3 pos)
@@ -867,6 +958,8 @@ namespace Oxide.Plugins
             {
                 list.AddRange(alivePlayersInZone);
             }
+
+            #region Unity Messages
 
             void Awake()
             {
@@ -969,6 +1062,8 @@ namespace Oxide.Plugins
 
                 allEvents?.Remove(this);
             }
+
+            #endregion
 
             #region Collider, rotation, markers
 
@@ -1127,6 +1222,10 @@ namespace Oxide.Plugins
             {
                 alivePlayersInZone.Add(player);
 
+                Instance.OnPlayerEnterCaptureZone(this, player);
+
+                player.SendMessage("OnCtfEnterZone", this, SendMessageOptions.DontRequireReceiver);
+
                 LogDebug("OnPlayerEnterCaptureZone {0}", player.displayName);
 
                 switch (State)
@@ -1158,6 +1257,10 @@ namespace Oxide.Plugins
             void OnPlayerLeaveCaptureZone(BasePlayer player)
             {
                 alivePlayersInZone.Remove(player);
+
+                Instance.OnPlayerLeaveCaptureZone(this, player);
+
+                player.SendMessage("OnCtfLeaveZone", this, SendMessageOptions.DontRequireReceiver);
 
                 LogDebug("OnPlayerLeaveCaptureZone {0}", player.displayName);
 
@@ -1221,6 +1324,10 @@ namespace Oxide.Plugins
 
             void OnContestedStart(BasePlayer player)
             {
+                //alivePlayersInZone.ForEach(
+                //    p => p.SendMessage("OnCtfContested", this, SendMessageOptions.DontRequireReceiver)
+                //);
+
                 LogDebug("OnContestedStart: {0}", player.displayName);
             }
 
@@ -1249,6 +1356,10 @@ namespace Oxide.Plugins
                     basePercentage,
                     addPercentage,
                     capturePercentage
+                );
+
+                alivePlayersInZone.ForEach(
+                    player => player.SendMessage("OnCtfStatusUpdate", this, SendMessageOptions.DontRequireReceiver)
                 );
 
                 if (capturePercentage >= 1f)
@@ -1342,7 +1453,6 @@ namespace Oxide.Plugins
             {
                 LogDebug("Player {0} force disposed event at {1}", manager, gridCell);
                 Instance.OnEventFinished(this, manager);
-                //OnEventEnd();
                 Dispose();
             }
 
@@ -1350,7 +1460,6 @@ namespace Oxide.Plugins
             {
                 LogDebug("Plugin {0} force disposed event at {1}", caller.Name, gridCell);
                 Instance.OnEventFinished(this, caller);
-                //OnEventEnd(); // TODO: maybe remove this
                 Dispose();
             }
 
