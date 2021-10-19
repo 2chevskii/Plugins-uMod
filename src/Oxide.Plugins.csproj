@@ -26,6 +26,8 @@
     <Compile Include="AFKAPI.cs" />
     <Compile Include="CapacityController.cs" />
     <Compile Include="CodeLockAuthAPI.cs" />
+    <Compile Include="CTFEventsRewards.cs" />
+    <Compile Include="CTFEventsUI.cs" />
     <Compile Include="DisableDamage.cs" />
     <Compile Include="EntityCleanup.cs" />
     <Compile Include="GodmodeIndicator.cs" />
