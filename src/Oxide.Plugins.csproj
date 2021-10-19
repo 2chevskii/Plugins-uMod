@@ -26,9 +26,12 @@
     <Compile Include="AFKAPI.cs" />
     <Compile Include="CapacityController.cs" />
     <Compile Include="CodeLockAuthAPI.cs" />
+    <Compile Include="CTFEventsRewards.cs" />
+    <Compile Include="CTFEventsUI.cs" />
     <Compile Include="DisableDamage.cs" />
     <Compile Include="EntityCleanup.cs" />
     <Compile Include="GodmodeIndicator.cs" />
+    <Compile Include="CTFEvents.cs" />
     <Compile Include="HighWallBarricades.cs" />
     <Compile Include="IgnoreCollision.cs" />
     <Compile Include="Newbie.cs" />
@@ -42,6 +45,7 @@
     <Compile Include="SmoothRestarterRejoinRewards.cs" />
     <Compile Include="TeleportGun.cs" />
     <Compile Include="TickrateLimiter.cs" />
+    <Compile Include="UiPlus.cs" />
     <Compile Include="UModVersionChecker.cs" />
     <Compile Include="WhereIsMyHorse.cs" />
     <Compile Include="WipeDataCleaner.cs" />
@@ -176,6 +180,7 @@
     </Reference>
     <Reference Include="Mono.WebBrowser">
       <HintPath>$(ReferenceDir)/Mono.WebBrowser.dll</HintPath>
+      <Aliases>MonoWebBrowser</Aliases>
     </Reference>
     <Reference Include="MP3Sharp">
       <HintPath>$(ReferenceDir)/MP3Sharp.dll</HintPath>
