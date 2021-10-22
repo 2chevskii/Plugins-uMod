@@ -1,160 +1,233 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
+
+using Facepunch;
+
 using Newtonsoft.Json;
+
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-	[Info("Wipe Data Cleaner", "2CHEVSKII", "1.3.4")]
-	[Description("Cleans specified data files on new wipe.")]
-	internal class WipeDataCleaner : CovalencePlugin
-	{
+    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.4.0")]
+    [Description("Cleans specified data files on new wipe.")]
+    class WipeDataCleaner : CovalencePlugin
+    {
+        const string PERMISSIONUSE = "wipedatacleaner.wipe";
 
-		const string PERMISSIONUSE = "wipedatacleaner.wipe";
+        OxideMod       Oxide = Interface.Oxide;
+        PluginSettings settings;
 
-		#region -Hooks-
+        #region Oxide hooks
 
+        void Init()
+        {
+            permission.RegisterPermission(PERMISSIONUSE, this);
 
-		private void Init()
-		{
-			permission.RegisterPermission(PERMISSIONUSE, this);
+            AddCovalenceCommand(settings.Command ?? "wipe", "Wipe", PERMISSIONUSE);
+        }
 
-			AddCovalenceCommand(Settings.Command ?? "wipe", "Wipe", PERMISSIONUSE);
-		}
+        void OnNewSave(string filename) => Wipe(null);
 
-		private void OnNewSave(string filename) => Wipe(null);
+        #endregion
 
+        #region Configuration
 
-		#endregion
+        protected override void LoadDefaultConfig()
+        {
+            settings = new PluginSettings {
+                FileNames = new List<string> {
+                    "somefile",
+                    "AnotherFile"
+                },
+                Command = "wipe"
+            };
+            SaveConfig();
+        }
 
-		#region -Fields-
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
 
+            try
+            {
+                settings = Config.ReadObject<PluginSettings>();
 
-		private OxideMod Mod = Interface.Oxide;
-		private PluginSettings Settings { get; set; }
-		private List<string> FilesToWipe { get; set; }
+                if (settings == null || settings.FileNames == null)
+                    throw new Exception("Configuration contains null value");
 
+                SaveConfig();
+            }
+            catch (Exception e)
+            {
+                LogError("Failed to load configuration: {0}", e.Message);
+                LoadDefaultConfig();
+            }
+        }
 
-		#endregion
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(settings);
+        }
 
-		#region -Configuration-
+        #endregion
 
+        #region Core
 
-		private class PluginSettings
-		{
-			[JsonProperty("Filenames, without .json")]
-			public List<string> FileNames { get; set; }
+        void Wipe(IPlayer executer)
+        {
+            if (settings.EnableLogs)
+            {
+                if (executer != null && !executer.IsServer)
+                {
+                    Log("Wipe started by {0}", executer.Name);
+                }
+                else
+                {
+                    Log("Wipe started");
+                }
 
-			[JsonProperty("Command (default: 'wipe')")]
-			public string Command { get; set; }
-		}
+                LogWarning("Be careful, wipe will reload all the plugins!");
+            }
 
-		protected override void LoadDefaultConfig()
-		{
-			Config.Clear();
+            HashSet<string> filesToWipe = DetermineFilesToWipe();
 
-			Settings = new PluginSettings
-			{
-				FileNames = new List<string> {
-					"somefile",
-					"AnotherFile"
-				},
-				Command = "wipe"
-			};
+            if (settings.EnableLogs)
+            {
+                Log("Data files ready to wipe:\n{0}", JsonConvert.SerializeObject(filesToWipe, Formatting.Indented));
+            }
 
-			SaveConfig();
-		}
+            List<string> ignoreList = Pool.GetList<string>();
 
-		protected override void SaveConfig() => Config.WriteObject(Settings);
+            ignoreList.Add(nameof(WipeDataCleaner));
 
-		protected override void LoadConfig()
-		{
-			base.LoadConfig();
+            Oxide.UnloadAllPlugins(ignoreList);
 
-			try
-			{
-				Settings = Config.ReadObject<PluginSettings>();
+            Pool.FreeList(ref ignoreList);
 
-				if(Settings == null || Settings.FileNames == null)
-					throw new JsonException();
-			}
-			catch
-			{
-				LoadDefaultConfig();
-			}
-		}
+            foreach (string file in filesToWipe)
+            {
+                var message = WipeFile(file);
 
+                if (settings.EnableLogs)
+                {
+                    Log(message);
+                } else if (executer != null && !executer.IsServer)
+                {
+                    executer.Message(message);
+                }
+            }
 
-		#endregion
+            Oxide.LoadAllPlugins(false);
 
-		#region -Core-
+            if (settings.EnableLogs)
+            {
+                Log("Wipe completed");
+            }
+        }
 
+        HashSet<string> DetermineFilesToWipe()
+        {
+            HashSet<string> files = new HashSet<string>();
 
-		private void Wipe(IPlayer executer)
-		{
-			FilesToWipe = DetermineFilesToWipe().ToList<string>();
+            for (int i = 0; i < settings.FileNames.Count; i++)
+            {
+                string fileName = settings.FileNames[i];
 
-			Mod.UnloadAllPlugins(new List<string> {
-				nameof(WipeDataCleaner)
-			});
+                if (fileName == null || string.IsNullOrWhiteSpace(fileName))
+                {
+                    LogWarning("Configuration contains invalid filename!");
+                    continue;
+                }
 
-			foreach(string file in FilesToWipe)
-			{
-				var message = WipeFile(file);
-				executer?.Message(message);
-			}
+                if (fileName.EndsWith("/"))
+                {
+                    string[] matchingFiles = SearchDirectory(fileName.Remove(fileName.Length - 1));
 
-			Mod.LoadAllPlugins(false);
-		}
+                    for (int j = 0; j < matchingFiles.Length; j++)
+                    {
+                        files.Add(SanitizeFileName(matchingFiles[j]));
+                    }
+                }
+                else if (fileName.EndsWith("/*"))
+                {
+                    string[] matchingFiles = SearchDirectory(fileName.Remove(fileName.Length - 2));
 
-		private IEnumerable<string> DetermineFilesToWipe()
-		{
-			Dictionary<string, DynamicConfigFile> allDataFiles = typeof(DataFileSystem)
-				.GetField("_datafiles", BindingFlags.NonPublic | BindingFlags.Instance)
-				.GetValue(Interface.Oxide.DataFileSystem) as Dictionary<string, DynamicConfigFile>;
+                    for (int j = 0; j < matchingFiles.Length; j++)
+                    {
+                        files.Add(SanitizeFileName(matchingFiles[j]));
+                    }
+                }
+                else
+                {
+                    string fn = fileName.EndsWith(".json") ? fileName : fileName + ".json";
 
-			List<string> list = new List<string>();
+                    string matchingFile = SearchFile(fn);
 
-			foreach(string fileName in Settings.FileNames)
-			{
-				if(string.IsNullOrEmpty(fileName) || IsNullOrWhiteSpace(fileName))
-					continue;
+                    if (matchingFile != null)
+                    {
+                        files.Add(SanitizeFileName(matchingFile));
+                    }
+                }
+            }
 
-				if(!fileName.Contains("*"))
-				{
-					list.Add(fileName);
+            return files;
+        }
 
-					continue;
-				}
+        string SanitizeFileName(string fileName)
+        {
+            return fileName.Substring(Oxide.DataDirectory.Length + 1).Replace("\\", "/");
+        }
 
-				if(fileName.Length == 1)
-					list.AddRange(allDataFiles.Keys.Where(x => !x.StartsWith("oxide.")));
-				else
-					list.AddRange(allDataFiles.Keys.Where(x => x.StartsWith(fileName.TrimEnd('*'))));
-			}
+        string SearchFile(string name)
+        {
+            return Oxide.DataFileSystem.GetFiles(searchPattern: name).FirstOrDefault();
+        }
 
-			return list.Distinct();
-		}
+        string[] SearchDirectory(string name)
+        {
+            return Oxide.DataFileSystem.GetFiles(name, "*");
+        }
 
-		private string WipeFile(string file)
-		{
-			if(Interface.Oxide.DataFileSystem.ExistsDatafile(file))
-			{
-				Interface.Oxide.DataFileSystem.GetFile(file).Clear();
-				Interface.Oxide.DataFileSystem.GetFile(file).Save();
+        string WipeFile(string file)
+        {
+            if (file.EndsWith(".json"))
+            {
+                file = file.Substring(0, file.Length - 5);
+            }
 
-				return $"Wiped '{file}.json'";
-			}
+            if (Interface.Oxide.DataFileSystem.ExistsDatafile(file))
+            {
+                DynamicConfigFile dataFile = Interface.Oxide.DataFileSystem.GetFile(file);
 
-			return $"Could not find '{file}.json'";
-		}
+                dataFile.Clear();
+                dataFile.Save();
 
-		private bool IsNullOrWhiteSpace(string str) => str == null ? true : str.All(c => c == ' ');
+                return $"Wiped '{file}.json'";
+            }
 
+            return $"Could not find '{file}.json'";
+        }
 
-		#endregion
-	}
+        #endregion
+
+        #region Configuration class
+
+        class PluginSettings
+        {
+            [JsonProperty("Filenames, without .json")]
+            public List<string> FileNames { get; set; }
+
+            [JsonProperty("Command (default: 'wipe')")]
+            public string Command { get; set; }
+
+            [JsonProperty("Enable logs", DefaultValueHandling = DefaultValueHandling.Populate)]
+            public bool EnableLogs { get; set; }
+        }
+
+        #endregion
+    }
 }
