@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+#if RUST
 using Facepunch;
+#endif
 
 using Newtonsoft.Json;
 
@@ -12,7 +14,7 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.4.1")]
+    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.4.2")]
     [Description("Cleans specified data files on new wipe.")]
     class WipeDataCleaner : CovalencePlugin
     {
@@ -100,13 +102,21 @@ namespace Oxide.Plugins
                 Log("Data files ready to wipe:\n{0}", JsonConvert.SerializeObject(filesToWipe, Formatting.Indented));
             }
 
-            List<string> ignoreList = Pool.GetList<string>();
+            List<string> ignoreList;
+
+#if RUST
+            ignoreList = Pool.GetList<string>();
+#else
+            ignoreList = new List<string>();
+#endif
 
             ignoreList.Add(nameof(WipeDataCleaner));
 
             Oxide.UnloadAllPlugins(ignoreList);
 
+#if RUST
             Pool.FreeList(ref ignoreList);
+#endif
 
             foreach (string file in filesToWipe)
             {
