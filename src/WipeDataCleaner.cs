@@ -12,7 +12,7 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.4.0")]
+    [Info("Wipe Data Cleaner", "2CHEVSKII", "1.4.1")]
     [Description("Cleans specified data files on new wipe.")]
     class WipeDataCleaner : CovalencePlugin
     {
@@ -137,7 +137,7 @@ namespace Oxide.Plugins
             {
                 string fileName = settings.FileNames[i];
 
-                if (fileName == null || string.IsNullOrWhiteSpace(fileName))
+                if (IsNullOrWhiteSpace(fileName))
                 {
                     LogWarning("Configuration contains invalid filename!");
                     continue;
@@ -210,6 +210,19 @@ namespace Oxide.Plugins
             }
 
             return $"Could not find '{file}.json'";
+        }
+
+        #endregion
+
+        #region Helper methods
+
+        bool IsNullOrWhiteSpace(string str)
+        {
+#if HURTWORLD || BLOCKSTORM || REIGNOFKINGS || THEFOREST || FORTRESSCRAFT || HOLDFAST || HUMANFALLFLAT || HEAT || HIDEHOLDOUT
+            return str == null || str.Length == 0 || str.All(c => char.IsWhiteSpace(c));
+#else
+            return string.IsNullOrWhiteSpace(str);
+#endif
         }
 
         #endregion
