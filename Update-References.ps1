@@ -50,7 +50,7 @@ begin {
 
   $depot_downloader_exec = Join-Path $depot_downloader_dir 'DepotDownloader.dll'
   $depot_downloader_archive = Join-Path $downloads_dir 'depot-downloader.zip'
-  $depot_downloader_version = '2.4.4'
+  $depot_downloader_version = '2.4.5'
   $depot_downloader_download_url = 'https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_{version}/depotdownloader-{version}.zip'.Replace('{version}', $depot_downloader_version)
 
   $dotnet_install_path = Join-Path $downloads_dir 'dotnet-install.ps1'
