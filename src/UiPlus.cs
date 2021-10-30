@@ -1,7 +1,7 @@
 // Requires: ImageLibrary
 
-// #define UNITY_ASSERTIONS
-// #define DEBUG
+//#define UNITY_ASSERTIONS
+//#define DEBUG
 
 using System;
 using System.Collections.Generic;
@@ -22,20 +22,24 @@ using UnityEngine.UI;
 
 namespace Oxide.Plugins
 {
-    [Info("UiPlus", "2CHEVSKII", "2.0.0")]
+    [Info("UiPlus", "2CHEVSKII", "2.1.0")]
     [Description("Adds various custom elements to the user interface")]
     class UiPlus : CovalencePlugin
     {
-        const string ICON_CLOCK            = "https://i.imgur.com/CycsoyW.png",
-                     ICON_ACTIVE_PLAYERS   = "https://i.imgur.com/UY0y5ZI.png",
-                     ICON_SLEEPING_PLAYERS = "https://i.imgur.com/mvUBBOB.png";
+        const string ICON_CLOCK            = "https://i.imgur.com/K53fjzg.png",
+                     ICON_ACTIVE_PLAYERS   = "https://i.imgur.com/r7L4jW2.png",
+                     ICON_SLEEPING_PLAYERS = "https://i.imgur.com/D0JFYfe.png",
+                     ICON_SERVER_REWARDS   = "https://i.imgur.com/tpSErWL.png",
+                     ICON_ECONOMICS        = "https://i.imgur.com/KH9NcrC.png";
 
         const string PERMISSION_SEE = "uiplus.see";
 
         static UiPlus Instance;
-        static ulong  ImageId = unchecked((ulong)nameof(UiPlus).GetHashCode());
+        static ulong  ImageId = unchecked((ulong)nameof(UiPlus).GetHashCode() + 13);
 
         [PluginReference] Plugin ImageLibrary;
+        [PluginReference] Plugin ServerRewards;
+        [PluginReference] Plugin Economics;
 
         PluginSettings settings;
         bool           iconsReady;
@@ -82,7 +86,9 @@ namespace Oxide.Plugins
                 new Dictionary<string, string> {
                     { "Clock", settings.Clock.IconUrl },
                     { "ActivePlayers", settings.ActivePlayers.IconUrl },
-                    { "SleepingPlayers", settings.SleepingPlayers.IconUrl }
+                    { "SleepingPlayers", settings.SleepingPlayers.IconUrl },
+                    { "ServerRewards", settings.ServerRewards.IconUrl },
+                    { "Economics", settings.Economics.IconUrl }
                 },
                 ImageId,
                 false,
@@ -110,32 +116,90 @@ namespace Oxide.Plugins
 
             try
             {
+                bool hasChanged = false;
                 settings = Config.ReadObject<PluginSettings>();
 
-                if (settings == null ||
-                    settings.Clock == null ||
-                    settings.ActivePlayers == null ||
-                    settings.SleepingPlayers == null)
+                if (settings == null)
                 {
-                    throw new Exception("Configuration contains null value");
+                    LogWarning("Plugin settings appear to be null: resetting to default...");
+                    settings = PluginSettings.Default;
+                    hasChanged = true;
+                }
+
+                if (settings.Clock == null)
+                {
+                    LogWarning("Clock settings appear to be null: resetting to default...");
+                    settings.Clock = PluginSettings.Default.Clock;
+                    hasChanged = true;
+                }
+
+                if (settings.ActivePlayers == null)
+                {
+                    LogWarning("ActivePlayers settings appear to be null: resetting to default...");
+                    settings.ActivePlayers = PluginSettings.Default.ActivePlayers;
+                    hasChanged = true;
+                }
+
+                if (settings.SleepingPlayers == null)
+                {
+                    LogWarning("SleepingPlayers settings appear to be null: resetting to default...");
+                    settings.SleepingPlayers = PluginSettings.Default.SleepingPlayers;
+                    hasChanged = true;
+                }
+
+                if (settings.ServerRewards == null)
+                {
+                    LogWarning("ServerRewards settings appear to be null: resetting to default...");
+                    settings.ServerRewards = PluginSettings.Default.ServerRewards;
+                    hasChanged = true;
+                }
+
+                if (settings.Economics == null)
+                {
+                    LogWarning("Economics settings appear to be null: resetting to default...");
+                    settings.Economics = PluginSettings.Default.Economics;
+                    hasChanged = true;
                 }
 
                 if (settings.Clock.IconUrl == null)
                 {
                     LogWarning("Clock icon appears to be null: resetting to default...");
                     settings.Clock.IconUrl = ICON_CLOCK;
+                    hasChanged = true;
                 }
 
                 if (settings.ActivePlayers.IconUrl == null)
                 {
                     LogWarning("Active players icon appears to be null: resetting to default...");
                     settings.ActivePlayers.IconUrl = ICON_ACTIVE_PLAYERS;
+                    hasChanged = true;
                 }
 
                 if (settings.SleepingPlayers.IconUrl == null)
                 {
                     LogWarning("Sleeping players icon appears to be null: resetting to default...");
                     settings.SleepingPlayers.IconUrl = ICON_SLEEPING_PLAYERS;
+                    hasChanged = true;
+                }
+
+                if (settings.ServerRewards.IconUrl == null)
+                {
+                    LogWarning("ServerRewards icon appears to be null: resetting to default...");
+                    settings.ServerRewards.IconUrl = ICON_SERVER_REWARDS;
+                    hasChanged = true;
+                }
+
+                if (settings.Economics.IconUrl == null)
+                {
+                    LogWarning("Economics icon appears to be null: resetting to default...");
+                    settings.Economics.IconUrl = ICON_ECONOMICS;
+                    hasChanged = true;
+                }
+
+                if (hasChanged)
+                {
+                    LogWarning("Configuration was updated, saving...");
+                    SaveConfig();
                 }
             }
             catch (Exception e)
@@ -164,23 +228,37 @@ namespace Oxide.Plugins
                          NAME_AP_ICON     = "uiplus.ui::activeplayers-icon",
                          NAME_SP_PANEL    = "uiplus.ui::sleepingplayers-panel",
                          NAME_SP_TEXT     = "uiplus.ui::sleepingplayers-text",
-                         NAME_SP_ICON     = "uiplus.ui::sleepingplayers-icon";
+                         NAME_SP_ICON     = "uiplus.ui::sleepingplayers-icon",
+                         NAME_SR_PANEL    = "uiplus.ui::serverrewards-panel",
+                         NAME_SR_TEXT     = "uiplus.ui::serverrewards-text",
+                         NAME_SR_ICON     = "uiplus.ui::serverrewards-icon",
+                         NAME_ECO_PANEL   = "uiplus.ui::economics-panel",
+                         NAME_ECO_TEXT    = "uiplus.ui::economics-text",
+                         NAME_ECO_ICON    = "uiplus.ui::economics-icon";
 
             const string COLOR_PANEL = "0.6 0.6 0.6 0.1",
                          COLOR_ICON  = "1 1 1 0.9",
                          COLOR_TEXT  = "0.9 0.9 0.9 0.75";
+
+            const string TEXT_PLACEHOLDER = "__text__";
 
             static HashSet<UiPlusComponent> AllComponents;
 
             static string ClockPanel,
                           ActivePlayersPanel,
                           SleepingPlayersPanel,
+                          ServerRewardsPanel,
+                          EconomicsPanel,
                           ClockIcon,
-                          ClockText,
                           ActivePlayersIcon,
-                          ActivePlayersText,
                           SleepingPlayersIcon,
-                          SleepingPlayersText;
+                          ServerRewardsIcon,
+                          EconomicsIcon,
+                          ClockText,
+                          ActivePlayersText,
+                          SleepingPlayersText,
+                          ServerRewardsText,
+                          EconomicsText;
 
             static string RecentClockText,
                           RecentApText,
@@ -193,7 +271,12 @@ namespace Oxide.Plugins
 
             static StringBuilder Builder;
 
-            bool           isVisible;
+            int lastSrPts, lastEcoPts;
+
+            bool isSRLoaded,
+                 isEcoLoaded,
+                 isVisible;
+
             BasePlayer     player;
             PluginSettings Settings;
 
@@ -322,7 +405,7 @@ namespace Oxide.Plugins
                             new CuiTextComponent {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
-                                Text = "__text__",
+                                Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.Clock.FontSize
                             },
                             new CuiRectTransformComponent {
@@ -386,7 +469,7 @@ namespace Oxide.Plugins
                             new CuiTextComponent {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
-                                Text = "__text__",
+                                Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.ActivePlayers.FontSize
                             },
                             new CuiRectTransformComponent {
@@ -450,7 +533,7 @@ namespace Oxide.Plugins
                             new CuiTextComponent {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
-                                Text = "__text__",
+                                Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.SleepingPlayers.FontSize
                             },
                             new CuiRectTransformComponent {
@@ -462,6 +545,134 @@ namespace Oxide.Plugins
                 );
 
                 SleepingPlayersText = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_SR_PANEL,
+                        Parent = "Hud",
+                        Components = {
+                            new CuiImageComponent {
+                                Color = COLOR_PANEL,
+                                ImageType = Image.Type.Simple,
+                                Material = PANEL_MATERIAL
+                            },
+                            GetPanelTransform(
+                                Instance.settings.ServerRewards.PosX,
+                                Instance.settings.ServerRewards.PosY,
+                                Instance.settings.ServerRewards.Scale
+                            )
+                        }
+                    }
+                );
+
+                ServerRewardsPanel = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_SR_ICON,
+                        Parent = NAME_SR_PANEL,
+                        Components = {
+                            new CuiRawImageComponent {
+                                Color = COLOR_ICON,
+                                Png = Instance.ImageLibrary.Call<string>("GetImage", "ServerRewards", ImageId)
+                            },
+                            GetIconTransform()
+                        }
+                    }
+                );
+
+                ServerRewardsIcon = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_SR_TEXT,
+                        Parent = NAME_SR_PANEL,
+                        Components = {
+                            new CuiTextComponent {
+                                Color = COLOR_TEXT,
+                                Align = TextAnchor.MiddleCenter,
+                                Text = TEXT_PLACEHOLDER,
+                                FontSize = Instance.settings.ServerRewards.FontSize
+                            },
+                            new CuiRectTransformComponent {
+                                AnchorMin = "0.4 0",
+                                AnchorMax = "1 1"
+                            }
+                        }
+                    }
+                );
+
+                ServerRewardsText = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_ECO_PANEL,
+                        Parent = "Hud",
+                        Components = {
+                            new CuiImageComponent {
+                                Color = COLOR_PANEL,
+                                ImageType = Image.Type.Simple,
+                                Material = PANEL_MATERIAL
+                            },
+                            GetPanelTransform(
+                                Instance.settings.Economics.PosX,
+                                Instance.settings.Economics.PosY,
+                                Instance.settings.Economics.Scale
+                            )
+                        }
+                    }
+                );
+
+                EconomicsPanel = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_ECO_ICON,
+                        Parent = NAME_ECO_PANEL,
+                        Components = {
+                            new CuiRawImageComponent {
+                                Color = COLOR_ICON,
+                                Png = Instance.ImageLibrary.Call<string>("GetImage", "Economics", ImageId)
+                            },
+                            GetIconTransform()
+                        }
+                    }
+                );
+
+                EconomicsIcon = CuiHelper.ToJson(reusableContainer);
+
+                reusableContainer.Clear();
+
+                reusableContainer.Add(
+                    new CuiElement {
+                        Name = NAME_ECO_TEXT,
+                        Parent = NAME_ECO_PANEL,
+                        Components = {
+                            new CuiTextComponent {
+                                Color = COLOR_TEXT,
+                                Align = TextAnchor.MiddleCenter,
+                                Text = TEXT_PLACEHOLDER,
+                                FontSize = Instance.settings.Economics.FontSize
+                            },
+                            new CuiRectTransformComponent {
+                                AnchorMin = "0.4 0",
+                                AnchorMax = "1 1"
+                            }
+                        }
+                    }
+                );
+
+                EconomicsText = CuiHelper.ToJson(reusableContainer);
 
                 UpdateClockText();
                 UpdateActivePlayersText();
@@ -490,11 +701,9 @@ namespace Oxide.Plugins
 
             static string ReplaceText(string ui, string newText)
             {
-                const string textPlaceholder = "__text__";
-
                 DebugLog("Replacing text with {0}", newText);
 
-                return ui.Replace(textPlaceholder, newText);
+                return ui.Replace(TEXT_PLACEHOLDER, newText);
             }
 
             static string FormatTime(TimeSpan time, string format)
@@ -566,6 +775,8 @@ namespace Oxide.Plugins
 
             #endregion
 
+            #region Unity Messages
+
             void Awake()
             {
                 Assert.IsTrue(Instance.iconsReady, "Initializing component before icons were cached!");
@@ -579,6 +790,11 @@ namespace Oxide.Plugins
 
                 Settings = Instance.settings;
 
+                isSRLoaded = Instance.ServerRewards && Instance.ServerRewards.IsLoaded;
+                isEcoLoaded = Instance.Economics && Instance.Economics.IsLoaded;
+
+                ResetMyPts();
+
                 InvokeRepeating(UiTick, Settings.UiUpdateInterval, Settings.UiUpdateInterval);
             }
 
@@ -591,6 +807,33 @@ namespace Oxide.Plugins
                 {
                     AllComponents.Remove(this);
                 }
+            }
+
+            #endregion
+
+            void ResetMyPts()
+            {
+                lastSrPts = -1;
+                lastEcoPts = -1;
+            }
+
+            int GetMySrPts()
+            {
+                object points = Instance.ServerRewards.Call("CheckPoints", player.userID);
+
+                if (points is int)
+                {
+                    return (int)points;
+                }
+
+                return 0;
+            }
+
+            int GetMyEcoPts()
+            {
+                object balance = Instance.Economics.Call("Balance", player.userID);
+
+                return (int)(double)balance;
             }
 
             void SetVisible(bool wantsVisible)
@@ -638,6 +881,34 @@ namespace Oxide.Plugins
                     }
                 }
 
+                if (Settings.ServerRewards.Enable && isSRLoaded)
+                {
+                    if (wantsVisible)
+                    {
+                        CuiHelper.AddUi(player, ServerRewardsPanel);
+                        CuiHelper.AddUi(player, ServerRewardsIcon);
+                    }
+                    else
+                    {
+                        CuiHelper.DestroyUi(player, NAME_SR_PANEL);
+                        ResetMyPts();
+                    }
+                }
+
+                if (Settings.Economics.Enable && isEcoLoaded)
+                {
+                    if (wantsVisible)
+                    {
+                        CuiHelper.AddUi(player, EconomicsPanel);
+                        CuiHelper.AddUi(player, EconomicsIcon);
+                    }
+                    else
+                    {
+                        CuiHelper.DestroyUi(player, NAME_ECO_PANEL);
+                        ResetMyPts();
+                    }
+                }
+
                 isVisible = wantsVisible;
             }
 
@@ -651,11 +922,23 @@ namespace Oxide.Plugins
                     );
 
                     IsVisible = true;
-                    UpdateText(Settings.Clock.Enable, Settings.ActivePlayers.Enable, Settings.SleepingPlayers.Enable);
+                    UpdateText(
+                        Settings.Clock.Enable,
+                        Settings.ActivePlayers.Enable,
+                        Settings.SleepingPlayers.Enable,
+                        Settings.ServerRewards.Enable && isSRLoaded,
+                        Settings.Economics.Enable && isEcoLoaded
+                    );
                 }
             }
 
-            void UpdateText(bool updateClock, bool updateActivePlayers, bool updateSleepingPlayers)
+            void UpdateText(
+                bool updateClock,
+                bool updateActivePlayers,
+                bool updateSleepingPlayers,
+                bool updateServerRewards,
+                bool updateEconomics
+            )
             {
                 if (updateClock)
                 {
@@ -694,6 +977,30 @@ namespace Oxide.Plugins
                     CuiHelper.DestroyUi(player, NAME_SP_TEXT);
                     CuiHelper.AddUi(player, RecentSpText);
                 }
+
+                if (updateServerRewards)
+                {
+                    int newPts = GetMySrPts();
+
+                    if (newPts != lastSrPts)
+                    {
+                        CuiHelper.DestroyUi(player, NAME_SR_TEXT);
+                        CuiHelper.AddUi(player, ReplaceText(ServerRewardsText, newPts.ToString()));
+                        lastSrPts = newPts;
+                    }
+                }
+
+                if (updateEconomics)
+                {
+                    int newPts = GetMyEcoPts();
+
+                    if (newPts != lastEcoPts)
+                    {
+                        CuiHelper.DestroyUi(player, NAME_ECO_TEXT);
+                        CuiHelper.AddUi(player, ReplaceText(EconomicsText, newPts.ToString()));
+                        lastEcoPts = newPts;
+                    }
+                }
             }
         }
 
@@ -724,6 +1031,22 @@ namespace Oxide.Plugins
                     IconUrl = ICON_SLEEPING_PLAYERS,
                     FontSize = 15
                 },
+                ServerRewards = new PanelSettings {
+                    Enable = false,
+                    PosX = 0.211f,
+                    PosY = 0.046f,
+                    Scale = 1f,
+                    IconUrl = ICON_SERVER_REWARDS,
+                    FontSize = 15
+                },
+                Economics = new PanelSettings {
+                    Enable = false,
+                    PosX = 0.268f,
+                    PosY = 0.046f,
+                    Scale = 1f,
+                    IconUrl = ICON_ECONOMICS,
+                    FontSize = 15
+                },
                 UiUpdateInterval = 2f,
                 UiClockFormat = "24::hh:mm", // 12::/24::, (hh):(mm):(ss) (h|m|s)
                 UiClockFormatAppendAmPm = false
@@ -732,6 +1055,9 @@ namespace Oxide.Plugins
             [JsonProperty("Clock")] public PanelSettings Clock { get; set; }
             [JsonProperty("Active players")] public PanelSettings ActivePlayers { get; set; }
             [JsonProperty("Sleeping players")] public PanelSettings SleepingPlayers { get; set; }
+            [JsonProperty("Server rewards")] public PanelSettings ServerRewards { get; set; }
+            [JsonProperty("Economics")] public PanelSettings Economics { get; set; }
+
             [JsonProperty("Ui update interval")] public float UiUpdateInterval { get; set; }
             [JsonProperty("Ui time format")] public string UiClockFormat { get; set; }
 
