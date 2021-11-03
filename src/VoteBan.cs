@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -8,7 +7,6 @@ using Facepunch;
 using Newtonsoft.Json;
 
 using Oxide.Core;
-using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 
 using UnityEngine;
@@ -21,6 +19,8 @@ namespace Oxide.Plugins
     [Description("Allows players to vote for banning others")]
     class VoteBan : CovalencePlugin
     {
+        #region Fields
+
         const string M_PREFIX                 = "Chat prefix",
                      M_VOTE_STARTED           = "Vote started",
                      M_VOTE_PROGRESS          = "Vote in progress",
@@ -44,6 +44,10 @@ namespace Oxide.Plugins
         PluginSettings settings;
         VoteData       voteData;
 
+        #endregion
+
+        #region Oxide hooks
+
         void Init()
         {
             permission.RegisterPermission(PERMISSION_MANAGE, this);
@@ -51,6 +55,8 @@ namespace Oxide.Plugins
 
             AddCovalenceCommand("voteban", nameof(CommandHandler));
         }
+
+        #endregion
 
         #region Plugin API
 
@@ -63,7 +69,7 @@ namespace Oxide.Plugins
         void OnPlayerVoted(IPlayer player)
         {
             Interface.Oxide.CallHook("OnVotebanPlayerVoted", player);
-            Message(player, M_VOTED);
+            Message(player, M_VOTED, voteData.voteTarget.Name);
         }
 
         void OnVoteTick()
@@ -82,7 +88,9 @@ namespace Oxide.Plugins
                 voteData.voteInitiator.Name,
                 voteData.voteTarget.Name,
                 voteData.VoteFraction,
-                voteData.VotedPlayerCount
+                voteData.VotedPlayerCount,
+                GetPlayersRequiredToVoteSuccess(GetPlayerCountWithoutTarget(voteData.voteTarget)),
+                Mathf.CeilToInt(voteData.TimeLeft)
             );
         }
 
@@ -92,22 +100,30 @@ namespace Oxide.Plugins
             {
                 Interface.Oxide.CallHook(
                     "OnVotebanCancelled",
+                    voteData.voteInitiator,
                     voteData.voteTarget,
                     (int)VoteData.CancelReason.Manual,
                     canceller
                 );
 
-                Announce(M_VOTE_CANCELLED, voteData.voteTarget.Name, canceller.Name);
+                Announce(M_VOTE_CANCELLED, canceller.Name, voteData.voteInitiator.Name, voteData.voteTarget.Name);
             }
             else
             {
                 Interface.Oxide.CallHook(
                     "OnVotebanCancelled",
+                    voteData.voteInitiator,
                     voteData.voteTarget,
                     (int)VoteData.CancelReason.InsufficientPlayers
                 );
 
-                Announce(M_VOTE_CANCELLED_PLAYERS, voteData.voteTarget.Name, settings.MinPlayers);
+                Announce(
+                    M_VOTE_CANCELLED_PLAYERS,
+                    voteData.voteInitiator.Name,
+                    voteData.voteTarget.Name,
+                    GetPlayerCountWithoutTarget(voteData.voteTarget),
+                    settings.MinPlayers
+                );
             }
         }
 
@@ -115,12 +131,19 @@ namespace Oxide.Plugins
         {
             Interface.Oxide.CallHook("OnVotebanTimedOut", voteData.voteTarget);
 
-            Announce(M_VOTE_TIMED_OUT, voteData.voteTarget.Name, settings.VoteTime);
+            Announce(M_VOTE_TIMED_OUT, voteData.voteInitiator.Name, voteData.voteTarget.Name, settings.VoteTime);
+        }
+
+        void OnVoteSuccess()
+        {
+            Interface.Oxide.CallHook("OnVotebanSuccess", voteData.voteInitiator, voteData.voteTarget);
+
+            Announce(M_VOTE_SUCCESS, voteData.voteInitiator.Name, voteData.voteTarget.Name);
         }
 
         bool IsVotebanInProgress()
         {
-            return voteData?.voteRoutine != null;
+            return voteData != null;
         }
 
         bool GetCurrentVotebanData(Dictionary<string, object> record)
@@ -140,7 +163,7 @@ namespace Oxide.Plugins
             record["fraction"] = voteData.VoteFraction;
             record["required_fraction"] = settings.PercentageRequired / 100f;
             record["voted_players"] = voteData.votedPlayers.ToArray();
-            record["required_voted_players"] = players.Connected.Count() / (settings.PercentageRequired / 100f);
+            record["required_voted_players"] = Mathf.RoundToInt(GetPlayerCountWithoutTarget(voteData.voteTarget) * (float)record["required_fraction"]);
             record["time_left"] = voteData.TimeLeft;
             record["start_time"] = voteData.startTime;
             record["end_time"] = voteData.endTime;
@@ -149,6 +172,8 @@ namespace Oxide.Plugins
         }
 
         #endregion
+
+        #region Command handlers
 
         void CommandHandler(IPlayer player, string _, string[] args)
         {
@@ -166,9 +191,15 @@ namespace Oxide.Plugins
         {
             if (CheckPermission(player, PERMISSION_VOTE))
             {
-                if (voteData == null || voteData.voteRoutine == null)
+                if (voteData == null)
                 {
                     Message(player, M_NO_VOTE);
+                    return;
+                }
+
+                if (voteData.voteTarget == player)
+                {
+                    Message(player, M_CANNOT_VOTE_SELF);
                     return;
                 }
 
@@ -184,7 +215,74 @@ namespace Oxide.Plugins
 
         void HandleManageCommand(IPlayer player, string arg)
         {
-            if (CheckPermission(player, PERMISSION_MANAGE)) { }
+            if (voteData != null)
+            {
+                switch (arg.ToLower())
+                {
+                    case "end":
+                    case "cancel":
+                        if (CheckPermission(player, PERMISSION_MANAGE))
+                        {
+                            voteData.CancelVote(player);
+                        }
+
+                        break;
+                    default:
+                        Message(
+                            player,
+                            M_VOTE_PROGRESS,
+                            voteData.voteInitiator.Name,
+                            voteData.voteTarget.Name,
+                            (int)(voteData.VoteFraction * 100),
+                            voteData.VotedPlayerCount,
+                            GetPlayersRequiredToVoteSuccess(GetPlayerCountWithoutTarget(voteData.voteTarget))
+                        );
+                        break;
+                }
+            }
+            else if (CheckPermission(player, PERMISSION_MANAGE))
+            {
+                IPlayer target = players.FindPlayer(arg);
+
+                if (target == null)
+                {
+                    Message(player, M_PLAYER_NOT_FOUND, arg);
+                }
+                else if (target == player)
+                {
+                    Message(player, M_CANNOT_VOTE_SELF);
+                }
+                else if (player.IsAdmin && !settings.AllowBanningAdmins)
+                {
+                    Message(player, M_CANNOT_START_ADMIN);
+                }
+                else
+                {
+                    int playerCount = GetPlayerCountWithoutTarget(target);
+                    if (playerCount < settings.MinPlayers)
+                    {
+                        Message(player, M_CANNOT_START_PLAYERS, playerCount, settings.MinPlayers);
+                    }
+                    else
+                    {
+                        voteData = new VoteData(player, target, this);
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Utility
+
+        int GetPlayerCountWithoutTarget(IPlayer target)
+        {
+            return players.Connected.Count(p => p != target);
+        }
+
+        int GetPlayersRequiredToVoteSuccess(int playerCount)
+        {
+            return Mathf.RoundToInt(settings.PercentageRequired / 100f * playerCount);
         }
 
         bool CheckPermission(IPlayer player, string perm)
@@ -198,6 +296,10 @@ namespace Oxide.Plugins
 
             return false;
         }
+
+        #endregion
+
+        #region LangAPI
 
         string GetMessage(IPlayer player, string langKey)
         {
@@ -224,25 +326,35 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultMessages()
         {
-            lang.RegisterMessages(new Dictionary<string, string> {
-                [M_PREFIX] = "[VoteBan] ",
-                [M_NO_PERMISSION] = "You are not allowed to use this command",
-                [M_VOTE_STARTED] = "{0} has started the vote to ban {1}, use /voteban to vote for it",
-                [M_VOTE_PROGRESS] = "Vote to ban {1} is in progress, use /voteban to vote for it. Current vote progress: {2}% ({3}/{4})",
-                [M_VOTED] = "You've voted for banning player {0}",
-                [M_ALREADY_VOTED] = "You've voted already",
-                [M_NO_VOTE] = "No active vote found",
-                [M_VOTE_TIMED_OUT] = "Vote to ban player {1} was unsuccessful, not enough players voted for it",
-                [M_VOTE_SUCCESS] = "Vote to ban player {1} was successful, player will now be banned from the server",
-                [M_VOTE_CANCELLED] = "{0} has cancelled the vote for banning player {2}",
-                [M_VOTE_CANCELLED_PLAYERS] = "Vote for banning player {1} was cancelled because of insufficient player count ({2}/{3})",
-                [M_BAN_REASON] = "You've been voted-out",
-                [M_CANNOT_START_ADMIN] = "Ban vote cannot be started against admins",
-                [M_CANNOT_START_PLAYERS] = "Not enough players on the server to start a vote ({0}/{1})",
-                [M_PLAYER_NOT_FOUND] = "Vote target ({0}) was not found",
-                [M_CANNOT_VOTE_SELF] = "You cannot vote against yourself"
-            }, this);
+            lang.RegisterMessages(
+                new Dictionary<string, string> {
+                    [M_PREFIX] = "[VoteBan] ",
+                    [M_NO_PERMISSION] = "You are not allowed to use this command",
+                    [M_VOTE_STARTED] = "{0} has started the vote to ban {1}, use /voteban to vote for it",
+                    [M_VOTE_PROGRESS] =
+                        "Vote to ban {1} is in progress, use /voteban to vote for it. Current vote progress: {2}% ({3}/{4}), time left: {5} seconds",
+                    [M_VOTED] = "You've voted for banning player {0}",
+                    [M_ALREADY_VOTED] = "You've voted already",
+                    [M_NO_VOTE] = "No active vote found",
+                    [M_VOTE_TIMED_OUT] = "Vote to ban player {1} was unsuccessful, not enough players voted for it",
+                    [M_VOTE_SUCCESS] =
+                        "Vote to ban player {1} was successful, player will now be banned from the server",
+                    [M_VOTE_CANCELLED] = "{0} has cancelled the vote for banning player {2}",
+                    [M_VOTE_CANCELLED_PLAYERS] =
+                        "Vote for banning player {1} was cancelled because of insufficient player count ({2}/{3})",
+                    [M_BAN_REASON] = "You've been voted-out",
+                    [M_CANNOT_START_ADMIN] = "Ban vote cannot be started against admins",
+                    [M_CANNOT_START_PLAYERS] = "Not enough players on the server to start a vote ({0}/{1})",
+                    [M_PLAYER_NOT_FOUND] = "Vote target ({0}) was not found",
+                    [M_CANNOT_VOTE_SELF] = "You cannot vote against yourself"
+                },
+                this
+            );
         }
+
+        #endregion
+
+        #region Configuration
 
         protected override void LoadDefaultConfig()
         {
@@ -261,6 +373,12 @@ namespace Oxide.Plugins
                 if (settings == null)
                 {
                     throw new Exception("Configuration is null");
+                }
+
+                if (settings.PercentageRequired > 100 || settings.PercentageRequired < 1)
+                {
+                    LogWarning("Required vote percentage must be in range of 1..100");
+                    settings.PercentageRequired = 50;
                 }
 
                 if (settings.VoteTime < 5)
@@ -287,6 +405,10 @@ namespace Oxide.Plugins
             Config.WriteObject(settings);
         }
 
+        #endregion
+
+        #region PluginSettings
+
         class PluginSettings
         {
             public static PluginSettings Default => new PluginSettings {
@@ -311,32 +433,33 @@ namespace Oxide.Plugins
             [JsonProperty("Allow banning admins")] public bool AllowBanningAdmins { get; set; }
         }
 
+        #endregion
+
+        #region VoteData
+
         class VoteData
         {
-            public Timer         voteTimer;
-            public IPlayer       voteTarget;
-            public IPlayer       voteInitiator;
-            public List<IPlayer> votedPlayers;
-            public IEnumerator   voteRoutine;
-            public VoteBan       plugin;
-            public float         startTime;
-            public float         endTime;
+            public readonly IPlayer       voteTarget;
+            public readonly IPlayer       voteInitiator;
+            public          List<IPlayer> votedPlayers;
+            public          float         startTime;
+            public          float         endTime;
+
+            readonly        VoteBan       plugin;
+            Timer                         voteTimer;
 
             public int VotedPlayerCount => votedPlayers.Count;
-            public float VoteFraction => VotedPlayerCount / (plugin.settings.PercentageRequired / 100f);
+            public float VoteFraction => (float)VotedPlayerCount / plugin.GetPlayerCountWithoutTarget(voteTarget);
             public float TimeLeft => endTime - Time.realtimeSinceStartup;
 
             public VoteData(IPlayer initiator, IPlayer target, VoteBan plugin)
             {
+                this.plugin = plugin;
                 voteTarget = target;
                 voteInitiator = initiator;
-                this.plugin = plugin;
                 votedPlayers = Pool.GetList<IPlayer>();
-                voteTimer = plugin.timer.Every(
-                    plugin.settings.NotificationFrequency,
-                    VoteTick
-                );
-                voteRoutine = CreateVoteRoutine();
+
+                StartVote();
             }
 
             public void OnPlayerVoted(IPlayer player)
@@ -344,9 +467,10 @@ namespace Oxide.Plugins
                 votedPlayers.Add(player);
                 plugin.OnPlayerVoted(player);
 
-                if (VoteFraction >= 1f)
+                if (VoteFraction >= plugin.settings.PercentageRequired / 100f)
                 {
-                    // finish vote with success
+                    plugin.OnVoteSuccess();
+                    EndVote();
                 }
             }
 
@@ -361,40 +485,44 @@ namespace Oxide.Plugins
                 EndVote();
             }
 
-            IEnumerator CreateVoteRoutine()
+            void StartVote()
             {
+                startTime = Time.realtimeSinceStartup;
+                endTime = startTime + plugin.settings.VoteTime;
+
+                voteTimer = plugin.timer.Every(plugin.settings.NotificationFrequency, VoteTick);
+
+                votedPlayers.Add(voteInitiator);
+
                 plugin.OnVoteStarted(voteInitiator, voteTarget);
-
-                while (Time.realtimeSinceStartup < endTime)
-                {
-                    if (plugin.players.Connected.Count() < plugin.settings.MinPlayers)
-                    {
-                        plugin.OnVoteCancelled();
-                        yield break;
-                    }
-
-                    plugin.OnVoteTick();
-                    yield return null;
-                }
-
-                plugin.OnVoteTimedOut();
-                EndVote();
             }
 
             void VoteTick()
             {
-                voteRoutine.MoveNext();
+                if (Time.realtimeSinceStartup < endTime)
+                {
+                    if (plugin.GetPlayerCountWithoutTarget(voteTarget) < plugin.settings.MinPlayers)
+                    {
+                        plugin.OnVoteCancelled();
+                        EndVote();
+                    }
+                    else
+                    {
+                        plugin.OnVoteTick();
+                    }
+                }
+                else
+                {
+                    plugin.OnVoteTimedOut();
+                    EndVote();
+                }
             }
 
             void EndVote()
             {
-                voteRoutine = null;
                 voteTimer.Destroy();
-                voteTimer = null;
-                voteTarget = null;
-                voteInitiator = null;
                 Pool.FreeList(ref votedPlayers);
-                plugin = null;
+                plugin.voteData = null;
             }
 
             public enum CancelReason
@@ -403,5 +531,7 @@ namespace Oxide.Plugins
                 InsufficientPlayers
             }
         }
+
+        #endregion
     }
 }
