@@ -9,16 +9,14 @@ using System.Text;
 
 using Newtonsoft.Json;
 
-using uMod;
 using uMod.Common;
 using uMod.Game.Rust.Cui;
-using uMod.Plugins;
 
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.UI;
 
-namespace Oxide.Plugins
+namespace uMod.Plugins
 {
     [Info("UiPlus", "2CHEVSKII", "2.1.0")]
     [Description("Adds various custom elements to the user interface")]
