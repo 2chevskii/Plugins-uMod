@@ -1,5 +1,3 @@
-// Requires: ImageLibrary
-
 //#define UNITY_ASSERTIONS
 //#define DEBUG
 
@@ -11,10 +9,10 @@ using System.Text;
 
 using Newtonsoft.Json;
 
-using Oxide.Core;
-using Oxide.Core.Libraries.Covalence;
-using Oxide.Core.Plugins;
-using Oxide.Game.Rust.Cui;
+using uMod;
+using uMod.Common;
+using uMod.Game.Rust.Cui;
+using uMod.Plugins;
 
 using UnityEngine;
 using UnityEngine.Assertions;
@@ -24,7 +22,7 @@ namespace Oxide.Plugins
 {
     [Info("UiPlus", "2CHEVSKII", "2.1.0")]
     [Description("Adds various custom elements to the user interface")]
-    class UiPlus : CovalencePlugin
+    class UiPlus : Plugin
     {
         const string ICON_CLOCK            = "https://i.imgur.com/K53fjzg.png",
                      ICON_ACTIVE_PLAYERS   = "https://i.imgur.com/r7L4jW2.png",
@@ -37,9 +35,9 @@ namespace Oxide.Plugins
         static UiPlus Instance;
         static ulong  ImageId = unchecked((ulong)nameof(UiPlus).GetHashCode() + 13);
 
-        [PluginReference] Plugin ImageLibrary;
-        [PluginReference] Plugin ServerRewards;
-        [PluginReference] Plugin Economics;
+        [Requires] Plugin ImageLibrary;
+        [Optional] Plugin ServerRewards;
+        [Optional] Plugin Economics;
 
         PluginSettings settings;
         bool           iconsReady;
@@ -47,7 +45,7 @@ namespace Oxide.Plugins
         [Conditional("DEBUG")]
         static void DebugLog(string format, params object[] args)
         {
-            Interface.Oxide.LogDebug("[UiPlus] " + format, args);
+            Instance.Logger.Debug(string.Format(format,args));
         }
 
         void Init()
@@ -121,90 +119,90 @@ namespace Oxide.Plugins
 
                 if (settings == null)
                 {
-                    LogWarning("Plugin settings appear to be null: resetting to default...");
+                    Logger.Warning("Plugin settings appear to be null: resetting to default...");
                     settings = PluginSettings.Default;
                     hasChanged = true;
                 }
 
                 if (settings.Clock == null)
                 {
-                    LogWarning("Clock settings appear to be null: resetting to default...");
+                    Logger.Warning("Clock settings appear to be null: resetting to default...");
                     settings.Clock = PluginSettings.Default.Clock;
                     hasChanged = true;
                 }
 
                 if (settings.ActivePlayers == null)
                 {
-                    LogWarning("ActivePlayers settings appear to be null: resetting to default...");
+                    Logger.Warning("ActivePlayers settings appear to be null: resetting to default...");
                     settings.ActivePlayers = PluginSettings.Default.ActivePlayers;
                     hasChanged = true;
                 }
 
                 if (settings.SleepingPlayers == null)
                 {
-                    LogWarning("SleepingPlayers settings appear to be null: resetting to default...");
+                    Logger.Warning("SleepingPlayers settings appear to be null: resetting to default...");
                     settings.SleepingPlayers = PluginSettings.Default.SleepingPlayers;
                     hasChanged = true;
                 }
 
                 if (settings.ServerRewards == null)
                 {
-                    LogWarning("ServerRewards settings appear to be null: resetting to default...");
+                    Logger.Warning("ServerRewards settings appear to be null: resetting to default...");
                     settings.ServerRewards = PluginSettings.Default.ServerRewards;
                     hasChanged = true;
                 }
 
                 if (settings.Economics == null)
                 {
-                    LogWarning("Economics settings appear to be null: resetting to default...");
+                    Logger.Warning("Economics settings appear to be null: resetting to default...");
                     settings.Economics = PluginSettings.Default.Economics;
                     hasChanged = true;
                 }
 
                 if (settings.Clock.IconUrl == null)
                 {
-                    LogWarning("Clock icon appears to be null: resetting to default...");
+                    Logger.Warning("Clock icon appears to be null: resetting to default...");
                     settings.Clock.IconUrl = ICON_CLOCK;
                     hasChanged = true;
                 }
 
                 if (settings.ActivePlayers.IconUrl == null)
                 {
-                    LogWarning("Active players icon appears to be null: resetting to default...");
+                    Logger.Warning("Active players icon appears to be null: resetting to default...");
                     settings.ActivePlayers.IconUrl = ICON_ACTIVE_PLAYERS;
                     hasChanged = true;
                 }
 
                 if (settings.SleepingPlayers.IconUrl == null)
                 {
-                    LogWarning("Sleeping players icon appears to be null: resetting to default...");
+                    Logger.Warning("Sleeping players icon appears to be null: resetting to default...");
                     settings.SleepingPlayers.IconUrl = ICON_SLEEPING_PLAYERS;
                     hasChanged = true;
                 }
 
                 if (settings.ServerRewards.IconUrl == null)
                 {
-                    LogWarning("ServerRewards icon appears to be null: resetting to default...");
+                    Logger.Warning("ServerRewards icon appears to be null: resetting to default...");
                     settings.ServerRewards.IconUrl = ICON_SERVER_REWARDS;
                     hasChanged = true;
                 }
 
                 if (settings.Economics.IconUrl == null)
                 {
-                    LogWarning("Economics icon appears to be null: resetting to default...");
+                    Logger.Warning("Economics icon appears to be null: resetting to default...");
                     settings.Economics.IconUrl = ICON_ECONOMICS;
                     hasChanged = true;
                 }
 
                 if (hasChanged)
                 {
-                    LogWarning("Configuration was updated, saving...");
+                    Logger.Warning("Configuration was updated, saving...");
                     SaveConfig();
                 }
             }
             catch (Exception e)
             {
-                LogError("Configuration failed to load: {0}", e.Message);
+                Logger.Error($"Configuration failed to load: {e.Message}");
                 LoadDefaultConfig();
             }
         }
