@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+#if RUST
 using Facepunch;
+#endif
 
 using Newtonsoft.Json;
 
@@ -457,7 +459,11 @@ namespace Oxide.Plugins
                 this.plugin = plugin;
                 voteTarget = target;
                 voteInitiator = initiator;
+#if RUST
                 votedPlayers = Pool.GetList<IPlayer>();
+#else
+                votedPlayers = new List<IPlayer>();
+#endif
 
                 StartVote();
             }
@@ -521,7 +527,9 @@ namespace Oxide.Plugins
             void EndVote()
             {
                 voteTimer.Destroy();
+#if RUST
                 Pool.FreeList(ref votedPlayers);
+#endif
                 plugin.voteData = null;
             }
 
