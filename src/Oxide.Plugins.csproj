@@ -512,7 +512,9 @@
       <HintPath>$(ReferenceDir)/UnityEngine.XRModule.dll</HintPath>
     </Reference>-->
     <Reference Include="$(ReferenceDir)/*.dll" />
-    <Reference Remove="$(ReferenceDir)/uMod.References.dll" />
+    <Reference Include="$(ReferenceDir)/uMod.References.dll">
+      <Aliases>References</Aliases>
+    </Reference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
