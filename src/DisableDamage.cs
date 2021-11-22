@@ -1,11 +1,11 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Oxide.Core;
 
 namespace Oxide.Plugins
 {
-    [Info("Disable Damage", "2CHEVSKII", "0.4.0")]
+    [Info("Disable Damage", "2CHEVSKII", "1.0.0")]
     [Description("Allows players with permission to disable other player's damage.")]
-    class DisableDamage : RustPlugin
+    public class DisableDamage : CovalencePlugin
     {
 
         #region [Fields]
@@ -234,5 +234,19 @@ namespace Oxide.Plugins
 
         #endregion
 
+        class PluginSettings
+        {
+            public bool DisableDamageToPlayers { get; set; }
+            public bool DisableDamageToNpc { get; set; }
+            public bool DisableDamageToAnimals { get; set; }
+            public bool DisableDamageToStructures { get; set; }
+            public bool DisableDamageToTransport { get; set; }
+            public bool DisableDamageToPatrolHeli { get; set; }
+            public bool DisableDamageToBradley { get; set; }
+
+            public bool RestoreOnStartup { get; set; }
+
+
+        }
     }
 }
