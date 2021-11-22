@@ -89,7 +89,7 @@ namespace Oxide.Plugins
                 M_VOTE_PROGRESS,
                 voteData.voteInitiator.Name,
                 voteData.voteTarget.Name,
-                voteData.VoteFraction,
+                Mathf.FloorToInt(voteData.VoteFraction * 100),
                 voteData.VotedPlayerCount,
                 GetPlayersRequiredToVoteSuccess(GetPlayerCountWithoutTarget(voteData.voteTarget)),
                 Mathf.CeilToInt(voteData.TimeLeft)
