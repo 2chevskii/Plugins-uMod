@@ -17,7 +17,7 @@ using Time = UnityEngine.Time;
 
 namespace Oxide.Plugins
 {
-    [Info("Vote Ban", "2CHEVSKII", "1.0.0")]
+    [Info("Vote Ban", "2CHEVSKII", "1.0.1")]
     [Description("Allows players to vote for banning others")]
     class VoteBan : CovalencePlugin
     {
@@ -141,6 +141,8 @@ namespace Oxide.Plugins
             Interface.Oxide.CallHook("OnVotebanSuccess", voteData.voteInitiator, voteData.voteTarget);
 
             Announce(M_VOTE_SUCCESS, voteData.voteInitiator.Name, voteData.voteTarget.Name);
+
+            voteData.voteTarget.Ban(GetMessage(voteData.voteTarget, M_BAN_REASON));
         }
 
         bool IsVotebanInProgress()
@@ -199,7 +201,7 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                if (voteData.voteTarget == player)
+                if (voteData.voteTarget.Id.Equals(player.Id))
                 {
                     Message(player, M_CANNOT_VOTE_SELF);
                     return;
@@ -250,11 +252,11 @@ namespace Oxide.Plugins
                 {
                     Message(player, M_PLAYER_NOT_FOUND, arg);
                 }
-                else if (target == player)
+                else if (target.Id.Equals(player.Id))
                 {
                     Message(player, M_CANNOT_VOTE_SELF);
                 }
-                else if (player.IsAdmin && !settings.AllowBanningAdmins)
+                else if (target.IsAdmin && !settings.AllowBanningAdmins)
                 {
                     Message(player, M_CANNOT_START_ADMIN);
                 }
