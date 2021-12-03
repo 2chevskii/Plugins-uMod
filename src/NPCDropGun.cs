@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Facepunch;
@@ -8,9 +8,9 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.7")]
+	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.8")]
 	[Description("Forces NPC to drop used gun and other items after death")]
-	internal class NPCDropGun : RustPlugin
+	public class NPCDropGun : RustPlugin
 	{
 		#region Fields
 
@@ -32,7 +32,7 @@ namespace Oxide.Plugins
 
 		void OnEntityDeath(BasePlayer player)
 		{
-			if (player is HTNPlayer || player is NPCPlayer)
+			if (player is NPCPlayer)
 			{
 				DoSpawns(player);
 			}
