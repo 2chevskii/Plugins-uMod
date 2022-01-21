@@ -76,7 +76,7 @@ namespace Oxide.Plugins
         int               maxEventsPerMap;
         List<Vector3>     eventSpawnPoints;
         readonly string[] hereSynonyms = { "here", "there", "sight", "place", "point", "atme", "spot", "on-this-spot", "within-reach", "hereabouts" };
-        readonly string[] allSynonyms  = { "all", "every", "entier", "everything", "total", "whole", "allpresent" };
+        readonly string[] allSynonyms  = { "all", "every", "entire", "everything", "total", "whole", "allpresent" };
 
         [Conditional("DEBUG")]
         static void LogDebug(string format, params object[] args)
