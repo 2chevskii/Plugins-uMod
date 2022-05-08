@@ -4,3 +4,4 @@ obj/
 ReferenceDir.props
 tools/
 _ReSharper.Caches/
+*.DotSettings.user
