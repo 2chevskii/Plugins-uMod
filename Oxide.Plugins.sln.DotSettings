@@ -1,0 +1,160 @@
+﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/@KeyIndexDefined">True</s:Boolean>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Description/@EntryValue">Oxide plugin</s:String>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Text/@EntryValue">using System;
+using System.Collections.Generic;
+
+using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
+
+namespace Oxide.Plugins
+{
+    [Info("$PluginName$", "2CHEVSKII", "0.1.0")]
+    [Description("$PluginName$ description")]
+    public class $PluginName$ : CovalencePlugin
+    {
+        private const string M_PREFIX = "Prefix";
+
+        private readonly Dictionary&lt;string, Dictionary&lt;string, string&gt;&gt; DefaultMessages =
+            new Dictionary&lt;string, Dictionary&lt;string, string&gt;&gt; {
+                ["en"] = new Dictionary&lt;string, string&gt; {[M_PREFIX] = "[$PluginName$]"}
+            };
+
+        private PluginSettings settings;
+
+        #region Hooks
+
+        void Init() { }
+
+        #endregion
+
+        #region Localization
+
+        string GetMessage(IPlayer player, string key) =&gt; lang.GetMessage(key, this, player.Id);
+
+        void Message(IPlayer player, string key, params object[] args)
+        {
+            Message(
+                player,
+                key,
+                true,
+                args
+            );
+        }
+
+        void Message(
+            IPlayer player,
+            string key,
+            bool addPrefix = true,
+            params object[] args
+        )
+        {
+            string msg = string.Format(GetMessage(player, key), args);
+
+            if (addPrefix)
+                msg = GetMessage(player, M_PREFIX);
+
+            player.Message(msg);
+        }
+
+        protected override void LoadDefaultMessages()
+        {
+            foreach (KeyValuePair&lt;string, Dictionary&lt;string, string&gt;&gt; messageDict in
+                     DefaultMessages)
+            {
+                string langCode = messageDict.Key;
+
+                lang.RegisterMessages(messageDict.Value, this, langCode);
+            }
+        }
+
+        #endregion
+
+        #region Configuration
+
+        protected override void LoadDefaultConfig()
+        {
+            LogWarning("Loading default configuration");
+            settings = PluginSettings.Default;
+            SaveConfig();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+
+            try
+            {
+                settings = Config.ReadObject&lt;PluginSettings&gt;();
+
+                if (settings == null)
+                {
+                    throw new Exception("Loaded configuration is null");
+                }
+
+                if (settings.NeedsUpgrade())
+                {
+                    PluginSettings.Upgrade(settings);
+                }
+            }
+            catch (Exception e)
+            {
+                LogError("Failed to load configuration:\n{0}", e.ToString());
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(settings);
+        }
+
+        #endregion
+
+        #region Nested types
+
+        #region PluginSettings
+
+        class PluginSettings
+        {
+            public static PluginSettings Default =&gt;
+                new PluginSettings {Version = new VersionNumber(1, 0, 0)};
+
+            public VersionNumber Version { get; set; }
+
+            public static void Upgrade(PluginSettings settings)
+            {
+                // Noop
+                if (settings.Version &lt; new VersionNumber(0, 0, 0))
+                {
+                    // First migration
+                    settings.Version = new VersionNumber(0, 0, 0);
+                }
+
+                if (settings.Version &lt; new VersionNumber(1, 0, 0))
+                {
+                    settings.Version = new VersionNumber(1, 0, 0);
+                    // Last migration
+                }
+            }
+
+            public bool NeedsUpgrade() =&gt; Default.Version &gt; Version;
+        }
+
+        #endregion
+
+        #endregion
+    }
+}
+</s:String>
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Reformat/@EntryValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/ShortenQualifiedReferences/@EntryValue">True</s:Boolean>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/CustomProperties/=FileName/@EntryIndexedValue">ExamplePlugin</s:String>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/CustomProperties/=Extension/@EntryIndexedValue">cs</s:String>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/CustomProperties/=ValidateFileName/@EntryIndexedValue">True</s:String>
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Applicability/=File/@EntryIndexedValue">True</s:Boolean>
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Scope/=E8F0594528C33E45BBFEC6CFE851095D/@KeyIndexDefined">True</s:Boolean>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Scope/=E8F0594528C33E45BBFEC6CFE851095D/Type/@EntryValue">InCSharpProjectFile</s:String>
+	<s:Boolean x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Field/=PluginName/@KeyIndexDefined">True</s:Boolean>
+	<s:String x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Field/=PluginName/Expression/@EntryValue">getFileNameWithoutExtension()</s:String>
+	<s:Int64 x:Key="/Default/PatternsAndTemplates/LiveTemplates/Template/=4C0C68D8980D4247A03DF632F8DCA5A5/Field/=PluginName/Order/@EntryValue">0</s:Int64></wpf:ResourceDictionary>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet">
+  <CodeSnippet Format="1.0.0">
+    <Header>
+      <Title>Plugin Localization</Title>
+      <Author>2CHEVSKII</Author>
+      <Description>Oxide LangAPI localization code</Description>
+      <Shortcut>lcl</Shortcut>
+    </Header>
+    <Snippet>
+      <Code Language="CSharp">
+        <![CDATA[const string M_PREFIX = "Chat prefix";
+
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string> {
+                [M_PREFIX] = "[Example]"
+            }, this, "en");
+        }
+
+        string GetMessage(IPlayer player, string key)
+        {
+            return lang.GetMessage(key, this, player.Id);
+        }
+
+        void Message(IPlayer player, string key, params object[] args)
+        {
+            string prefix = GetMessage(player,M_PREFIX);
+
+            string format = GetMessage(player,key);
+
+            string msg = args.Length != 0 ? string.Format(format,args) : format;
+
+            player.Message(prefix + msg);
+        }
+
+        void Announce(string key, params object[] args)
+        {
+            foreach (IPlayer player in players.Connected)
+            {
+                Message(player, key, args);
+            }
+        }]]>
+      </Code>
+    </Snippet>
+  </CodeSnippet>
+</CodeSnippets>

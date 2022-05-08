@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CodeSnippets xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet">
+  <CodeSnippet Format="1.0.0">
+    <Header>
+      <Title>Plugin Configuration</Title>
+      <Author>2CHEVSKII</Author>
+      <Description>Plugin configuration code</Description>
+      <Shortcut>cfg</Shortcut>
+    </Header>
+    <Snippet>
+      <Code Language="CSharp">
+        <![CDATA[PluginSettings settings;
+
+        protected override void LoadDefaultConfig()
+        {
+            settings = PluginSettings.Default;
+            SaveConfig();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+
+            try
+            {
+                settings = Config.ReadObject<PluginSettings>();
+
+                if (settings == null)
+                {
+                    throw new Exception("Configuration is null");
+                }
+            }
+            catch (Exception e)
+            {
+                LogError("Failed to load configuration: {0}", e.Message);
+                LoadDefaultConfig();
+            }
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(settings);
+        }
+
+        class PluginSettings
+        {
+            public static PluginSettings Default => new PluginSettings { };
+        }]]>
+      </Code>
+    </Snippet>
+  </CodeSnippet>
+</CodeSnippets>
