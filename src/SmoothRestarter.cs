@@ -4,6 +4,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -27,10 +28,11 @@ using Pool = Facepunch.Pool;
 
 namespace Oxide.Plugins
 {
-    [Info("SmoothRestarter", "2CHEVSKII", "3.1.1")]
+    [Info("SmoothRestarter", "2CHEVSKII", "3.2.0")]
     [Description("A reliable way to shutdown your server when you need it")]
     public class SmoothRestarter : CovalencePlugin
     {
+
         #region Permission names
 
         const string PERMISSION_STATUS  = "smoothrestarter.status",
@@ -72,7 +74,11 @@ namespace Oxide.Plugins
 #if SIMULATE_OXIDE_PATCH
         static readonly VersionNumber CurrentOxideRustVersion = new VersionNumber(0, 0, 0);
 #else
-        static readonly VersionNumber CurrentOxideRustVersion = Interface.Oxide.GetAllExtensions().First(e => e.Name == "Rust").Version;
+        static readonly VersionNumber CurrentOxideRustVersion = Interface.Oxide.GetAllExtensions()
+                                                                         .First(
+                                                                             e => e.Name == "Rust"
+                                                                         )
+                                                                         .Version;
 #endif
         static SmoothRestarter Instance;
 
@@ -83,38 +89,46 @@ namespace Oxide.Plugins
 
         #region LangAPI EN dictionary
 
-        readonly Dictionary<string, string> defaultMessagesEn = new Dictionary<string, string>
-        {
-            [M_CHAT_PREFIX]   = "<color=#d9770f>Smooth Restarter</color>:",
+        readonly Dictionary<string, string> defaultMessagesEn = new Dictionary<string, string> {
+            [M_CHAT_PREFIX] = "<color=#d9770f>Smooth Restarter</color>:",
             [M_NO_PERMISSION] = "<color=#f04c32>You</color> have no permission to use this command",
-            [M_KICK_REASON]   = "Server is restarting",
-            [M_HELP]          = "/sr <color=#1a97ba>[command]</color> <color=#1aba8f>[arguments]</color>\n" +
-                                "Commands: " +
-                                "<color=#1a97ba>help</color>, <color=#1a97ba>status</color>, <color=#1a97ba>restart</color>, <color=#1a97ba>cancel</color>\n" +
-                                "To get information about command usage, type '/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color>'",
-            [M_HELP_HELP]     = "/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color> - Outputs general help message or command usage help if command is specified",
-            [M_HELP_STATUS]   = "/sr <color=#1a97ba>status</color> - Outputs current restart status",
-            [M_HELP_RESTART]  = "/sr <color=#1a97ba>restart</color> <color=#1aba8f>[time]</color> - Initiates new restart process\n" +
-                                "Time must be in one of the following formats:\n" +
-                                "<color=#77ba20>123</color> - delay before restart in seconds\n" +
-                                "<color=#77ba20>123</color><h|m|s> - delay before restart in <hours|minutes|seconds>\n" +
-                                "<color=#77ba20>1</color>h <color=#77ba20>2</color>m <color=#77ba20>3</color>s - delay before restart in hr+min+sec, all optional\n" +
-                                "<color=#77ba20>1</color>:<color=#77ba20>23</color> - schedule restart on 1:23 (24hr format)",
-            [M_HELP_CANCEL]   = "/sr <color=#1a97ba>cancel</color> - Cancels current restart process",
-            [M_RESTARTING_ALREADY] = "Cannot do restart - already restarting. Use '/sr <color=#1a97ba>status</color>' to get info about current restart process, or try '/sr <color=#1a97ba>cancel</color>' to cancel current restart before starting new one",
-            [M_NOT_RESTARTING] = "Cannot cancel restart - plugin does not perform a restart currently.",
+            [M_KICK_REASON] = "Server is restarting",
+            [M_HELP] =
+                "/sr <color=#1a97ba>[command]</color> <color=#1aba8f>[arguments]</color>\n" +
+                "Commands: " +
+                "<color=#1a97ba>help</color>, <color=#1a97ba>status</color>, <color=#1a97ba>restart</color>, <color=#1a97ba>cancel</color>\n" +
+                "To get information about command usage, type '/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color>'",
+            [M_HELP_HELP] =
+                "/sr <color=#1a97ba>help</color> <color=#1aba8f>[command]</color> - Outputs general help message or command usage help if command is specified",
+            [M_HELP_STATUS] = "/sr <color=#1a97ba>status</color> - Outputs current restart status",
+            [M_HELP_RESTART] =
+                "/sr <color=#1a97ba>restart</color> <color=#1aba8f>[time]</color> - Initiates new restart process\n" +
+                "Time must be in one of the following formats:\n" +
+                "<color=#77ba20>123</color> - delay before restart in seconds\n" +
+                "<color=#77ba20>123</color><h|m|s> - delay before restart in <hours|minutes|seconds>\n" +
+                "<color=#77ba20>1</color>h <color=#77ba20>2</color>m <color=#77ba20>3</color>s - delay before restart in hr+min+sec, all optional\n" +
+                "<color=#77ba20>1</color>:<color=#77ba20>23</color> - schedule restart on 1:23 (24hr format)",
+            [M_HELP_CANCEL] = "/sr <color=#1a97ba>cancel</color> - Cancels current restart process",
+            [M_RESTARTING_ALREADY] =
+                "Cannot do restart - already restarting. Use '/sr <color=#1a97ba>status</color>' to get info about current restart process, or try '/sr <color=#1a97ba>cancel</color>' to cancel current restart before starting new one",
+            [M_NOT_RESTARTING] =
+                "Cannot cancel restart - plugin does not perform a restart currently.",
             [M_CANCEL_SUCCESS] = "Restart was successfully cancelled",
             [M_RESTART_REASON_TIMED] = "Planned",
             [M_RESTART_REASON_OXIDE] = "New Oxide update is out",
             [M_RESTART_REASON_COMMAND] = "Command from <color=#dbc30b>{0}</color>",
             [M_RESTART_REASON_API] = "API call from <color=#dbc30b>{0}</color>",
-            [M_ANNOUNCE_RESTART_INIT] = "Server will be restarted in <color=#a4db0b>{0:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> ({1})",
-            [M_ANNOUNCE_COUNTDOWN_TICK] = "<color=#a4db0b>{0:sfmt::<hr?+h ><min?+min ><sec?+s>}</color> left before server restart",
+            [M_ANNOUNCE_RESTART_INIT] =
+                "Server will be restarted in <color=#a4db0b>{0:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> ({1})",
+            [M_ANNOUNCE_COUNTDOWN_TICK] =
+                "<color=#a4db0b>{0:sfmt::<hr?+h ><min?+min ><sec?+s>}</color> left before server restart",
             [M_ANNOUNCE_RESTART_CANCELLED] = "Server restart was cancelled",
             [M_RESTART_SUCCESS] = "Restart initiated successfully",
-            [M_STATUS_RESTARTING] = "Server is restarting, <color=#a4db0b>{1:sfmt::<min#0.0!+ min ><sec?+ seconds>}</color> left",
+            [M_STATUS_RESTARTING] =
+                "Server is restarting, <color=#a4db0b>{1:sfmt::<min#0.0!+ min ><sec?+ seconds>}</color> left",
             [M_STATUS_RESTARTING_NATIVE] = "Server is restarting natively",
-            [M_STATUS_PLANNED] = "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> left)",
+            [M_STATUS_PLANNED] =
+                "Server restart planned at <color=#a4db0b>{0:hh\\:mm}</color> (<color=#a4db0b>{1:sfmt::<hr?+ hours ><min?+ minutes ><sec?+ seconds>}</color> left)",
             [M_STATUS_NO_PLANNED] = "Server is not restarting, no planned restarts found",
             [M_UI_TITLE] = "SmoothRestarter",
             [M_UI_COUNTDOWN] = "{0:sfmt::<min#2!>:<sec#2>} left"
@@ -136,12 +150,11 @@ namespace Oxide.Plugins
         bool IsRestartingComponent => component.IsRestarting;
 
         #region Oxide hooks
+
         // ReSharper disable UnusedMember.Local
 
         void Init()
         {
-            Instance = this;
-
             if (!settings.EnableUi)
             {
                 Unsubscribe(nameof(OnUserConnected));
@@ -153,13 +166,12 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PERMISSION_CANCEL, this);
 
             AddCovalenceCommand(settings.Commands, "CommandHandler");
-
-            //Log("{0}", BitConverter.GetBytes(decimal.GetBits(0.123m)[3])[2]);
         }
 
         void OnServerInitialized()
         {
             component = ServerMgr.Instance.gameObject.AddComponent<SmoothRestart>();
+
             if (settings.EnableUi)
                 foreach (var player in players.Connected)
                 {
@@ -169,14 +181,14 @@ namespace Oxide.Plugins
 
         void OnUserConnected(IPlayer user)
         {
-            var player = (BasePlayer)user.Object;
+            var player = (BasePlayer) user.Object;
 
             player.gameObject.AddComponent<SmoothRestarterUi>();
         }
 
         void OnUserDisconnected(IPlayer user)
         {
-            var player = (BasePlayer)user.Object;
+            var player = (BasePlayer) user.Object;
 
             UnityEngine.Object.Destroy(player.GetComponent<SmoothRestarterUi>());
         }
@@ -198,6 +210,7 @@ namespace Oxide.Plugins
         }
 
         // ReSharper restore UnusedMember.Local
+
         #endregion
 
         #region Command handler
@@ -220,9 +233,17 @@ namespace Oxide.Plugins
                         {
                             DateTime dateTime;
                             //Message(player, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
-                            MessageWithCustomFormatter(player, SmoothTimeFormatter.Instance, GetStatus(out dateTime), dateTime.TimeOfDay, (dateTime - DateTime.Now).TotalSeconds);
+                            MessageWithCustomFormatter(
+                                player,
+                                SmoothTimeFormatter.Instance,
+                                GetStatus(out dateTime),
+                                dateTime.TimeOfDay,
+                                (dateTime - DateTime.Now).TotalSeconds
+                            );
                         }
+
                         break;
+
                     case "restart":
                         if (CheckPermission(player, PERMISSION_RESTART))
                         {
@@ -234,9 +255,16 @@ namespace Oxide.Plugins
                             {
                                 TimeSpan time;
                                 bool isTod;
-                                if (args.Length == 1 || !TryParseTime(string.Join(" ", args.Skip(1)), out time, out isTod))
+
+                                if (args.Length == 1 ||
+                                    !TryParseTime(
+                                        string.Join(" ", args.Skip(1)),
+                                        out time,
+                                        out isTod
+                                    ))
                                 {
                                     Message(player, M_HELP_RESTART);
+
                                     return;
                                 }
 
@@ -259,6 +287,7 @@ namespace Oxide.Plugins
                                 Message(player, M_RESTART_SUCCESS);
                             }
                         }
+
                         break;
 
                     case "cancel":
@@ -275,16 +304,23 @@ namespace Oxide.Plugins
                             else
                             {
                                 Message(player, M_NOT_RESTARTING);
+
                                 return;
                             }
+
                             Message(player, M_CANCEL_SUCCESS);
                         }
+
                         break;
+
                     case "help":
                         Message(player, GetHelp(args.Skip(1)));
+
                         break;
+
                     default:
                         Message(player, M_HELP);
+
                         break;
                 }
             }
@@ -293,16 +329,20 @@ namespace Oxide.Plugins
         string GetHelp(IEnumerable<string> args)
         {
             var arg = args.FirstOrDefault();
+
             if (arg != null)
             {
                 switch (arg.ToLower())
                 {
                     case "help":
                         return M_HELP_HELP;
+
                     case "status":
                         return M_HELP_STATUS;
+
                     case "restart":
                         return M_HELP_RESTART;
+
                     case "cancel":
                         return M_HELP_CANCEL;
                 }
@@ -314,6 +354,7 @@ namespace Oxide.Plugins
         string GetStatus(out DateTime restartTime)
         {
             restartTime = default(DateTime);
+
             if (IsRestartingNative)
             {
                 return M_STATUS_RESTARTING_NATIVE;
@@ -322,6 +363,7 @@ namespace Oxide.Plugins
             if (IsRestartingComponent)
             {
                 restartTime = component.CurrentRestartTime.Value;
+
                 return M_STATUS_RESTARTING;
             }
 
@@ -329,6 +371,7 @@ namespace Oxide.Plugins
             {
                 double _;
                 restartTime = component.FindNextRestartTime(out _);
+
                 return M_STATUS_PLANNED;
             }
 
@@ -357,11 +400,13 @@ namespace Oxide.Plugins
                     case 'H':
                     case 'h':
                         number *= 3600;
+
                         break;
 
                     case 'M':
                     case 'm':
                         number *= 60;
+
                         break;
                 }
 
@@ -382,6 +427,7 @@ namespace Oxide.Plugins
             else
             {
                 time = default(TimeSpan);
+
                 return false;
             }
 
@@ -401,6 +447,7 @@ namespace Oxide.Plugins
             }
 
             Message(player, M_NO_PERMISSION);
+
             return false;
         }
 
@@ -411,7 +458,9 @@ namespace Oxide.Plugins
         void FetchLatestOxideRustVersion(Action<Exception, VersionNumber> callback)
         {
             PluginLog("Fetching latest Oxide.Rust version...");
-            webrequest.Enqueue("https://umod.org/games/rust.json", null,
+            webrequest.Enqueue(
+                "https://umod.org/games/rust.json",
+                null,
                 (responseCode, json) => {
                     if (responseCode != 200)
                     {
@@ -426,7 +475,8 @@ namespace Oxide.Plugins
                     {
                         try
                         {
-                            var response = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                            var response =
+                                JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
 
                             if (response == null)
                             {
@@ -435,21 +485,29 @@ namespace Oxide.Plugins
 
                             var latestVersionStr = response["latest_release_version"];
 
-                            var array = ((string)latestVersionStr).Split('.');
+                            var array = ((string) latestVersionStr).Split('.');
 
-                            var version = new VersionNumber(int.Parse(array[0]), int.Parse(array[1]), int.Parse(array[2]));
+                            var version = new VersionNumber(
+                                int.Parse(array[0]),
+                                int.Parse(array[1]),
+                                int.Parse(array[2])
+                            );
 
                             callback(null, version);
                         }
                         catch (Exception e)
                         {
                             callback(
-                                new Exception($"Failed to deserialize uMod.org API response: {e.Message}"),
+                                new Exception(
+                                    $"Failed to deserialize uMod.org API response: {e.Message}"
+                                ),
                                 default(VersionNumber)
                             );
                         }
                     }
-                }, this);
+                },
+                this
+            );
         }
 
         void PluginLog(string format, params object[] args)
@@ -472,17 +530,19 @@ namespace Oxide.Plugins
         {
             Debug.Assert(IsRestartingNative, "Cancelling native restart while !IsRestartingNative");
 
-            var routine = (IEnumerator)nativeRestartRoutine.GetValue(ServerMgr.Instance);
+            var routine = (IEnumerator) nativeRestartRoutine.GetValue(ServerMgr.Instance);
             ServerMgr.Instance.StopCoroutine(routine);
 
             nativeRestartRoutine.SetValue(ServerMgr.Instance, null);
 
-            ConsoleNetwork.BroadcastToAllClients("chat.add", new object[]
-            {
-                2,
-                0,
-                "<color=#fff>SERVER</color> Restart interrupted!"
-            });
+            ConsoleNetwork.BroadcastToAllClients(
+                "chat.add",
+                new object[] {
+                    2,
+                    0,
+                    "<color=#fff>SERVER</color> Restart interrupted!"
+                }
+            );
 
             PluginLog("Native restart was cancelled");
         }
@@ -490,6 +550,7 @@ namespace Oxide.Plugins
         #endregion
 
         #region Plugin API
+
         // ReSharper disable UnusedMember.Local
 
         [HookMethod(nameof(IsSmoothRestarting))]
@@ -513,7 +574,7 @@ namespace Oxide.Plugins
         [HookMethod(nameof(GetCurrentRestartReason))]
         public int? GetCurrentRestartReason()
         {
-            return (int?)component.CurrentRestartReason;
+            return (int?) component.CurrentRestartReason;
         }
 
         [HookMethod(nameof(GetCurrentRestartInitiator))]
@@ -546,6 +607,7 @@ namespace Oxide.Plugins
             }
 
             component.DoRestart(restartTime, RestartReason.ApiCall, initiator);
+
             return true;
         }
 
@@ -563,10 +625,12 @@ namespace Oxide.Plugins
             }
 
             component.CancelRestart(canceller);
+
             return true;
         }
 
         // ReSharper restore UnusedMember.Local
+
         #endregion
 
         #region LangAPI
@@ -586,7 +650,12 @@ namespace Oxide.Plugins
             player.Message(GetMessage(player, langKey), GetMessage(player, M_CHAT_PREFIX), args);
         }
 
-        void MessageWithCustomFormatter(IPlayer player, IFormatProvider formatProvider, string langKey, params object[] args)
+        void MessageWithCustomFormatter(
+            IPlayer player,
+            IFormatProvider formatProvider,
+            string langKey,
+            params object[] args
+        )
         {
             var format = GetMessage(player, langKey);
             var message = string.Format(formatProvider, format, args);
@@ -623,11 +692,20 @@ namespace Oxide.Plugins
             }
         }
 
-        void AnnounceWithCustomFormatter(IFormatProvider formatProvider, string langKey, params object[] args)
+        void AnnounceWithCustomFormatter(
+            IFormatProvider formatProvider,
+            string langKey,
+            params object[] args
+        )
         {
             foreach (IPlayer player in players.Connected)
             {
-                MessageWithCustomFormatter(player, formatProvider, langKey, args);
+                MessageWithCustomFormatter(
+                    player,
+                    formatProvider,
+                    langKey,
+                    args
+                );
             }
         }
 
@@ -641,7 +719,7 @@ namespace Oxide.Plugins
 
         string GetRestartReasonString(IPlayer player, RestartReason reason, object initiator = null)
         {
-            Debug.Assert((int)reason < 2 || initiator != null);
+            Debug.Assert((int) reason < 2 || initiator != null);
 
             string reasonStr;
 
@@ -649,18 +727,31 @@ namespace Oxide.Plugins
             {
                 case RestartReason.Timed:
                     reasonStr = GetMessage(player, M_RESTART_REASON_TIMED);
+
                     break;
+
                 case RestartReason.OxideUpdate:
                     reasonStr = GetMessage(player, M_RESTART_REASON_OXIDE);
+
                     break;
+
                 case RestartReason.Command:
-                    reasonStr = string.Format(GetMessage(player, M_RESTART_REASON_COMMAND), ((IPlayer)initiator).Name);
+                    reasonStr = string.Format(
+                        GetMessage(player, M_RESTART_REASON_COMMAND),
+                        ((IPlayer) initiator).Name
+                    );
+
                     break;
+
                 default:
-                    reasonStr = string.Format(GetMessage(player, M_RESTART_REASON_API), ((Plugin)initiator).Name);
+                    reasonStr = string.Format(
+                        GetMessage(player, M_RESTART_REASON_API),
+                        ((Plugin) initiator).Name
+                    );
+
                     break;
             }
-
+            
             return reasonStr;
         }
 
@@ -676,6 +767,7 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
+            Instance = this;
             base.LoadConfig();
 
             try
@@ -689,7 +781,10 @@ namespace Oxide.Plugins
 
                 if (!settings.Validate())
                 {
-                    LogWarning("Errors found in the configuration file, corrected values will be saved");
+                    LogWarning(
+                        "Errors found in the configuration file, corrected values will be saved"
+                    );
+
                     SaveConfig();
                 }
             }
@@ -746,6 +841,8 @@ namespace Oxide.Plugins
             public int[] CountdownRefPts { get; set; }
             [JsonProperty("Use custom countdown reference points")]
             public bool UseCustomCountdownRefPts { get; set; }
+            [JsonProperty("Oxide update check interval in seconds")]
+            public int OxideUpdateCheckInterval { get; set; }
 
             [JsonIgnore]
             public float UiX => uiPosCached[0];
@@ -757,15 +854,14 @@ namespace Oxide.Plugins
             public static PluginSettings GetDefaults()
             {
                 return new PluginSettings {
-                    DailyRestart = new[] { "0:00" },
+                    DailyRestart = new[] {"0:00"},
                     OxideUpdateRestart = true,
                     RestartCountdownMax = 300,
                     EnableUi = true,
                     EnableLog = true,
                     UiPosition = "0.92, 0.92",
                     UiScale = 1.0f,
-                    Commands = new[]
-                    {
+                    Commands = new[] {
                         "sr",
                         "srestart",
                         "smoothrestart",
@@ -773,7 +869,24 @@ namespace Oxide.Plugins
                     },
                     DisableChatCountdown = false,
                     UseCustomCountdownRefPts = false,
-                    CountdownRefPts = new[] { 60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 }
+                    CountdownRefPts = new[] {
+                        60,
+                        50,
+                        40,
+                        30,
+                        25,
+                        15,
+                        10,
+                        9,
+                        8,
+                        7,
+                        6,
+                        5,
+                        4,
+                        3,
+                        2,
+                        1
+                    }
                 };
             }
 
@@ -782,6 +895,7 @@ namespace Oxide.Plugins
             public bool Validate()
             {
                 bool valid = true;
+
                 if (DailyRestart == null)
                 {
                     Instance.LogWarning("Daily restart times cannot be null");
@@ -791,7 +905,9 @@ namespace Oxide.Plugins
 
                 if (!ParseRestartTimes(out restartTimesCached))
                 {
-                    DailyRestart = restartTimesCached.Select(rt => rt.ToString("hh\\:mm")).ToArray();
+                    DailyRestart = restartTimesCached.Select(rt => rt.ToString("hh\\:mm"))
+                                                     .ToArray();
+
                     valid = false;
                 }
 
@@ -827,23 +943,60 @@ namespace Oxide.Plugins
 
                 if (Commands == null || Commands.Length == 0)
                 {
-                    Commands = new[] { "sr", "srestart", "smoothrestart", "smoothrestarter" };
+                    Commands = new[] {
+                        "sr",
+                        "srestart",
+                        "smoothrestart",
+                        "smoothrestarter"
+                    };
+
                     valid = false;
                 }
 
                 if (CountdownRefPts == null)
                 {
-                    CountdownRefPts = new[] { 60, 50, 40, 30, 25, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
+                    CountdownRefPts = new[] {
+                        60,
+                        50,
+                        40,
+                        30,
+                        25,
+                        15,
+                        10,
+                        9,
+                        8,
+                        7,
+                        6,
+                        5,
+                        4,
+                        3,
+                        2,
+                        1
+                    };
+
                     valid = false;
                 }
 
                 if (UseCustomCountdownRefPts && CountdownRefPts.Length == 0)
                 {
-                    CountdownRefPts = new[] { 30, 10, 5 };
+                    CountdownRefPts = new[] {
+                        30,
+                        10,
+                        5
+                    };
+
                     valid = false;
                 }
 
                 CountdownRefPts = CountdownRefPts.OrderByDescending(_ => _).ToArray();
+
+                if (OxideUpdateCheckInterval < 600)
+                {
+                    Instance.LogWarning("Oxide update check interval must be greater than 10 minutes");
+                    OxideUpdateCheckInterval = 600;
+
+                    valid = false;
+                }
 
                 return valid;
             }
@@ -857,20 +1010,43 @@ namespace Oxide.Plugins
                 if (array.Length != 2)
                 {
                     Instance.LogWarning("Invalid format of UI position: {0}", UiPosition);
+
                     return false;
                 }
 
                 bool valid = true;
 
-                if (!float.TryParse(array[0], NumberStyles.Number, CultureInfo.InvariantCulture, out fX) || fX < 0f || fX > 1f)
+                if (!float.TryParse(
+                        array[0],
+                        NumberStyles.Number,
+                        CultureInfo.InvariantCulture,
+                        out fX
+                    ) ||
+                    fX < 0f ||
+                    fX > 1f)
                 {
-                    Instance.LogWarning("Invalid value for UI position X coordinate: {0}", array[0]);
+                    Instance.LogWarning(
+                        "Invalid value for UI position X coordinate: {0}",
+                        array[0]
+                    );
+
                     valid = false;
                 }
 
-                if (!float.TryParse(array[1], NumberStyles.Number, CultureInfo.InvariantCulture, out fY) || fY < 0f || fY > 1f)
+                if (!float.TryParse(
+                        array[1],
+                        NumberStyles.Number,
+                        CultureInfo.InvariantCulture,
+                        out fY
+                    ) ||
+                    fY < 0f ||
+                    fY > 1f)
                 {
-                    Instance.LogWarning("Invalid value for UI position Y coordinate: {0}", array[1]);
+                    Instance.LogWarning(
+                        "Invalid value for UI position Y coordinate: {0}",
+                        array[1]
+                    );
+
                     valid = false;
                 }
 
@@ -885,6 +1061,7 @@ namespace Oxide.Plugins
                 foreach (var rt in DailyRestart)
                 {
                     TimeSpan result;
+
                     if (!TimeSpan.TryParse(rt, out result))
                     {
                         valid = false;
@@ -902,6 +1079,7 @@ namespace Oxide.Plugins
             }
 
             #endregion
+
         }
 
         #endregion
@@ -970,40 +1148,34 @@ namespace Oxide.Plugins
 
                 var uiTitle = Instance.GetMessage(player.IPlayer, M_UI_TITLE);
 
-                var container = new CuiElementContainer
-                {
-                    new CuiElement
-                    {
+                var container = new CuiElementContainer {
+                    new CuiElement {
                         FadeOut = 0.2f,
                         Name = UI_BACKGROUND,
                         Parent = "Hud",
-                        Components =
-                        {
-                            new CuiImageComponent
-                            {
+                        Components = {
+                            new CuiImageComponent {
                                 Color = "0.2 0.2 0.2 0.3",
                                 FadeIn = 0.2f,
                                 ImageType = Image.Type.Simple,
                                 Material = "assets/content/ui/uibackgroundblur.mat"
                             },
-                            new CuiRectTransformComponent
-                            {
-                                AnchorMin = $"{Instance.settings.UiX - 0.08f * Instance.settings.UiScale} " +
-                                            $"{Instance.settings.UiY - 0.05f * Instance.settings.UiScale}",
-                                AnchorMax = $"{Instance.settings.UiX + 0.08f * Instance.settings.UiScale} " +
-                                            $"{Instance.settings.UiY + 0.05f * Instance.settings.UiScale}"
+                            new CuiRectTransformComponent {
+                                AnchorMin =
+                                    $"{Instance.settings.UiX - 0.08f * Instance.settings.UiScale} " +
+                                    $"{Instance.settings.UiY - 0.05f * Instance.settings.UiScale}",
+                                AnchorMax =
+                                    $"{Instance.settings.UiX + 0.08f * Instance.settings.UiScale} " +
+                                    $"{Instance.settings.UiY + 0.05f * Instance.settings.UiScale}"
                             }
                         }
                     },
-                    new CuiElement
-                    {
+                    new CuiElement {
                         FadeOut = 0.2f,
                         Name = UI_TITLE,
                         Parent = UI_BACKGROUND,
-                        Components =
-                        {
-                            new CuiTextComponent
-                            {
+                        Components = {
+                            new CuiTextComponent {
                                 Color = "0.8 0.8 0.8 0.95",
                                 FadeIn = 0.2f,
                                 Align = TextAnchor.MiddleCenter,
@@ -1011,8 +1183,7 @@ namespace Oxide.Plugins
                                 FontSize = 16,
                                 Text = uiTitle /*nameof(SmoothRestarter)*/
                             },
-                            new CuiRectTransformComponent
-                            {
+                            new CuiRectTransformComponent {
                                 AnchorMin = "0 0.6",
                                 AnchorMax = "1 1"
                             }
@@ -1080,7 +1251,8 @@ namespace Oxide.Plugins
                         IsVisible = true;
                     }
 
-                    var secondsLeft = (Instance.component.CurrentRestartTime.Value - DateTime.Now).TotalSeconds;
+                    var secondsLeft = (Instance.component.CurrentRestartTime.Value - DateTime.Now)
+                        .TotalSeconds;
 
                     UpdateSeconds(secondsLeft);
                     UpdateProgressBar(GetFraction(secondsLeft));
@@ -1096,31 +1268,46 @@ namespace Oxide.Plugins
             void UpdateSeconds(double secondsLeft)
             {
                 CuiHelper.DestroyUi(player, UI_SECONDS);
-                CuiHelper.AddUi(player, LookupUiDictionary(locale, (int)secondsLeft, UiSecondsCache, CreateSeconds));
+                CuiHelper.AddUi(
+                    player,
+                    LookupUiDictionary(
+                        locale,
+                        (int) secondsLeft,
+                        UiSecondsCache,
+                        CreateSeconds
+                    )
+                );
             }
 
             void UpdateProgressBar(float fraction)
             {
-                Debug.Assert(fraction >= 0f && fraction <= 1, "Progress bar fraction is outside of 0..1 range: " + fraction);
+                Debug.Assert(
+                    fraction >= 0f && fraction <= 1,
+                    "Progress bar fraction is outside of 0..1 range: " + fraction
+                );
 
                 CuiHelper.DestroyUi(player, UI_PROGRESS_BAR);
-                CuiHelper.AddUi(player, LookupUiDictionary("any", fraction, UiProgressbarCache, CreateProgressBar));
+                CuiHelper.AddUi(
+                    player,
+                    LookupUiDictionary(
+                        "any",
+                        fraction,
+                        UiProgressbarCache,
+                        CreateProgressBar
+                    )
+                );
             }
 
             string CreateSeconds(int secondsLeft)
             {
                 return SerializeUi(
-                    new CuiElementContainer
-                    {
-                        new CuiElement
-                        {
+                    new CuiElementContainer {
+                        new CuiElement {
                             FadeOut = 0.2f,
                             Name = UI_SECONDS,
                             Parent = UI_BACKGROUND,
-                            Components =
-                            {
-                                new CuiTextComponent
-                                {
+                            Components = {
+                                new CuiTextComponent {
                                     Color = "0.8 0.8 0.8 0.95",
                                     FadeIn = 0.2f,
                                     Align = TextAnchor.MiddleCenter,
@@ -1132,8 +1319,7 @@ namespace Oxide.Plugins
                                         secondsLeft
                                     )
                                 },
-                                new CuiRectTransformComponent
-                                {
+                                new CuiRectTransformComponent {
                                     AnchorMin = "0 0",
                                     AnchorMax = "1 0.45"
                                 }
@@ -1146,24 +1332,19 @@ namespace Oxide.Plugins
             string CreateProgressBar(float fraction)
             {
                 return SerializeUi(
-                    new CuiElementContainer
-                    {
-                        new CuiElement
-                        {
+                    new CuiElementContainer {
+                        new CuiElement {
                             FadeOut = 0.2f,
                             Name = UI_PROGRESS_BAR,
                             Parent = UI_BACKGROUND,
-                            Components =
-                            {
-                                new CuiImageComponent
-                                {
+                            Components = {
+                                new CuiImageComponent {
                                     Color = GetFractionColor(fraction),
                                     FadeIn = 0f,
                                     ImageType = Image.Type.Simple,
                                     Material = "assets/content/ui/namefontmaterial.mat"
                                 },
-                                new CuiRectTransformComponent
-                                {
+                                new CuiRectTransformComponent {
                                     AnchorMin = $"{0.5f - fraction * 0.45f} 0.45",
                                     AnchorMax = $"{0.5f + fraction * 0.45f} 0.6"
                                 }
@@ -1186,12 +1367,15 @@ namespace Oxide.Plugins
                     return 1f;
                 }
 
-                return (float)(secondsLeft / norm);
+                return (float) (secondsLeft / norm);
             }
 
             string GetFractionColor(float fraction)
             {
-                Debug.Assert(fraction <= 1 && fraction >= 0, "GetFractionColor: fraction is not clamped");
+                Debug.Assert(
+                    fraction <= 1 && fraction >= 0,
+                    "GetFractionColor: fraction is not clamped"
+                );
 
                 float r;
                 float g;
@@ -1210,7 +1394,12 @@ namespace Oxide.Plugins
                 return $"{r} {g} 0.2 1";
             }
 
-            static string LookupUiDictionary<T>(string locale, T value, Dictionary<string, string> dict, Func<T, string> createFunction)
+            static string LookupUiDictionary<T>(
+                string locale,
+                T value,
+                Dictionary<string, string> dict,
+                Func<T, string> createFunction
+            )
             {
                 string key = $"{locale}->{value}";
                 string returnVal;
@@ -1227,15 +1416,17 @@ namespace Oxide.Plugins
             string SerializeUi(CuiElementContainer container)
             {
                 return JsonConvert.SerializeObject(
-                    container,
-                    Formatting.None,
-                    new JsonSerializerSettings {
-                        DefaultValueHandling = DefaultValueHandling.Ignore
-                    }
-                ).Replace("\\n", "\n");
+                                      container,
+                                      Formatting.None,
+                                      new JsonSerializerSettings {
+                                          DefaultValueHandling = DefaultValueHandling.Ignore
+                                      }
+                                  )
+                                  .Replace("\\n", "\n");
             }
 
             #endregion
+
         }
 
         #endregion
@@ -1249,6 +1440,7 @@ namespace Oxide.Plugins
             int             rtCountdownStart;
             bool            doTimedRestarts;
             bool            doRestartChecks;
+            int             oxideVersionCheckInterval;
 
             public DateTime? CurrentRestartTime { get; private set; }
             public RestartReason? CurrentRestartReason { get; private set; }
@@ -1260,11 +1452,15 @@ namespace Oxide.Plugins
             {
                 set
                 {
-                    Debug.Assert(value != doRestartChecks, "Double set DoRestartChecks to " + value);
+                    Debug.Assert(
+                        value != doRestartChecks,
+                        "Double set DoRestartChecks to " + value
+                    );
 
                     if (doRestartChecks != value)
                     {
                         doRestartChecks = value;
+
                         if (value)
                         {
                             InvokeRepeating(nameof(RestartCheck), 1f, 1f);
@@ -1288,17 +1484,22 @@ namespace Oxide.Plugins
                     restartQueue = new Queue<DateTime>(
                         Instance.settings.RestartTimes.Select(ts => DateTime.Today + ts)
                     );
+
                     doTimedRestarts = true;
 
                     Instance.PluginLog(
                         "Loaded {0} restart time(s):\n{1}",
                         restartQueue.Count,
-                        string.Join("\n", restartQueue.Select(ts => ts.TimeOfDay.ToString("hh\\:mm").PadLeft(50)))
+                        string.Join(
+                            "\n",
+                            restartQueue.Select(ts => ts.TimeOfDay.ToString("hh\\:mm").PadLeft(50))
+                        )
                     );
                 }
 
                 if (Instance.settings.OxideUpdateRestart)
                 {
+                    oxideVersionCheckInterval = Instance.settings.OxideUpdateCheckInterval;
                     Invoke(nameof(OxideVersionCheck), 5f);
                 }
             }
@@ -1323,12 +1524,16 @@ namespace Oxide.Plugins
 
             #region Public API
 
-            public void DoRestart(DateTime restartTime, RestartReason restartReason, object restartInitiator)
+            public void DoRestart(
+                DateTime restartTime,
+                RestartReason restartReason,
+                object restartInitiator
+            )
             {
                 Debug.Assert(!Instance.IsRestarting, "DoRestart while restarting already");
                 Debug.Assert(restartTime > DateTime.Now, "Initiating restart in the past");
 
-                var totalSecondsLeft = (float)(restartTime - DateTime.Now).TotalSeconds;
+                var totalSecondsLeft = (float) (restartTime - DateTime.Now).TotalSeconds;
 
                 DoRestartChecks = false;
                 restartRoutine = InitRestartRoutine(totalSecondsLeft);
@@ -1346,6 +1551,13 @@ namespace Oxide.Plugins
                 Debug.Assert(canceller != null, "Restart canceller is null");
 
                 StopCoroutine(restartRoutine);
+
+                if (CurrentRestartReason == RestartReason.OxideUpdate)
+                {
+                    Instance.isNewOxideOut = false;
+                    Invoke(nameof(OxideVersionCheck), oxideVersionCheckInterval);
+                }
+
                 Cleanup();
 
                 DoRestartChecks = true;
@@ -1369,8 +1581,15 @@ namespace Oxide.Plugins
 
             void OxideVersionCheck()
             {
-                Debug.Assert(Instance.settings.OxideUpdateRestart, "OxideVersionCheck called when config value is false");
-                Debug.Assert(!Instance.isNewOxideOut, "OxideVersionCheck called when already new oxide patch detected");
+                Debug.Assert(
+                    Instance.settings.OxideUpdateRestart,
+                    "OxideVersionCheck called when config value is false"
+                );
+
+                Debug.Assert(
+                    !Instance.isNewOxideOut,
+                    "OxideVersionCheck called when already new oxide patch detected"
+                );
 
                 Instance.FetchLatestOxideRustVersion(
                     (e, v) => {
@@ -1382,15 +1601,24 @@ namespace Oxide.Plugins
                         }
                         else if (v > CurrentOxideRustVersion)
                         {
-                            Instance.PluginLog("New Oxide.Rust version detected {0} -> {1}", CurrentOxideRustVersion, v);
+                            Instance.PluginLog(
+                                "New Oxide.Rust version detected {0} -> {1}",
+                                CurrentOxideRustVersion,
+                                v
+                            );
+
                             Instance.isNewOxideOut = true;
                         }
                         else
                         {
-                            Instance.PluginLog("Current Oxide.Rust version is up-to-date, scheduling check after 10 minutes...");
-                            Invoke(nameof(OxideVersionCheck), 600f);
+                            Instance.PluginLog(
+                                $"Current Oxide.Rust version is up-to-date, scheduling check after {oxideVersionCheckInterval} seconds..."
+                            );
+
+                            Invoke(nameof(OxideVersionCheck), oxideVersionCheckInterval);
                         }
-                    });
+                    }
+                );
             }
 
             void RestartCheck()
@@ -1400,12 +1628,16 @@ namespace Oxide.Plugins
                 if (Instance.IsRestartingNative)
                 {
                     return; // since we have no observer on native restart routine, we do not pause invokes of this function, but simply interrupt it here
-                            // might wanna think about a workaround to raise event when native restart has started/interrupted (Harmony patch probably)
+                    // might wanna think about a workaround to raise event when native restart has started/interrupted (Harmony patch probably)
                 }
 
                 if (Instance.isNewOxideOut)
                 {
-                    DoRestart(DateTime.Now.AddSeconds(rtCountdownStart), RestartReason.OxideUpdate, null);
+                    DoRestart(
+                        DateTime.Now.AddSeconds(rtCountdownStart),
+                        RestartReason.OxideUpdate,
+                        null
+                    );
                 }
                 else
                 {
@@ -1424,6 +1656,7 @@ namespace Oxide.Plugins
                 if (restartQueue == null || restartQueue.Count == 0)
                 {
                     restartTime = default(DateTime);
+
                     return false;
                 }
 
@@ -1451,7 +1684,13 @@ namespace Oxide.Plugins
                     initiator
                 );
 
-                if (Interface.CallHook("OnSmoothRestartInit", secondsLeft, reason, initiator) == null)
+                if (Interface.CallHook(
+                        "OnSmoothRestartInit",
+                        secondsLeft,
+                        reason,
+                        initiator
+                    ) ==
+                    null)
                 {
                     Instance.AnnounceRestartInit(secondsLeft, reason, initiator);
                 }
@@ -1461,7 +1700,8 @@ namespace Oxide.Plugins
             {
                 Instance.PluginLog("Server restart in progress, {0} seconds left", secondsLeft);
 
-                if (Interface.CallHook("OnSmoothRestartTick", secondsLeft) == null && !Instance.settings.DisableChatCountdown)
+                if (Interface.CallHook("OnSmoothRestartTick", secondsLeft) == null &&
+                    !Instance.settings.DisableChatCountdown)
                 {
                     // The code below is so harsh Im feeling embarassed with it, but it is a solution I came with at the moment
                     // which does not force me to rewrite the whole messaging system
@@ -1542,9 +1782,13 @@ namespace Oxide.Plugins
 
                 if (Instance.settings.UseCustomCountdownRefPts)
                 {
-                    Debug.Assert(Instance.settings.CountdownRefPts.Length != 0, "Empty countdown refpts array");
+                    Debug.Assert(
+                        Instance.settings.CountdownRefPts.Length != 0,
+                        "Empty countdown refpts array"
+                    );
 
-                    var next = Instance.settings.CountdownRefPts.FirstOrDefault(p => p <= secondsLeft);
+                    var next =
+                        Instance.settings.CountdownRefPts.FirstOrDefault(p => p <= secondsLeft);
 
                     if (next < 0)
                     {
@@ -1555,11 +1799,17 @@ namespace Oxide.Plugins
                     return next;
                 }
 
-                var divider = secondsLeft > 400 ? 100 :
-                    secondsLeft > 150 ? 50 :
-                    secondsLeft > 70 ? 25 :
-                    secondsLeft > 20 ? 10 :
-                    secondsLeft > 10 ? 5 : 1;
+                var divider = secondsLeft > 400
+                                  ? 100
+                                  : secondsLeft > 150
+                                      ? 50
+                                      : secondsLeft > 70
+                                          ? 25
+                                          : secondsLeft > 20
+                                              ? 10
+                                              : secondsLeft > 10
+                                                  ? 5
+                                                  : 1;
 
                 var remainder = secondsLeft % divider;
 
@@ -1585,6 +1835,7 @@ namespace Oxide.Plugins
                 if (format != null && format.StartsWith("sfmt::"))
                 {
                     format = format.Remove(0, 6);
+
                     if (string.IsNullOrWhiteSpace(format))
                     {
                         format = "<sec!>";
@@ -1592,12 +1843,13 @@ namespace Oxide.Plugins
 
                     if (arg is TimeSpan)
                     {
-                        return Format((TimeSpan)arg, format);
+                        return Format((TimeSpan) arg, format);
                     }
 
                     if (arg is int || arg is double || arg is float)
                     {
                         double nArg = Convert.ToDouble(arg);
+
                         return Format(TimeSpan.FromSeconds(nArg), format);
                     }
                 }
@@ -1606,12 +1858,12 @@ namespace Oxide.Plugins
                 {
                     if (arg is string)
                     {
-                        return (string)arg;
+                        return (string) arg;
                     }
 
                     if (arg is IFormattable)
                     {
-                        return ((IFormattable)arg).ToString(format, CultureInfo.InvariantCulture);
+                        return ((IFormattable) arg).ToString(format, CultureInfo.InvariantCulture);
                     }
 
                     throw new Exception();
@@ -1619,7 +1871,9 @@ namespace Oxide.Plugins
                 catch
                 {
                     throw new ArgumentException(
-                        nameof(SmoothTimeFormatter) + " does not support type " + arg.GetType().Name,
+                        nameof(SmoothTimeFormatter) +
+                        " does not support type " +
+                        arg.GetType().Name,
                         nameof(arg)
                     );
                 }
@@ -1632,28 +1886,44 @@ namespace Oxide.Plugins
 
             static int GetDigits(int number)
             {
-                if (number < 10) return 1;
-                if (number < 100) return 2;
-                if (number < 1000) return 3;
-                if (number < 10000) return 4;
-                if (number < 100000) return 5;
-                if (number < 1000000) return 6;
+                if (number < 10)
+                    return 1;
 
-                throw new ArgumentOutOfRangeException(nameof(number), "GetDigits does not support values >= 10e6");
+                if (number < 100)
+                    return 2;
+
+                if (number < 1000)
+                    return 3;
+
+                if (number < 10000)
+                    return 4;
+
+                if (number < 100000)
+                    return 5;
+
+                if (number < 1000000)
+                    return 6;
+
+                throw new ArgumentOutOfRangeException(
+                    nameof(number),
+                    "GetDigits does not support values >= 10e6"
+                );
             }
 
             static int GetDigits(double number)
             {
-                return BitConverter.GetBytes(decimal.GetBits(new decimal(Math.Round(number, 6)))[3])[2];
+                return BitConverter.GetBytes(
+                    decimal.GetBits(new decimal(Math.Round(number, 6)))[3]
+                )[2];
             }
 
             static string PadNumber(double value, int padding, int precision)
             {
                 //string padding = "";
-                int intPart = (int)value;
+                int intPart = (int) value;
                 int intPartDigits = GetDigits(intPart);
                 int floatPartDigits = GetDigits(value);
-                int floatPart = (int)(Math.Pow(10, floatPartDigits) * (value - intPart));
+                int floatPart = (int) (Math.Pow(10, floatPartDigits) * (value - intPart));
 
                 //SmoothRestarter.Instance.Log("Int part of {0} is {1}, digits - {2}", value, intPart, intPartDigits);
                 //SmoothRestarter.Instance.Log("Float part of {0} is {1}, digits - {2}", value, floatPart, floatPartDigits);
@@ -1717,6 +1987,7 @@ namespace Oxide.Plugins
                     string replaceValue;
 
                     double value;
+
                     switch (tmpl.Name)
                     {
                         case "sec":
@@ -1724,6 +1995,7 @@ namespace Oxide.Plugins
                                 value = ts.TotalSeconds;
                             else
                                 value = ts.Seconds;
+
                             break;
 
                         case "min":
@@ -1731,6 +2003,7 @@ namespace Oxide.Plugins
                                 value = ts.TotalMinutes;
                             else
                                 value = ts.Minutes;
+
                             break;
 
                         default:
@@ -1738,6 +2011,7 @@ namespace Oxide.Plugins
                                 value = ts.TotalHours;
                             else
                                 value = ts.Hours;
+
                             break;
                     }
 
@@ -1837,8 +2111,11 @@ namespace Oxide.Plugins
                     var template = new Template();
 
                     template.Name = match.Groups["tmpl"].Value;
-                    template.Type = !match.Groups["mod"].Success ? TemplateType.Normal :
-                        match.Groups["mod"].Value == "!" ? TemplateType.Total : TemplateType.Optional;
+                    template.Type = !match.Groups["mod"].Success
+                                        ? TemplateType.Normal
+                                        : match.Groups["mod"].Value == "!"
+                                            ? TemplateType.Total
+                                            : TemplateType.Optional;
 
                     if (match.Groups["pl"].Success)
                     {
@@ -1864,12 +2141,7 @@ namespace Oxide.Plugins
                 return templates.OrderBy(t => t.StartIndex);
             }
 
-            enum TemplateType
-            {
-                Normal,
-                Total,
-                Optional
-            }
+            enum TemplateType { Normal, Total, Optional }
 
             struct Template
             {
@@ -1886,5 +2158,6 @@ namespace Oxide.Plugins
         #endregion
 
         #endregion
+
     }
 }
