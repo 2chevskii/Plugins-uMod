@@ -30,6 +30,7 @@
     <Compile Include="CTFEventsUI.cs" />
     <Compile Include="DisableDamage.cs" />
     <Compile Include="EntityCleanup.cs" />
+    <Compile Include="gMonetize.cs" />
     <Compile Include="GodmodeIndicator.cs" />
     <Compile Include="CTFEvents.cs" />
     <Compile Include="HighWallBarricades.cs" />
