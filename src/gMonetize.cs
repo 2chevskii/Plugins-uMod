@@ -1,559 +1,703 @@
-﻿using System;
+﻿#define DEBUG
+
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
-
-using Epic.OnlineServices.KWS;
-
+using Newtonsoft.Json;
+using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
-
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info( "gMonetize", "2CHEVSKII", "0.1.0" )]
+    [Info("gMonetize", "2CHEVSKII", "0.1.0")]
     public class gMonetize : CovalencePlugin
     {
-        private const string API_BASE_URL = "https://localhost:4000";
+        readonly Dictionary<string, List<QueuedCommandItem>> _queuedCommands;
+        readonly Dictionary<string, List<PurchasedItem>>     _cartData;
 
-        private PluginSettings _settings;
+        string ApiBaseUrl { get; }
+        string ApiToken { get; }
+        float ApiRequestTimeout { get; }
+        Dictionary<string, string> ApiHeaders { get; }
 
-        /*
-         * Lifecycle callbacks:
-         * On server went online
-         * On server went offline
-         * Alive-tick
-         *
-         */
 
-        private bool HasToken => !string.IsNullOrEmpty( _settings.Token );
+        [Conditional("DEBUG")]
+        void LogDebug(string format, params object[] args)
+        {
+            Interface.Oxide.LogDebug("[GMONETIZE DEBUG]: " + format, args);
+        }
 
-#region Hooks
+        [Command("open")]
+        void CmdOpenHandler(IPlayer player)
+        {
+            UiBuilder.CreateUi(player.Object as BasePlayer);
+        }
+
+        [Command("gmonetize.ui.cmd:close")]
+        void CmdCloseHandler(IPlayer player)
+        {
+            UiBuilder.RemoveUi(player.Object as BasePlayer);
+        }
+
+        void OnPlayerConnected(BasePlayer player)
+        {
+            UpdateQueuedCommands(player, () =>
+            {
+                List<QueuedCommandItem> commands;
+
+                if (!_queuedCommands.TryGetValue(player.UserIDString, out commands))
+                {
+                    return;
+                }
+
+                foreach (QueuedCommandItem command in commands.Where(c =>
+                             c.Type == QueuedCommandItem.QueuedCommandType.ON_CONNECT ||
+                             c.Type == QueuedCommandItem.QueuedCommandType.IMMEDIATE).ToArray())
+                {
+                    PostApiRequest<object, object>("/callbacks/claim-purchase",
+                        new { id = command.Id, userId = player.UserIDString }, dataCallback:
+                        _ =>
+                        {
+                            commands.Remove(command);
+                            foreach (string commandData in command.Commands)
+                            {
+                                server.Command(commandData.Replace("${steamid}", player.UserIDString)
+                                                          .Replace("${name}", player.displayName));
+                            }
+                        });
+                }
+            });
+        }
+
+        void OnPlayerRespawned(BasePlayer player)
+        {
+            List<QueuedCommandItem> commands;
+
+            if (!_queuedCommands.TryGetValue(player.UserIDString, out commands))
+            {
+                return;
+            }
+
+            foreach (QueuedCommandItem command in commands.Where(c =>
+                         c.Type == QueuedCommandItem.QueuedCommandType.ON_RESPAWN ||
+                         c.Type == QueuedCommandItem.QueuedCommandType.IMMEDIATE).ToArray())
+            {
+                PostApiRequest<object, object>("/callbacks/claim-purchase",
+                    new { id = command.Id, userId = player.UserIDString }, dataCallback:
+                    _ =>
+                    {
+                        commands.Remove(command);
+                        foreach (string commandData in command.Commands)
+                        {
+                            server.Command(commandData.Replace("${steamid}", player.UserIDString)
+                                                      .Replace("${name}", player.displayName));
+                        }
+                    });
+            }
+        }
 
         void OnServerInitialized()
         {
-            if ( !HasToken )
+            timer.Every(30f, () =>
             {
-                LogWarning( "Configuration:Token is empty, plugin will not be functional" );
+                UpdateQueuedCommands();
+                UpdatePlayerCarts();
+            });
+        }
 
-                return;
+        void UpdateQueuedCommands()
+        {
+            PostApiRequest<Dictionary<string, List<QueuedCommandItem>>, object>("/commands",
+                BasePlayer.activePlayerList.Select(x => x.UserIDString), dataCallback:
+                commands =>
+                {
+                    foreach (KeyValuePair<string, List<QueuedCommandItem>> kv in commands)
+                    {
+                        _queuedCommands[kv.Key] = kv.Value;
+                    }
+                });
+        }
+
+        void UpdateQueuedCommands(BasePlayer player, Action callback)
+        {
+            /*update commands for specific player*/
+
+            PostApiRequest<Dictionary<string, List<QueuedCommandItem>>, object>("/commands",
+                new[] { player.UserIDString },
+                dataCallback: commands =>
+                {
+                    foreach (KeyValuePair<string, List<QueuedCommandItem>> kv in commands)
+                    {
+                        _queuedCommands[kv.Key] = kv.Value;
+                    }
+
+                    if (callback != null)
+                        callback();
+                });
+        }
+
+        void UpdatePlayerCarts()
+        {
+            PostApiRequest<Dictionary<string, List<PurchasedItem>>, IEnumerable<string>>("/items",
+                BasePlayer.activePlayerList.Select(x => x.UserIDString), dataCallback:
+                items => { });
+        }
+
+        #region Request helpers
+
+        void PostApiRequest<TData>(string        path,                Dictionary<string, object> queryParameters = null,
+                                   Action<TData> dataCallback = null, Action<int>                errorCallback   = null)
+            => PostApiRequest<TData, object>(path, null, queryParameters, dataCallback, errorCallback);
+
+        void PostApiRequest<TData, TBody>(string path, TBody body, Dictionary<string, object> queryParameters = null,
+                                          Action<TData> dataCallback = null, Action<int> errorCallback = null)
+        {
+            string requestUrl = BuildRequestUrl(path, queryParameters);
+
+            webrequest.Enqueue(requestUrl, JsonConvert.SerializeObject(body), delegate(int code, string response)
+                {
+                    if (code >= 200 && code < 300)
+                    {
+                        dataCallback?.Invoke(JsonConvert.DeserializeObject<TData>(response));
+                    }
+                    else
+                    {
+                        errorCallback?.Invoke(code);
+                    }
+                }, this, RequestMethod.POST, ApiHeaders,
+                ApiRequestTimeout);
+        }
+
+        void GetApiRequest<TData>(string        path, Dictionary<string, object> queryParameters = null,
+                                  Action<TData> dataCallback  = null,
+                                  Action<int>   errorCallback = null)
+        {
+            string requestUrl = BuildRequestUrl(path, queryParameters);
+
+            webrequest.Enqueue(requestUrl, null, delegate(int code, string response)
+                {
+                    if (code >= 200 && code < 300)
+                    {
+                        dataCallback?.Invoke(JsonConvert.DeserializeObject<TData>(response));
+                    }
+                    else
+                    {
+                        errorCallback?.Invoke(code);
+                    }
+                }, this, headers: ApiHeaders,
+                timeout: ApiRequestTimeout);
+        }
+
+        string BuildRequestUrl(string path, Dictionary<string, object> queryParams)
+        {
+            string queryString = string.Empty;
+
+            if (queryParams != null)
+            {
+                queryString = ComposeQueryString(queryParams);
             }
 
-            /*Send callback on server online*/
-            string onlineRequestUrl = GetRequestUrl( "/on-server-online" );
-            webrequest.Enqueue(
-                onlineRequestUrl,
-                string.Empty,
-                (code, body) => { Log( "OnServerOnline response: [{0}]\n{1}", code, body ); },
-                this,
-                RequestMethod.POST,
-                CreateHeaders()
-            );
-
-            timer.Every(
-                60,
-                () => {
-                    /*send alive callbacks*/
-                }
-            );
+            return ApiBaseUrl + path + queryString;
         }
 
-        /*void Unload()
+        string ComposeQueryString(Dictionary<string, object> parameters)
         {
-            if ( !HasToken )
-                return;
-
-            /*send offline callback#1#
-            string offlineRequestUrl = GetRequestUrl( "/on-server-offline" );
-
-            ManualResetEventSlim resetEvent = new ManualResetEventSlim( false );
-            webrequest.Enqueue(
-                offlineRequestUrl,
-                string.Empty,
-                (code, body) => { resetEvent.Reset(); },
-                this,
-                RequestMethod.POST,
-                CreateHeaders()
-            );
-
-            Log( "Waiting for callback to finish" );
-            resetEvent.Wait();
-            Log( "Callback finished" );
-        }*/
-
-#endregion
-
-#region Request utilities
-
-        private string GetRequestUrl(string path, Dictionary<string, object> query = null)
-        {
-            string queryString = query != null ? CreateQueryString( query ) : string.Empty;
-
-            string url = API_BASE_URL + path + queryString;
-
-            return url;
-        }
-
-        private string CreateQueryString(Dictionary<string, object> query)
-        {
-            if ( query.Count == 0 )
-                return string.Empty;
-
             StringBuilder stringBuilder = new StringBuilder();
-            stringBuilder.Append( '?' );
 
-            stringBuilder.Append( FormatQueryParameter( query.First() ) );
-
-            foreach ( KeyValuePair<string, object> kvp in query.Skip( 1 ) )
+            foreach (var pair in parameters)
             {
-                stringBuilder.Append( '&' );
-                stringBuilder.Append( FormatQueryParameter( kvp ) );
+                string paramName = pair.Key;
+                object paramValue = pair.Value;
+
+                IEnumerable paramValueEnumerable = paramValue as IEnumerable;
+
+                string paramValueString;
+
+                if (paramValueEnumerable != null)
+                {
+                    List<string> paramValues = new List<string>();
+
+                    foreach (var obj in paramValueEnumerable)
+                    {
+                        paramValues.Add(paramName + "=" + obj);
+                    }
+
+                    paramValueString = string.Join("&", paramValues);
+                }
+                else
+                {
+                    paramValueString = paramName + "=" + paramValue;
+                }
+
+                if (stringBuilder.Length != 0)
+                {
+                    stringBuilder.Append('&');
+                }
+
+                stringBuilder.Append(paramValueString);
             }
 
-            return stringBuilder.ToString();
-        }
-
-        private string FormatQueryParameter(KeyValuePair<string, object> parameter)
-        {
-            string name  = parameter.Key;
-            object value = parameter.Value;
-
-            if ( value is IEnumerable )
+            if (stringBuilder.Length == 0)
             {
-                return string.Join(
-                    "&",
-                    ((IEnumerable) value).Cast<object>().Select( x => $"{name}={x}" )
-                );
+                return string.Empty;
             }
 
-            string strValue = value.ToString();
-
-            return $"{name}={strValue}";
+            return stringBuilder.Insert(0, '?').ToString();
         }
 
-        private Dictionary<string, string> CreateHeaders(
-            params KeyValuePair<string, string>[] additionalHeaders
-        )
-        {
-            var dict = new Dictionary<string, string>( additionalHeaders );
-            dict.Add( "Authorization", "Bearer " + _settings.Token );
+        #endregion
 
-            return dict;
+        abstract class PurchasedItem
+        {
+            public int Id { get; set; }
         }
 
-        private void SendGetRequest(string fullRequestPath, Action<int, string> callback)
+        class PurchasedCommandItem : PurchasedItem
         {
-            webrequest.Enqueue( fullRequestPath, string.Empty, callback, this );
+            public string[] Commands { get; set; }
         }
 
-        private void SendPostRequest(
-            string fullRequestPath,
-            string body,
-            Action<int, string> callback
-        )
+        class QueuedCommandItem : PurchasedCommandItem
         {
-            webrequest.Enqueue( fullRequestPath, body, callback, this );
-        }
+            public QueuedCommandType Type { get; set; }
 
-        private void SendPostRequest(string fullRequestPath, Action<int, string> callback) =>
-        SendPostRequest( fullRequestPath, string.Empty, callback );
-
-#endregion
-
-#region Configuration
-
-        protected override void LoadDefaultConfig()
-        {
-            _settings = PluginSettings.Default;
-            SaveConfig();
-        }
-
-        protected override void SaveConfig() => Config.WriteObject( _settings );
-
-        protected override void LoadConfig()
-        {
-            base.LoadConfig();
-
-            try
+            public enum QueuedCommandType
             {
-                _settings = Config.ReadObject<PluginSettings>();
-            }
-            catch (Exception e)
-            {
-                LogError( "Failed to load configuration: {0}", e.Message );
-
-                LoadDefaultConfig();
+                IMMEDIATE,
+                ON_CONNECT,
+                ON_RESPAWN
             }
         }
 
-        private class PluginSettings
+        class PurchasedGameItem : PurchasedItem
         {
-            public static PluginSettings Default => new PluginSettings();
-
-            public string Token { get; set; }
+            public int ItemId { get; set; }
+            public float Condition { get; set; }
+            public ulong SkinId { get; set; }
         }
 
-#endregion
-
-#region Request players cart data
-
-        void LoadCart(IPlayer player, Action<object> callback)
+        public static class UiBuilder
         {
-            var steamId = player.Id;
+            const string PANEL_MATERIAL = "assets/content/ui/uibackgroundblur.mat";
+            const string FONT_NAME      = "robotocondensed-regular.ttf";
 
-            const string defaultRequestPath = "/items/{steamId}";
+            const string PANEL_MAIN_BG                   = "gmonetize.ui.main.bg";
+            const string BUTTON_MAIN_CLOSE               = "gmonetize.ui.main.button_close";
+            const string PANEL_TABSWITCHER_CONTAINER     = "gmonetize.ui.tabswitcher.container";
+            const string PANEL_TABSWITCHER_DIVIDER       = "gmonetize.ui.tabswitcher.divider";
+            const string LABEL_TABSWITCHER_ITEMS         = "gmonetize.ui.tabswitcher.label_items";
+            const string LABEL_TABSWITCHER_SUBSCRIPTIONS = "gmonetize.ui.tabswitcher.label_subscriptions";
+            const string PANEL_ITEMLIST_CONTAINER        = "gmonetize.ui.itemlist.container";
+            const string PANEL_ITEM_CONTAINER            = "gmonetize.ui.itemlist.item[{itemid}].container";
+            const string PANEL_ITEM_ICON_CONTAINER       = "gmonetize.ui.itemlist.item[{itemid}].icon.container";
+            const string IMAGE_ITEM_ICON_ICON            = "gmonetize.ui.itemlist.item[{itemid}].icon.icon";
+            const string LABEL_ITEM_ICON_AMOUNT          = "gmonetize.ui.itemlist.item[{itemid}].icon.label_amount";
+            const string IMAGE_ITEM_ICON_CONDITION       = "gmonetize.ui.itemlist.item[{itemid}].icon.condition";
+            const string BUTTON_ITEM_CLAIM               = "gmonetize.ui.itemlist.item[{itemid}].button_claim";
+            const string LABEL_ITEM_BUTTON_CLAIM         = "gmonetize.ui.itemlist.item[{itemid}].button_claim.label";
 
-            string requestPath = defaultRequestPath.Replace( "{steamId}", steamId );
+            static readonly string s_uiCacheMainBg;
 
-            webrequest.Enqueue(
-                API_BASE_URL + requestPath,
-                string.Empty,
-                (code, json) => { },
-                this
-            );
-        }
-
-#endregion
-
-        [Command( "test" )]
-        void CmdTest(IPlayer player)
-        {
-            Log( "Test command" );
-            CuiElementContainer elements = Ui.RenderStaticElements();
-
-            CuiElementContainer pag = Ui.RenderPaginationLabels( 42, 112 );
-            CuiElementContainer sel = Ui.RenderTabSelectionButtons( Ui.Tab.Subscriptions );
-
-            var bp = (BasePlayer) player.Object;
-
-            CuiHelper.AddUi( bp, elements );
-            CuiHelper.AddUi( bp, pag );
-            CuiHelper.AddUi( bp, sel );
-
-            Log( "Test command end" );
-        }
-
-        Item CreateItemFromItemData(ItemData itemData)
-        {
-            var itemDefinition = ItemManager.FindItemDefinition( itemData.ItemId );
-
-            var item = ItemManager.Create( itemDefinition, itemData.Amount, itemData.SkinId );
-
-            if ( item.hasCondition )
+            static UiBuilder()
             {
-                item.conditionNormalized = itemData.Condition;
+                /*build and cache static elements*/
+                s_uiCacheMainBg = CuiHelper.ToJson(new CuiElementContainer
+                                                   {
+                                                       new CuiElement
+                                                       {
+                                                           Name = PANEL_MAIN_BG,
+                                                           Parent = "Hud",
+                                                           Components =
+                                                           {
+                                                               new CuiImageComponent
+                                                               {
+                                                                   Material = PANEL_MATERIAL,
+                                                                   Color = "0.4 0.4 0.4 0.6"
+                                                               },
+                                                               new CuiRectTransformComponent
+                                                               {
+                                                                   AnchorMin = "0.05 0.1",
+                                                                   AnchorMax = "0.95 0.95"
+                                                               }
+                                                           }
+                                                       },
+                                                       new CuiElement
+                                                       {
+                                                           Name = BUTTON_MAIN_CLOSE,
+                                                           Parent = PANEL_MAIN_BG,
+                                                           Components =
+                                                           {
+                                                               new CuiButtonComponent
+                                                               {
+                                                                   Color = "0.6 0.2 0.2 0.8",
+                                                                   Command = "gmonetize.ui.cmd:close"
+                                                               },
+                                                               new CuiRectTransformComponent
+                                                               {
+                                                                   AnchorMin = "0.95 0.95",
+                                                                   AnchorMax = "1.0 1.0"
+                                                               }
+                                                           }
+                                                       },
+                                                       new CuiElement
+                                                       {
+                                                           Name = PANEL_TABSWITCHER_CONTAINER,
+                                                           Parent = PANEL_MAIN_BG,
+                                                           Components =
+                                                           {
+                                                               new CuiImageComponent
+                                                               {
+                                                                   Color = "0 0 0 0.4"
+                                                               },
+                                                               new CuiRectTransformComponent
+                                                               {
+                                                                   AnchorMin = "0.4 0.95",
+                                                                   AnchorMax = "0.6 1.0"
+                                                               }
+                                                           }
+                                                       },
+                                                       new CuiElement
+                                                       {
+                                                           Name = PANEL_TABSWITCHER_DIVIDER,
+                                                           Parent = PANEL_TABSWITCHER_CONTAINER,
+                                                           Components =
+                                                           {
+                                                               new CuiImageComponent { Color = "0.6 0.6 0.6 0.6" },
+                                                               new CuiRectTransformComponent
+                                                               {
+                                                                   AnchorMin = "0.498 0",
+                                                                   AnchorMax = "0.502 1"
+                                                               }
+                                                           }
+                                                       },
+                                                   });
             }
 
-            return item;
-        }
-
-        Item[] CreateItemsFromItemDataArray(ItemData[] data)
-        {
-            Item[] array = new Item[data.Length];
-
-            for ( var i = 0; i < data.Length; i++ )
+            public static string RenderTabLabels(Tab tab)
             {
-                var item = CreateItemFromItemData( data[i] );
-                array[i] = item;
+                string itemsLabelColor, subscriptionsLabelColor;
+
+                itemsLabelColor = tab == Tab.Items ? "0.8 0.8 0.8 0.6" : "0.6 0.6 0.6 0.6";
+                subscriptionsLabelColor = tab == Tab.Subscriptions ? "0.8 0.8 0.8 0.6" : "0.6 0.6 0.6 0.6";
+
+                return CuiHelper.ToJson(new CuiElementContainer
+                                        {
+                                            new CuiElement
+                                            {
+                                                Name = LABEL_TABSWITCHER_ITEMS,
+                                                Parent = PANEL_TABSWITCHER_CONTAINER,
+                                                Components =
+                                                {
+                                                    new CuiTextComponent
+                                                    {
+                                                        Text = "ITEMS",
+                                                        Color = itemsLabelColor,
+                                                        Align = TextAnchor.MiddleCenter,
+                                                        FontSize = 16,
+                                                        Font = FONT_NAME
+                                                    },
+                                                    new CuiRectTransformComponent
+                                                    {
+                                                        AnchorMin = "0 0",
+                                                        AnchorMax = "0.498 1"
+                                                    }
+                                                }
+                                            },
+                                            new CuiElement
+                                            {
+                                                Name = LABEL_TABSWITCHER_SUBSCRIPTIONS,
+                                                Parent = PANEL_TABSWITCHER_CONTAINER,
+                                                Components =
+                                                {
+                                                    new CuiTextComponent
+                                                    {
+                                                        Text = "SUBSCRIPTIONS",
+                                                        Color = subscriptionsLabelColor,
+                                                        Align = TextAnchor.MiddleCenter,
+                                                        FontSize = 16,
+                                                        Font = FONT_NAME
+                                                    },
+                                                    new CuiRectTransformComponent
+                                                    {
+                                                        AnchorMin = "0.502 0",
+                                                        AnchorMax = "1 1"
+                                                    }
+                                                }
+                                            }
+                                        });
             }
 
-            return array;
-        }
-
-        bool PlayerReceiveItems(BasePlayer player, ItemData[] data)
-        {
-            if ( GetAvailableInventorySlots( player ) < data.Length )
+            static CuiElement RenderGridContainer()
             {
-                return false;
+                return new CuiElement
+                       {
+                           Name = PANEL_ITEMLIST_CONTAINER,
+                           Parent = PANEL_MAIN_BG,
+                           Components =
+                           {
+                               new CuiImageComponent
+                               {
+                                   Color = "0 0 0 0.25"
+                               },
+                               new CuiRectTransformComponent
+                               {
+                                   AnchorMin = "0.02 0.03",
+                                   AnchorMax = "0.98 0.92"
+                               }
+                           }
+                       };
             }
 
-            var items = CreateItemsFromItemDataArray( data );
-
-            for ( var i = 0; i < items.Length; i++ )
+            public static IEnumerable<CuiElement> RenderItemCard(int uiItemId, ItemData itemData,
+                                                                 int totalItemCount)
             {
-                var item = items[i];
+                // var rect = GetCardGridRect(GetFlexPosition(uiItemId,totalItemCount, cardwidth,cardheight, 0.05f));
 
-                player.GiveItem( item, BaseEntity.GiveItemReason.PickedUp );
+                var rect = GetGridPosition(uiItemId, 8, 4, 0.005f);
+
+                Interface.Oxide.LogInfo(JsonConvert.SerializeObject(rect, Formatting.Indented));
+
+                var list = new List<CuiElement>
+                           {
+                               new CuiElement
+                               {
+                                   Name = PANEL_ITEM_CONTAINER.Replace("{itemid}", uiItemId.ToString()),
+                                   Parent = PANEL_ITEMLIST_CONTAINER,
+                                   Components =
+                                   {
+                                       new CuiImageComponent
+                                       {
+                                           Material = PANEL_MATERIAL,
+                                           Color = "0.4 0.4 0.4 0.5"
+                                       },
+                                       rect
+                                   }
+                               },
+                               new CuiElement
+                               {
+                                   Name = PANEL_ITEM_ICON_CONTAINER.Replace("{itemid}", uiItemId.ToString()),
+                                   Parent = PANEL_ITEM_CONTAINER.Replace("{itemid}", uiItemId.ToString()),
+                                   Components =
+                                   {
+                                       new CuiImageComponent
+                                       {
+                                           Color = "0 0 0 0.2"
+                                       },
+                                       new CuiRectTransformComponent
+                                       {
+                                           AnchorMin = "0.1 0.3",
+                                           AnchorMax = "0.9 0.9"
+                                       }
+                                   }
+                               },
+                               new CuiElement
+                               {
+                                   Name = BUTTON_ITEM_CLAIM.Replace("{itemid}", uiItemId.ToString()),
+                                   Parent = PANEL_ITEM_CONTAINER.Replace("{itemid}", uiItemId.ToString()),
+                                   Components =
+                                   {
+                                       new CuiButtonComponent
+                                       {
+                                           Color = "0.2 0.6 0.2 0.6",
+                                           Command = "gmonetize.ui.claimitem:" + uiItemId
+                                       },
+                                       new CuiRectTransformComponent
+                                       {
+                                           AnchorMin = "0.1 0.1",
+                                           AnchorMax = "0.9 0.27"
+                                       }
+                                   }
+                               },
+                               new CuiElement
+                               {
+                                   Name = LABEL_ITEM_BUTTON_CLAIM.Replace("{itemid}", uiItemId.ToString()),
+                                   Parent = BUTTON_ITEM_CLAIM.Replace("{itemid}", uiItemId.ToString()),
+                                   Components =
+                                   {
+                                       new CuiTextComponent
+                                       {
+                                           Text = "CLAIM",
+                                           Color = "0.8 0.8 0.8 0.6",
+                                           Font = FONT_NAME,
+                                           FontSize = 16,
+                                           Align = TextAnchor.MiddleCenter
+                                       },
+                                       new CuiRectTransformComponent
+                                       {
+                                           AnchorMin = "0 0",
+                                           AnchorMax = "1 1"
+                                       }
+                                   }
+                               }
+                           };
+
+                list.AddRange(RenderItemIcon(uiItemId, itemData));
+
+                return list;
             }
 
-            return true;
-        }
+            static CuiRectTransformComponent GetGridPosition(int itemId, int columns, int rows, float gap)
+            {
+                float itemWidth = (1.0f - ((columns - 1) * gap)) / columns;
+                float itemHeight = (1.0f - ((rows - 1) * gap)) / rows;
 
-        int GetAvailableInventorySlots(BasePlayer player)
-        {
-            var mainSlots = player.inventory.containerMain.capacity -
-                            player.inventory.containerMain.itemList.Count;
+                int colNumber = itemId % columns;
+                int rowNumber = Mathf.FloorToInt((float)itemId / columns);
 
-            var beltSlots = player.inventory.containerBelt.capacity -
-                            player.inventory.containerBelt.itemList.Count;
+                float itemX = itemWidth * colNumber + gap * colNumber;
+                float itemY = 1 - (itemHeight * rowNumber + gap * (rowNumber - 1)) - itemHeight - (gap * rowNumber);
 
-            return mainSlots + beltSlots;
+                return new CuiRectTransformComponent
+                       {
+                           AnchorMin = $"{itemX} {itemY}",
+                           AnchorMax = $"{itemX + itemWidth} {itemY + itemHeight}"
+                       };
+            }
+
+            public static IEnumerable<CuiElement> RenderItemIcon(int uiItemId, ItemData itemData)
+            {
+                const string placeholder = "{itemid}";
+                string parent = PANEL_ITEM_ICON_CONTAINER.Replace(placeholder, uiItemId.ToString());
+
+                if (itemData.Type != ItemData.ItemType.Item)
+                {
+                    throw new NotImplementedException();
+                }
+
+                var list = new List<CuiElement>
+                           {
+                               new CuiElement
+                               {
+                                   Name = IMAGE_ITEM_ICON_ICON.Replace(placeholder, uiItemId.ToString()),
+                                   Parent = parent,
+                                   Components =
+                                   {
+                                       new CuiImageComponent
+                                       {
+                                           ItemId = itemData.ItemId,
+                                           SkinId = itemData.SkindId
+                                       },
+                                       new CuiRectTransformComponent
+                                       {
+                                           AnchorMin = "0 0",
+                                           AnchorMax = "1 1"
+                                       }
+                                   }
+                               },
+                           };
+
+                if (itemData.Amount > 1)
+                {
+                    list.Add(new CuiElement
+                             {
+                                 Name = LABEL_ITEM_ICON_AMOUNT.Replace(placeholder, uiItemId.ToString()),
+                                 Parent = parent,
+                                 Components =
+                                 {
+                                     new CuiTextComponent
+                                     {
+                                         Text = 'x' + itemData.Amount.ToString(),
+                                         Font = FONT_NAME,
+                                         Color = "0.8 0.8 0.8 1"
+                                     },
+                                     new CuiRectTransformComponent
+                                     {
+                                         AnchorMin = "0 0",
+                                         AnchorMax = "1 1"
+                                     }
+                                 }
+                             });
+                }
+
+                if (itemData.Condition != 0f && itemData.Condition != 1.0f)
+                {
+                    list.Add(new CuiElement
+                             {
+                                 Name = IMAGE_ITEM_ICON_CONDITION.Replace(placeholder, uiItemId.ToString()),
+                                 Parent = parent,
+                                 Components =
+                                 {
+                                     new CuiImageComponent
+                                     {
+                                         Color = "1 0 0 0.3"
+                                     },
+                                     new CuiRectTransformComponent
+                                     {
+                                         AnchorMin = "0 0",
+                                         AnchorMax = "1 " + itemData.Condition
+                                     }
+                                 }
+                             });
+                }
+
+                return list;
+            }
+
+
+            public static void CreateUi(BasePlayer player)
+            {
+                CuiHelper.AddUi(player, s_uiCacheMainBg);
+                CuiHelper.AddUi(player, RenderTabLabels(Tab.Items));
+                CuiHelper.AddUi(player, CuiHelper.ToJson(new List<CuiElement> { RenderGridContainer() }));
+                var items = player.inventory.AllItems();
+
+                int pos = 0;
+
+                foreach (var item in items)
+                {
+                    var itemdata = new ItemData
+                                   {
+                                       ItemId = item.info.itemid,
+                                       Condition = item.conditionNormalized,
+                                       Amount = item.amount,
+                                       Type = ItemData.ItemType.Item,
+                                       SkindId = item.skin,
+                                   };
+
+                    var card = RenderItemCard(pos++, itemdata, items.Length);
+
+                    var j = CuiHelper.ToJson(card.ToList());
+
+                    // Interface.Oxide.LogInfo(j);
+
+                    CuiHelper.AddUi(player, j);
+                }
+            }
+
+            public static void RemoveUi(BasePlayer player)
+            {
+                CuiHelper.DestroyUi(player, PANEL_MAIN_BG);
+            }
+
+            public enum Tab
+            {
+                Items,
+                Subscriptions
+            }
         }
 
         public struct ItemData
         {
-            public int   ItemId;
-            public int   Amount;
-            public float Condition;
-            public ulong SkinId;
-        }
+            public ItemType Type { get; set; }
+            public string PermissionName { get; set; }
+            public string[] CommandNames { get; set; }
+            public int ItemId { get; set; }
+            public ulong SkindId { get; set; }
+            public int Amount { get; set; }
+            public float Condition { get; set; }
 
-        public struct CartData
-        {
-            public ItemData[] Items;
-        }
-
-        public static class Ui
-        {
-            private const string MATERIAL_BLUR = "assets/content/ui/uibackgroundblur.mat";
-
-            static readonly CuiRectTransformComponent s_rectTransformZeroOne =
-            new CuiRectTransformComponent {
-                AnchorMin = "0 0",
-                AnchorMax = "1 1"
-            };
-
-            static CuiElement RenderMainContainer()
+            public enum ItemType
             {
-                return new CuiElement {
-                    Name = "gmonetize.main.container",
-                    Parent = "Hud",
-                    Components = {
-                        new CuiImageComponent {
-                            Material = MATERIAL_BLUR,
-                            Color = "0.4 0.4 0.4 0.7"
-                        },
-                        new CuiRectTransformComponent {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = "-850 -450",
-                            OffsetMax = "850 450"
-                        }
-                    }
-                };
+                Item,
+                Command,
+                Subscription
             }
-
-            static IEnumerable<CuiElement> RenderTabSwitcher(Tab activeTab)
-            {
-                const string colorActive  = "1 1 1 0.7";
-                const string colorDefault = "1 1 1 0.4";
-
-                string itemsColor,
-                       subsColor;
-
-                if ( activeTab == Tab.Items )
-                {
-                    itemsColor = colorActive;
-                    subsColor = colorDefault;
-                }
-                else
-                {
-                    itemsColor = colorDefault;
-                    subsColor = colorActive;
-                }
-
-                CuiImageComponent emptyImage = new CuiImageComponent {
-                    Color = "0 0 0 0"
-                };
-
-                return new[] {
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.container",
-                        Parent = "gmonetize.main.container",
-                        Components = {
-                            new CuiImageComponent {
-                                Color = "0.2 0.2 0.2 0.4"
-                            },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0.9",
-                                AnchorMax = "0.6 1.0"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.divider",
-                        Parent = "gmonetize.tabswitcher.container",
-                        Components = {
-                            new CuiImageComponent {
-                                Color = "1 1 1 0.4"
-                            },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.5 0",
-                                AnchorMax = "0.5 1",
-                                OffsetMin = "-2 0",
-                                OffsetMax = "2 0"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.items.container",
-                        Parent = "gmonetize.tabswitcher.container",
-                        Components = {
-                            emptyImage,
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.5 0",
-                                AnchorMax = "1 1"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.subscriptions.container",
-                        Parent = "gmonetize.tabswitcher.container",
-                        Components = {
-                            emptyImage,
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0 0",
-                                AnchorMax = "0.5 1"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.items.label",
-                        Parent = "gmonetize.tabswitcher.items.container",
-                        Components = {
-                            new CuiTextComponent {
-                                Color = itemsColor, // get active color
-                                Text = "ITEMS"
-                            },
-                            s_rectTransformZeroOne
-                        }
-                    },
-                    new CuiElement {
-                        Name = "gmonetize.tabswitcher.subscriptions.label",
-                        Parent = "gmonetize.tabswitcher.subscriptions.container",
-                        Components = {
-                            new CuiTextComponent {
-                                Color = subsColor, //get active color,
-                                Text = "SUBSCRIPTIONS"
-                            },
-                            s_rectTransformZeroOne
-                        }
-                    }
-                };
-            }
-
-            static Vector2 GetGridOffset(int gridPosition)
-            {
-                const int rowLength = 6;
-                const int colLength = 4;
-
-                const int width  = 1650;
-                const int height = 700;
-
-                int rowNumber = gridPosition / rowLength;
-                int colNumber = gridPosition % rowLength;
-
-                float wStep = width / (float) rowLength;
-                float hStep = height / (float) colLength;
-
-                float wOffset = colNumber * wStep;
-                float hOffset = rowNumber * hStep;
-
-                return new Vector2( wOffset, hOffset );
-            }
-
-            static CuiRectTransformComponent Vector2ToRectTransform(
-                Vector2 vector,
-                float width,
-                float height
-            )
-            {
-                float halfWidth  = width / 2f;
-                float halfHeight = height / 2f;
-
-                return new CuiRectTransformComponent {
-                    AnchorMin = $"{vector.x} {vector.y}",
-                    AnchorMax = $"{vector.x} {vector.y}",
-                    OffsetMin = $"-{halfWidth} -{halfHeight}",
-                    OffsetMax = $"{halfWidth} {halfHeight}"
-                };
-            }
-
-            static IEnumerable<CuiElement> RenderItemCard(ItemData itemData, int gridPosition)
-            {
-                var transform = Vector2ToRectTransform( GetGridOffset( gridPosition ), 160, 200 );
-
-                var baseName = $"gmonetize.itemlist.item({gridPosition})";
-
-                return new[] {
-                    new CuiElement {
-                        Name = baseName + ".container",
-                        Parent = "gmonetize.itemlist.container",
-                        Components = {
-                            new CuiImageComponent {
-                                Color = "0 0 0 0"
-                            },
-                            transform
-                        }
-                    },
-                    new CuiElement {
-                        Name = baseName + ".button_claim.container",
-                        Parent = baseName + ".container",
-                        Components = {
-                            new CuiImageComponent {
-                                Color = "0.4 0.8 0.2 0.8",
-
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = baseName + ".desc.container",
-                        Parent = baseName + ".container",
-                        Components = {
-                            new CuiImageComponent {
-                                Color = ""
-                            },
-                            new CuiRectTransformComponent {
-
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = baseName + ".desc.image",
-                        Parent = baseName + ".desc.container",
-                        Components = {
-                            new CuiImageComponent {},
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 0.45"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = baseName + ".desc.label.quantity",
-                        Parent = baseName + ".desc.container",
-                        Components = {
-                            new CuiTextComponent {
-                                Text = "x" + itemData.Amount,
-                                Color = "1 1 1 0.5",
-                                Align = TextAnchor.UpperLeft
-                            },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1"
-                            }
-                        }
-                    },
-                    new CuiElement {
-                        Name = baseName + ".desc.label.description",
-                        Parent = baseName + ".desc.container",
-                        Components = {
-                            new CuiTextComponent {
-                                Text = "", // find desc text
-                            },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1"
-                            }
-                        }
-                    }
-                };
-            }
-
-            enum Tab { Items, Subscriptions }
         }
     }
 }
