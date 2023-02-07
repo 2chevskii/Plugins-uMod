@@ -22,16 +22,17 @@ namespace Oxide.Plugins
     )]
     public class gMonetize : CovalencePlugin
     {
-        Dictionary<string, List<PlayerCartItem>>     _playerCarts;
-        Dictionary<string, List<PlayerCartItem>>     _delayedCommands;
-        Dictionary<string, List<PlayerSubscription>> _subscriptionsPersistence;
+        Dictionary<string, List<PlayerCartItem>> _playerCarts;
 
         static gMonetize s_Instance;
 
-        string ApiBaseUrl { get; }
-        string ApiToken { get; }
-        float ApiRequestTimeout { get; }
-        Dictionary<string, string> ApiHeaders { get; }
+        string ApiBaseUrl { get; } = "https://gmonetize.ru/api/v2/customer";
+        string ApiToken { get; } = "changeme";
+        float ApiRequestTimeout { get; } = 5f;
+
+        Dictionary<string, string> ApiHeaders { get; } = new Dictionary<string, string> {
+            { "Authorization", "ApiKey changeme" }
+        };
 
 
         [Conditional("DEBUG")]
@@ -120,6 +121,8 @@ namespace Oxide.Plugins
             AddUiController(player);
         }
 
+        #region Command handlers
+
         bool HandleOpenShopCommand(IPlayer player, string command, string[] args)
         {
             var basePlayer = (BasePlayer)player.Object;
@@ -187,282 +190,7 @@ namespace Oxide.Plugins
             return true;
         }
 
-        void UpdatePlayerSubscriptionData(IEnumerable<string> playerIdList)
-        {
-            PostApiRequest<IEnumerable<string>,
-                Dictionary<string, IEnumerable<PlayerSubscription>>>(
-                "/subscriptions",
-                playerIdList,
-                dataCallback: SynchronizePlayerSubscriptions
-            );
-        }
-
-
-        void InitPlayerCart(string userId)
-        {
-            if (!_playerCarts.ContainsKey(userId))
-            {
-                _playerCarts.Add(userId, new List<PlayerCartItem>());
-            }
-        }
-
-        void SynchronizePlayerCarts(Dictionary<string, List<PlayerCartItem>> map)
-        {
-            _playerCarts.Clear();
-
-            Dictionary<string, List<PlayerCartItem>> blueprintsToActivate =
-                new Dictionary<string, List<PlayerCartItem>>();
-
-            foreach (KeyValuePair<string, List<PlayerCartItem>> pair in map)
-            {
-                var userId = pair.Key;
-                var items = pair.Value;
-
-                InitPlayerCart(userId);
-
-                foreach (PlayerCartItem item in items)
-                {
-                    switch (item.Type)
-                    {
-                        case PlayerCartItem.ItemType.Command:
-                            switch (item.CommandExecutionType)
-                            {
-                                case PlayerCartItem.CardCommandExecutionType.MANUAL:
-                                    _playerCarts[userId].Add(item);
-                                    break;
-                                default:
-
-                                    if (!_delayedCommands.ContainsKey(userId))
-                                    {
-                                        _delayedCommands.Add(
-                                            userId,
-                                            new List<PlayerCartItem> { item }
-                                        );
-                                    }
-                                    else
-                                    {
-                                        _delayedCommands[userId].Add(item);
-                                    }
-
-                                    break;
-                            }
-
-                            break;
-                        case PlayerCartItem.ItemType.Item:
-                            _playerCarts[userId].Add(item);
-                            break;
-                        case PlayerCartItem.ItemType.Blueprint:
-                            if (item.BlueprintExecutionType ==
-                                PlayerCartItem.CartBlueprintExecutionType.IMMEDIATE)
-                            {
-                                if (!blueprintsToActivate.ContainsKey(userId))
-                                {
-                                    blueprintsToActivate.Add(
-                                        userId,
-                                        new List<PlayerCartItem> { item }
-                                    );
-                                    continue;
-                                }
-
-                                blueprintsToActivate[userId].Add(item);
-
-                                continue;
-                            }
-
-                            _playerCarts[userId].Add(item);
-
-                            break;
-                    }
-                }
-            }
-
-            RunBlueprintActivations(blueprintsToActivate);
-            RunImmediateCommands();
-        }
-
-        void RunImmediateCommands()
-        {
-            foreach (KeyValuePair<string, List<PlayerCartItem>> keyValuePair in
-                     _delayedCommands)
-            {
-                var userId = keyValuePair.Key;
-                var commandItems = keyValuePair.Value;
-                var immediateCommands = commandItems.Where(
-                    x => x.CommandExecutionType == PlayerCartItem.CardCommandExecutionType.IMMEDIATE
-                );
-
-                foreach (PlayerCartItem commandItem in immediateCommands)
-                {
-                    RunClaimedCallback(
-                        userId,
-                        commandItem,
-                        () =>
-                        {
-                            commandItems.Remove(commandItem);
-                            ExecuteCommandItem(userId, commandItem);
-                        }
-                    );
-                }
-            }
-        }
-
-        void ExecuteCommandItem(string userId, PlayerCartItem item)
-        {
-            var player = players.FindPlayerById(userId);
-
-            foreach (string command in item.Commands)
-            {
-                string prepared = command.Replace("${steamid}", userId)
-                                         .Replace("${name}", player.Name);
-
-                server.Command(prepared);
-            }
-        }
-
-        void RunBlueprintActivations(Dictionary<string, List<PlayerCartItem>> blueprintsToActivate)
-        {
-            foreach (KeyValuePair<string, List<PlayerCartItem>> keyValuePair in
-                     blueprintsToActivate)
-            {
-                string userId = keyValuePair.Key;
-                List<PlayerCartItem> blueprints = keyValuePair.Value;
-
-                var basePlayer =
-                    BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == userId) ??
-                    BasePlayer.sleepingPlayerList.FirstOrDefault(x => x.UserIDString == userId);
-
-                if (basePlayer == null)
-                {
-                    /*cannot learn blueprints if player object is not found */
-                    LogWarning(
-                        "Found blueprints for player {0} in the cart data, but could not find the player",
-                        userId
-                    );
-                    continue;
-                }
-
-                foreach (PlayerCartItem blueprint in blueprints)
-                {
-                    var itemDef = ItemManager.FindItemDefinition(blueprint.ItemId);
-
-                    if (basePlayer.blueprints.HasUnlocked(itemDef))
-                    {
-                        LogWarning(
-                            "Found blueprint {0} for player {1} in the cart data, but player has this item unlocked already",
-                            blueprint.ItemId,
-                            userId
-                        );
-
-                        continue;
-                    }
-
-                    RunClaimedCallback(
-                        userId,
-                        blueprint,
-                        () =>
-                        {
-                            basePlayer.blueprints.Unlock(itemDef);
-                            LogDebug(
-                                "Unlocked blueprint {0} for player {1}",
-                                blueprint.ItemId,
-                                userId
-                            );
-                        }
-                    );
-                }
-            }
-        }
-
-        void RunClaimedCallback(
-            string         userId,
-            PlayerCartItem item,
-            Action         successCallback,
-            Action         errorCallback = null
-        ) { }
-
-        void SynchronizePlayerSubscriptions(
-            Dictionary<string, IEnumerable<PlayerSubscription>> subscriptions
-        )
-        {
-            foreach (KeyValuePair<string, IEnumerable<PlayerSubscription>> keyValuePair in
-                     subscriptions)
-            {
-                string userId = keyValuePair.Key;
-                PlayerSubscription[] fetchedSubscriptions = keyValuePair.Value.ToArray();
-                List<PlayerSubscription> savedSubscriptions;
-
-                if (!_subscriptionsPersistence.TryGetValue(userId, out savedSubscriptions))
-                {
-                    savedSubscriptions = new List<PlayerSubscription>();
-                }
-
-                PlayerSubscription[] newSubscriptions = fetchedSubscriptions
-                                                        .Where(
-                                                            x => savedSubscriptions.All(
-                                                                y => y.Id != x.Id
-                                                            )
-                                                        )
-                                                        .ToArray();
-                PlayerSubscription[] expiredSubscriptions = savedSubscriptions
-                                                            .Where(
-                                                                x => fetchedSubscriptions.All(
-                                                                    y => y.Id != x.Id
-                                                                )
-                                                            )
-                                                            .ToArray();
-
-                IPlayer player = players.FindPlayerById(userId);
-
-                foreach (PlayerSubscription expiredSubscription in expiredSubscriptions)
-                {
-                    if (expiredSubscription.Type == PlayerSubscription.SubscriptionType.Permission)
-                    {
-                        player.RevokePermission(expiredSubscription.PermissionName);
-                    }
-                    else
-                    {
-                        player.RemoveFromGroup(expiredSubscription.PermissionName);
-                    }
-
-                    LogDebug(
-                        "Player {0} subscription has expired: {1}/{2}",
-                        userId,
-                        expiredSubscription.Type.ToString(),
-                        expiredSubscription.PermissionName
-                    );
-                    savedSubscriptions.Remove(expiredSubscription);
-                }
-
-                foreach (PlayerSubscription newSubscription in newSubscriptions)
-                {
-                    if (newSubscription.Type == PlayerSubscription.SubscriptionType.Permission)
-                    {
-                        player.GrantPermission(newSubscription.PermissionName);
-                    }
-                    else
-                    {
-                        player.AddToGroup(newSubscription.PermissionName);
-                    }
-
-                    LogDebug(
-                        "Player {0} has activated new subscription: {1}/{2}",
-                        userId,
-                        newSubscription.Type.ToString(),
-                        newSubscription.PermissionName
-                    );
-                    savedSubscriptions.Add(newSubscription);
-                }
-
-                _subscriptionsPersistence[userId] = savedSubscriptions;
-            }
-
-            SaveSubscriptionPersistence();
-        }
-
-        void SaveSubscriptionPersistence()
-        {
-            throw new NotImplementedException();
-        }
+        #endregion
 
         #region Request helpers
 
@@ -599,143 +327,207 @@ namespace Oxide.Plugins
 
         #endregion
 
-        struct PlayerSubscription
-        {
-            public int Id { get; set; }
-            public SubscriptionType Type { get; set; }
-            public string DisplayName { get; set; }
-            public string PermissionName { get; set; }
-            public string IconUrl { get; set; }
-            public DateTime ExpiresAt { get; set; }
-
-            public enum SubscriptionType
-            {
-                Permission,
-                Group
-            }
-        }
-
         struct PlayerCartItem
         {
-            public int Id { get; set; }
-            public ItemType Type { get; set; }
-            public CardCommandExecutionType CommandExecutionType { get; set; }
-            public CartBlueprintExecutionType BlueprintExecutionType { get; set; }
-            public string[] Commands { get; set; }
-            public int ItemId { get; set; }
-            public float Condition { get; set; }
-            public ulong SkinId { get; set; }
-            public string IconUrl { get; set; }
-            public int Amount { get; set; }
+            public string Id { get; set; }
+            public string IconId { get; set; }
+            public CartItem[] Items { get; set; }
+            public CartCommand[] Commands { get; set; }
+        }
 
-            public enum CartBlueprintExecutionType
-            {
-                IMMEDIATE,
-                MANUAL
-            }
+        struct CartItem
+        {
+            public string ItemId { get; set; }
+            public uint Amount { get; set; }
+        }
 
-            public enum CardCommandExecutionType
-            {
-                IMMEDIATE,
-                ON_CONNECT,
-                ON_RESPAWN,
-                MANUAL
-            }
-
-            public enum ItemType
-            {
-                Command,
-                Item,
-                Blueprint
-            }
+        struct CartCommand
+        {
+            public string Value { get; set; }
         }
 
         class UiController : MonoBehaviour
         {
             const int ITEMS_PER_PAGE = 32;
 
-            BasePlayer    _player;
-            bool          _isOpen;
-            UiBuilder.Tab _activeTab;
-            int           _currentPage;
+            BasePlayer           _player;
+            bool                 _isOpen;
+            int                  _currentPage;
+            List<PlayerCartItem> _items;
+
+            /*tabs are unused with current backend*/
+            // UiBuilder.Tab        _activeTab;
+
+            int PageCount => Mathf.CeilToInt((float)_items.Count / ITEMS_PER_PAGE);
 
             public void gMonetize_OpenShop()
             {
                 if (_isOpen)
                 {
-                    s_Instance.LogWarning("Got an OpenUi command, but the UI is already open");
+                    s_Instance.LogWarning(
+                        "Got an OpenUi command, but the UI is already open, refreshing"
+                    );
+                    RefreshUi();
                     return;
                 }
 
-                CuiHelper.AddUi(_player, UiBuilder.RenderMainUi());
-                CuiHelper.AddUi(_player, UiBuilder.RenderTabLabels(_activeTab));
+                ShowMainUi();
+                ShowLoader();
 
-                if (_activeTab == UiBuilder.Tab.Items)
-                {
-                    CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
-                    _currentPage = 0;
-                    ShowItemPage(0);
-                }
-                else
-                {
-                    throw new NotImplementedException();
-                }
+                s_Instance.SendFetchItemsRequest(
+                    _player,
+                    items =>
+                    {
+                        if (_isOpen)
+                        {
+                            _items.Clear();
+                            _items.AddRange(items);
+                            RemoveLoader();
+                            _currentPage = 0;
+                            ShowItemPage();
+                        }
+                        else
+                        {
+                            s_Instance.LogDebug(
+                                "UI was closed earlier than item load was finished"
+                            );
+                        }
+                    },
+                    error =>
+                    {
+                        RemoveLoader();
+                        ShowLoadError();
+                    }
+                );
             }
 
-            public void gMonetize_CloseShop()
+            public void gMonetize_RefreshUi()
             {
                 if (!_isOpen)
-                {
-                    s_Instance.LogWarning("Got a CloseUi command, but the UI is not open");
-                    return;
-                }
+                    throw new InvalidOperationException("RefreshUi called, but _isOpen=false");
 
-                CuiHelper.DestroyUi(_player, UiBuilder.Names.Main.Container);
+                CuiHelper.DestroyUi(_player, UiBuilder.Names.ItemList.Container);
+                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
+                ShowItemPage();
             }
 
-            public void gMonetize_SwitchTab(UiBuilder.Tab tab)
+            public void gMonetize_NextPage()
             {
-                if (_activeTab == tab)
-                    return;
+                CuiHelper.DestroyUi(_player, UiBuilder.Names.ItemList.Container);
+                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
 
-                if (tab == UiBuilder.Tab.Items)
+                if (PageCount == 0)
                 {
-                    List<PlayerCartItem> items;
-                    if (!s_Instance._playerCarts.TryGetValue(_player.UserIDString, out items))
-                    {
-                        items = new List<PlayerCartItem>();
-                    }
+                    ShowNoItemsLabel();
+                }
+                else if(_currentPage == PageCount-1)
+                {
+                    s_Instance.LogDebug("NextPage called, but already on last page");
+                    RefreshUi();
                 }
                 else
                 {
-                    List<PlayerSubscription> subscriptions;
-                    if (!s_Instance._subscriptionsPersistence.TryGetValue(
-                            _player.UserIDString,
-                            out subscriptions
-                        ))
-                    {
-                        subscriptions = new List<PlayerSubscription>();
-                    }
+                    _currentPage++;
+                    ShowItemsPage();
+                }
+            }
+
+            public void gMonetize_PrevPage()
+            {
+                CuiHelper.DestroyUi(_player, UiBuilder.Names.ItemList.Container);
+                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
+
+                if (PageCount == 0)
+                {
+                    ShowNoItemsLabel();
+                } else if (_currentPage == 0)
+                {
+                    RefreshUi();
+                }
+                else
+                {
+                    _currentPage--;
+                    ShowItemsPage();
+                }
+            }
+
+            public void gMonetize_CloseUi()
+            {
+
+            }
+
+            public void gMonetize_ClaimItem(string itemId) { }
+
+            void ShowMainUi()
+            {
+                if (_isOpen)
+                    return;
+
+                CuiHelper.AddUi(_player, UiBuilder.RenderMainUi());
+                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
+            }
+
+            void ShowItemPage()
+            {
+                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
+
+                if (!_items.Any())
+                {
+                    s_Instance.LogDebug("No items found for user {0}", _player.UserIDString);
+                    /*render no items text and force set current page to 0*/
+                    _currentPage = 0;
+                    CuiHelper.AddUi(
+                        _player,
+                        UiBuilder.RenderStatusLabel("No items :/", false)
+                    );
+                    return;
                 }
 
-                _activeTab = tab;
-            }
+                int pageCount = Mathf.CeilToInt((float)_items.Count / ITEMS_PER_PAGE);
 
-            public void gMonetize_NextPage() { }
-
-            public void gMonetize_PrevPage() { }
-
-            public void gMonetize_ClaimItem()
-            {
-                if (_activeTab != UiBuilder.Tab.Items)
-                    s_Instance.LogWarning(
-                        "Received the OnItemClaim message, but the active tab was {0}",
-                        _activeTab.ToString()
+                if (_currentPage >= pageCount)
+                {
+                    int targetPageIndex = pageCount - 1;
+                    s_Instance.LogDebug(
+                        "Page count is {0}, but current page index is {1}. Correcting to {2} (user: {3})",
+                        pageCount,
+                        _currentPage,
+                        targetPageIndex,
+                        _player.UserIDString
                     );
+                }
 
-                /*re-render item grid*/
-                throw new NotImplementedException();
+                int itemsToSkipCount = ITEMS_PER_PAGE * _currentPage;
+                var itemsToRender = _items.Skip(itemsToSkipCount).Take(ITEMS_PER_PAGE).ToArray();
+
+                for (var i = 0; i < itemsToRender.Length; i++)
+                {
+                    var item = itemsToRender[i];
+
+                    var card = UiBuilder.RenderItemCard(i, item);
+                    CuiHelper.AddUi(_player, UiBuilder.ConvertToJson(card));
+                }
             }
+
+            void ShowLoader()
+            {
+                CuiHelper.AddUi(_player, UiBuilder.RenderStatusLabel("Loading items...", false));
+            }
+
+            void RemoveLoader()
+            {
+                CuiHelper.DestroyUi(_player, UiBuilder.Names.ItemList.LabelStatus);
+            }
+
+            void ShowLoadError()
+            {
+                CuiHelper.AddUi(
+                    _player,
+                    UiBuilder.RenderStatusLabel("Failed to load items :(", true)
+                );
+            }
+
+            #region Unity messages
 
             void Start()
             {
@@ -743,54 +535,12 @@ namespace Oxide.Plugins
                 _activeTab = UiBuilder.Tab.Items;
             }
 
-            void ShowItemPage(int pageId)
+            void OnDestroy()
             {
-                List<PlayerCartItem> items;
-                if (!s_Instance._playerCarts.TryGetValue(_player.UserIDString, out items))
-                {
-                    items = new List<PlayerCartItem>();
-                }
-
-                int pageCount = Mathf.CeilToInt((float)items.Count / ITEMS_PER_PAGE);
-
-                if (pageId >= pageCount)
-                {
-                    s_Instance.LogWarning(
-                        "Tried to render item page {0}, but there are only {1} pages, will render the last page instead",
-                        pageId + 1,
-                        pageCount
-                    );
-                    pageId = pageCount - 1;
-                }
-
-                var itemsToRender =
-                    items.Skip(pageId * ITEMS_PER_PAGE).Take(ITEMS_PER_PAGE).ToArray();
-
-                CuiHelper.AddUi(_player, UiBuilder.RenderItemListContainer());
-
-                if (itemsToRender.Length == 0)
-                {
-                    /*render cart is empty text*/
-                    CuiHelper.AddUi(_player, UiBuilder.RenderCartIsEmptyText());
-                }
-                else
-                {
-                    /*render item list*/
-                    var renderedItems = new IEnumerable<CuiElement>[itemsToRender.Length];
-
-                    for (var i = 0; i < itemsToRender.Length; i++)
-                    {
-                        var item = itemsToRender[i];
-
-                        renderedItems[i] = UiBuilder.RenderItemCard(i, item);
-                    }
-
-                    CuiHelper.AddUi(
-                        _player,
-                        UiBuilder.ConvertToJson(renderedItems.SelectMany(x => x))
-                    );
-                }
+                /*remove ui if exists*/
             }
+
+            #endregion
         }
 
         static class UiBuilder
@@ -882,7 +632,7 @@ namespace Oxide.Plugins
                 return s_MainUiCache;
             }
 
-            public static string RenderTabLabels(Tab activeTab)
+            /*public static string RenderTabLabels(Tab activeTab)
             {
                 string itemsLabelColor, subscriptionsLabelColor;
 
@@ -933,7 +683,7 @@ namespace Oxide.Plugins
                         }
                     }
                 );
-            }
+            }*/
 
             public static string RenderItemListContainer()
             {
@@ -1091,7 +841,31 @@ namespace Oxide.Plugins
                 return list;
             }
 
-            public static string RenderCartIsEmptyText()
+            public static string RenderStatusLabel(string status, bool isError)
+            {
+                return JsonUtility.ToJson(
+                                      new[] {
+                                          new CuiElement {
+                                              Name = Names.ItemList.LabelStatus,
+                                              Parent = Names.ItemList.Container,
+                                              Components = {
+                                                  new CuiTextComponent {
+                                                      Text = status,
+                                                      Align = TextAnchor.MiddleCenter,
+                                                      FontSize = 18,
+                                                      Font = Resources.Fonts.RobotoCondensedRegular,
+                                                      Color = !isError
+                                                          ? Resources.Colors.TextBackground
+                                                          : Resources.Colors.RedBase
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  )
+                                  .Replace("\n\n", "\n");
+            }
+
+            /*public static string RenderCartIsEmptyText()
             {
                 if (s_ItemListIsEmptyLabelCache == null)
                 {
@@ -1120,7 +894,7 @@ namespace Oxide.Plugins
                 }
 
                 return s_ItemListIsEmptyLabelCache;
-            }
+            }*/
 
             static CuiRectTransformComponent GetGridPosition(
                 int   itemId,
@@ -1165,8 +939,8 @@ namespace Oxide.Plugins
 
                 public static class ItemList
                 {
-                    public const string Container    = "gmonetize.ui::itemlist/container";
-                    public const string LabelIsEmpty = "gmonetize.ui::itemlist/label_isempty";
+                    public const string Container   = "gmonetize.ui::itemlist/container";
+                    public const string LabelStatus = "gmonetize.ui::itemlist/label_status";
 
                     public static class Item
                     {
@@ -1241,11 +1015,11 @@ namespace Oxide.Plugins
                 }
             }
 
-            public enum Tab
+            /*public enum Tab
             {
                 Items,
                 Subscriptions
-            }
+            }*/
         }
     }
 }
