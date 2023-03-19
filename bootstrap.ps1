@@ -1,41 +1,30 @@
-$solution_dir = $PSScriptRoot
-$project_dir = Join-Path $solution_dir 'src'
-$custom_ref_path = Join-Path $solution_dir 'ReferenceDir.props'
-$reference_dir
-$custom_ref_path_enabled = $false
-$upd_refs_script = Join-Path $solution_dir 'Update-References.ps1'
+using namespace System
+using namespace System.IO
 
-function Find-DefaultReferencePath {
-  if (Test-Path "$project_dir/References") {
-    return "$project_dir/References"
-  } elseif (Test-Path "$solution_dir/References") {
-    return "$solution_dir/References"
-  } else {
-    return [System.IO.Path]::GetFullPath('../References', $solution_dir)
-  }
+[CmdletBinding()]
+param(
+    [Parameter()]
+    [string] $ReferencesDirectory,
+    [Parameter()]
+    [ValidateSet('vanilla', 'oxide', 'umod')]
+    [string] $LibrariesType,
+    [Parameter()]
+    [string] $DepotDownloaderPath,
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string] $DepotDownloaderVersion = '2.4.7'
+)
+
+begin {
+    $script_data_dir = [Path]::Combine([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData), 'umod-ref-bootstrapper')
+
+
 }
 
-if (Test-Path $custom_ref_path) {
-  $x = Get-Content $custom_ref_path | Select-Xml -XPath '//CustomReferenceDir'
+process {
 
-  if (![string]::IsNullOrWhiteSpace($x)) {
-    $custom_ref_path_enabled = $true
-    $reference_dir = [System.IO.Path]::GetFullPath($custom_ref_path, $solution_dir)
-  }
 }
 
-if (!$custom_ref_path_enabled) {
-  $reference_dir = Find-DefaultReferencePath
-}
+end {
 
-Write-Host ('Bootstrapping reference directory: {0}' -f $reference_dir)
-
-. $upd_refs_script -Path $reference_dir -ReferenceType Oxide -Clean
-
-if ($LASTEXITCODE -eq 0) {
-  Write-Host 'Bootstrap successful'
-  exit 0
-} else {
-  Write-Error ('Bootstrap failed: {0}' -f $LASTEXITCODE)
-  exit 1
 }

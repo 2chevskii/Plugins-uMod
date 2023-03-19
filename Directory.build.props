@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-
     <PropertyGroup>
-        <CustomRefPathProps>$(SolutionDir)/ReferenceDir.props</CustomRefPathProps>
+        <ReferencesPropsPath>$(MSBuildThisFileDirectory)References.props</ReferencesPropsPath>
+        <ReferencesDirectoryInThisFolder>$(MSBuildThisFileDirectory)include\references</ReferencesDirectoryInThisFolder>
+        <ReferencesDirectoryInParentFolder>$(MSBuildThisFileDirectory)..\include\references</ReferencesDirectoryInParentFolder>
     </PropertyGroup>
 
-    <Import Condition="Exists('$(CustomRefPathProps)')" Project="$(CustomRefPathProps)" />
+    <Import Condition="Exists('$(ReferencesPropsPath)')" Project="$(ReferencesPropsPath)" />
 
     <PropertyGroup>
-        <ReferenceDir Condition="'$(CustomReferenceDir)' != ''">$(CustomReferenceDir)</ReferenceDir>
-        <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(ProjectDir)/References/')">$(ProjectDir)/References/</ReferenceDir>
-        <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(SolutionDir)/References/')">$(SolutionDir)/References/</ReferenceDir>
-        <ReferenceDir Condition="'$(ReferenceDir)' == '' AND Exists('$(SolutionDir)/../References/')">$(SolutionDir)/../References/</ReferenceDir>
+        <ReferencesDirectory
+            Condition="'$(ReferencesDirectory)' == '' AND Exists('$(ReferencesDirectoryInThisFolder)')">
+            $(ReferencesDirectoryInThisFolder)</ReferencesDirectory>
+        <ReferencesDirectory
+            Condition="'$(ReferencesDirectory)' == '' AND Exists('$(ReferencesDirectoryInParentFolder)')">
+            $(ReferencesDirectoryInParentFolder)</ReferencesDirectory>
     </PropertyGroup>
 </Project>

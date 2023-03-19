@@ -1,6 +1,4 @@
-﻿#define DEBUG
-
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -15,16 +13,12 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info(
-        "gMonetize",
-        "2CHEVSKII",
-        "0.1.0"
-    )]
-    public class gMonetize : CovalencePlugin
+    [Info("gMonetize", "2CHEVSKII", "0.1.0")]
+    public class GMonetizeOld : CovalencePlugin
     {
         Dictionary<string, List<PlayerCartItem>> _playerCarts;
 
-        static gMonetize s_Instance;
+        static GMonetizeOld s_Instance;
 
         string ApiBaseUrl { get; } = "https://gmonetize.ru/api/v2/customer";
         string ApiToken { get; } = "changeme";
@@ -420,7 +414,7 @@ namespace Oxide.Plugins
                 {
                     ShowNoItemsLabel();
                 }
-                else if(_currentPage == PageCount-1)
+                else if (_currentPage == PageCount - 1)
                 {
                     s_Instance.LogDebug("NextPage called, but already on last page");
                     RefreshUi();
@@ -440,7 +434,8 @@ namespace Oxide.Plugins
                 if (PageCount == 0)
                 {
                     ShowNoItemsLabel();
-                } else if (_currentPage == 0)
+                }
+                else if (_currentPage == 0)
                 {
                     RefreshUi();
                 }
@@ -451,10 +446,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            public void gMonetize_CloseUi()
-            {
-
-            }
+            public void gMonetize_CloseUi() { }
 
             public void gMonetize_ClaimItem(string itemId) { }
 
@@ -584,7 +576,8 @@ namespace Oxide.Plugins
                                         Color = Resources.Colors.BackgroundBase
                                     },
                                     new CuiRectTransformComponent {
-                                        AnchorMin = "0.05 0.1", AnchorMax = "0.95 0.95"
+                                        AnchorMin = "0.05 0.1",
+                                        AnchorMax = "0.95 0.95"
                                     }
                                 }
                             },
@@ -597,7 +590,8 @@ namespace Oxide.Plugins
                                         Command = "gmonetize.ui.cmd:close"
                                     },
                                     new CuiRectTransformComponent {
-                                        AnchorMin = "0.95 0.95", AnchorMax = "1.0 1.0"
+                                        AnchorMin = "0.95 0.95",
+                                        AnchorMax = "1.0 1.0"
                                     }
                                 }
                             },
@@ -609,7 +603,8 @@ namespace Oxide.Plugins
                                         Color = Resources.Colors.BackgroundSemiTransparent
                                     },
                                     new CuiRectTransformComponent {
-                                        AnchorMin = "0.4 0.95", AnchorMax = "0.6 1.0"
+                                        AnchorMin = "0.4 0.95",
+                                        AnchorMax = "0.6 1.0"
                                     }
                                 }
                             },
@@ -621,7 +616,8 @@ namespace Oxide.Plugins
                                         Color = Resources.Colors.TextSemiTransparent
                                     },
                                     new CuiRectTransformComponent {
-                                        AnchorMin = "0.498 0", AnchorMax = "0.502 1"
+                                        AnchorMin = "0.498 0",
+                                        AnchorMax = "0.502 1"
                                     }
                                 }
                             },
@@ -698,7 +694,8 @@ namespace Oxide.Plugins
                                     Color = Resources.Colors.BackgroundSemiTransparent
                                 },
                                 new CuiRectTransformComponent {
-                                    AnchorMin = "0.02 0.03", AnchorMax = "0.98 0.92"
+                                    AnchorMin = "0.02 0.03",
+                                    AnchorMax = "0.98 0.92"
                                 }
                             }
                         }
@@ -740,7 +737,8 @@ namespace Oxide.Plugins
                                 Color = Resources.Colors.BackgroundSemiTransparent
                             },
                             new CuiRectTransformComponent {
-                                AnchorMin = "0.1 0.3", AnchorMax = "0.9 0.9"
+                                AnchorMin = "0.1 0.3",
+                                AnchorMax = "0.9 0.9"
                             }
                         }
                     },
@@ -753,7 +751,8 @@ namespace Oxide.Plugins
                                 Command = "gmonetize.ui.claimitem:" + itemData.Id
                             },
                             new CuiRectTransformComponent {
-                                AnchorMin = "0.1 0.1", AnchorMax = "0.9 0.27"
+                                AnchorMin = "0.1 0.1",
+                                AnchorMax = "0.9 0.27"
                             }
                         }
                     },
@@ -768,7 +767,10 @@ namespace Oxide.Plugins
                                 FontSize = 16,
                                 Align = TextAnchor.MiddleCenter
                             },
-                            new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+                            new CuiRectTransformComponent {
+                                AnchorMin = "0 0",
+                                AnchorMax = "1 1"
+                            }
                         }
                     }
                 };
@@ -794,9 +796,13 @@ namespace Oxide.Plugins
                         Parent = Names.ItemList.Item.Icon.Container(uiItemId),
                         Components = {
                             new CuiImageComponent {
-                                ItemId = itemData.ItemId, SkinId = itemData.SkinId
+                                ItemId = itemData.ItemId,
+                                SkinId = itemData.SkinId
                             },
-                            new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+                            new CuiRectTransformComponent {
+                                AnchorMin = "0 0",
+                                AnchorMax = "1 1"
+                            }
                         }
                     },
                 };
@@ -814,7 +820,8 @@ namespace Oxide.Plugins
                                     Color = "0.8 0.8 0.8 1"
                                 },
                                 new CuiRectTransformComponent {
-                                    AnchorMin = "0 0", AnchorMax = "1 1"
+                                    AnchorMin = "0 0",
+                                    AnchorMax = "1 1"
                                 }
                             }
                         }
@@ -831,7 +838,8 @@ namespace Oxide.Plugins
                             Components = {
                                 new CuiImageComponent { Color = "1 0 0 0.3" },
                                 new CuiRectTransformComponent {
-                                    AnchorMin = "0 0", AnchorMax = "1 " + itemData.Condition
+                                    AnchorMin = "0 0",
+                                    AnchorMax = "1 " + itemData.Condition
                                 }
                             }
                         }
