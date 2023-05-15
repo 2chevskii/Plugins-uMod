@@ -25,10 +25,14 @@ namespace Oxide.Plugins
 
         const string UI_MAIN_PANEL_NAME = "godmodeindicator.ui::main_panel";
 
-        static            GodmodeIndicator Instance;
-        [PluginReference] Plugin           ImageLibrary;
-        [PluginReference] Plugin           Godmode;
-        string                             uiCached;
+        static GodmodeIndicator Instance;
+
+        [PluginReference]
+        Plugin ImageLibrary;
+
+        [PluginReference]
+        Plugin Godmode;
+        string uiCached;
 
         Dictionary<string, GodmodeUi> idToComponent;
 
@@ -38,24 +42,30 @@ namespace Oxide.Plugins
         {
             [JsonProperty("UI X position")]
             public float UiX { get; set; }
+
             [JsonProperty("UI Y position")]
             public float UiY { get; set; }
+
             [JsonProperty("UI URL")]
             public string UiUrl { get; set; }
+
             [JsonProperty("UI Color")]
             public string UiColor { get; set; }
+
             [DefaultValue(1.0f)]
             [JsonProperty("UI Scale", DefaultValueHandling = DefaultValueHandling.Populate)]
             public float UiScale { get; set; }
         }
 
-        PluginSettings GetDefaultSettings() => new PluginSettings {
-            UiX = 0.05f,
-            UiY = 0.85f,
-            UiColor = "1 1 1 1",
-            UiUrl = "https://i.imgur.com/SF6lN2N.png",
-            UiScale = 1.0f
-        };
+        PluginSettings GetDefaultSettings() =>
+            new PluginSettings
+            {
+                UiX = 0.05f,
+                UiY = 0.85f,
+                UiColor = "1 1 1 1",
+                UiUrl = "https://i.imgur.com/SF6lN2N.png",
+                UiScale = 1.0f
+            };
 
         protected override void LoadDefaultConfig()
         {
@@ -152,42 +162,43 @@ namespace Oxide.Plugins
                 settings.UiUrl,
                 icon,
                 id,
-                new Action(
-                    () => {
-                        var container = new CuiElementContainer();
+                new Action(() =>
+                {
+                    var container = new CuiElementContainer();
 
-                        container.Add(
-                            new CuiElement {
-                                Name = UI_MAIN_PANEL_NAME,
-                                Parent = "Hud",
-                                Components =
-                                {
-                                    new CuiRawImageComponent
-                                    {
-                                        Color = settings.UiColor,
-                                        Sprite = "assets/content/textures/generic/fulltransparent.tga",
-                                        Png = (string)ImageLibrary?.Call("GetImage", icon, id),
-                                        FadeIn = 0.4f
-                                    },
-                                    new CuiRectTransformComponent
-                                    {
-                                        AnchorMin = $"{settings.UiX - .04f * settings.UiScale} {settings.UiY - .056f * settings.UiScale}",
-                                        AnchorMax =
-                                            $"{settings.UiX + .04f * settings.UiScale} {settings.UiY + .056f * settings.UiScale}"
-                                    }
-                                },
-                                FadeOut = 0.4f
-                            }
-                        );
-
-                        uiCached = ToJson(container);
-
-                        foreach (var component in idToComponent.Values)
+                    container.Add(
+                        new CuiElement
                         {
-                            component.OnUiBuilt();
+                            Name = UI_MAIN_PANEL_NAME,
+                            Parent = "Hud",
+                            Components =
+                            {
+                                new CuiRawImageComponent
+                                {
+                                    Color = settings.UiColor,
+                                    Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                                    Png = (string)ImageLibrary?.Call("GetImage", icon, id),
+                                    FadeIn = 0.4f
+                                },
+                                new CuiRectTransformComponent
+                                {
+                                    AnchorMin =
+                                        $"{settings.UiX - .04f * settings.UiScale} {settings.UiY - .056f * settings.UiScale}",
+                                    AnchorMax =
+                                        $"{settings.UiX + .04f * settings.UiScale} {settings.UiY + .056f * settings.UiScale}"
+                                }
+                            },
+                            FadeOut = 0.4f
                         }
+                    );
+
+                    uiCached = ToJson(container);
+
+                    foreach (var component in idToComponent.Values)
+                    {
+                        component.OnUiBuilt();
                     }
-                )
+                })
             );
         }
 
@@ -196,15 +207,12 @@ namespace Oxide.Plugins
         class GodmodeUi : MonoBehaviour
         {
             BasePlayer player;
-            bool       uiVisible;
-            bool       isInPluginGod;
+            bool uiVisible;
+            bool isInPluginGod;
 
             public bool GodmodePluginStatus
             {
-                set
-                {
-                    isInPluginGod = value;
-                }
+                set { isInPluginGod = value; }
             }
 
             bool IsGod => isInPluginGod || player.IsGod();
@@ -232,7 +240,8 @@ namespace Oxide.Plugins
 
             void Start()
             {
-                isInPluginGod = Instance.Godmode && Instance.Godmode.Call<bool>("IsGod", player.UserIDString);
+                isInPluginGod =
+                    Instance.Godmode && Instance.Godmode.Call<bool>("IsGod", player.UserIDString);
                 if (!player.IsSleeping() && Instance.uiCached != null)
                     InvokeRepeating(nameof(Tick), 1f, 1f);
             }

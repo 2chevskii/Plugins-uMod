@@ -15,12 +15,12 @@ namespace Oxide.Plugins
     {
         const string API_BASE_URL = "https://umod-versioner.herokuapp.com/";
 
-        float                             updateFrequency;
-        List<string>                      gamesAvailable;
+        float updateFrequency;
+        List<string> gamesAvailable;
         Dictionary<string, VersionNumber> gameVersions;
-        bool                              isUpdatingLists;
-        bool                              enableLog;
-        Timer                             listUpdateTimer;
+        bool isUpdatingLists;
+        bool enableLog;
+        Timer listUpdateTimer;
         Dictionary<string, VersionNumber> extensionVersions;
 
         event Action OnListsUpdated;
@@ -29,7 +29,9 @@ namespace Oxide.Plugins
 
         void OnServerInitialized()
         {
-            var exts = Interface.Oxide.GetAllExtensions().Where(ext => ext.IsCoreExtension || ext.IsGameExtension);
+            var exts = Interface.Oxide
+                .GetAllExtensions()
+                .Where(ext => ext.IsCoreExtension || ext.IsGameExtension);
 
             extensionVersions = new Dictionary<string, VersionNumber>();
 
@@ -64,7 +66,8 @@ namespace Oxide.Plugins
             Log("Fetching game list...");
             FetchGameList(
                 gamesAvailable,
-                b => {
+                b =>
+                {
                     if (b)
                     {
                         Log("Game list fetched, total of {0} games loaded", gamesAvailable.Count);
@@ -80,12 +83,17 @@ namespace Oxide.Plugins
                         {
                             FetchGameVersion(
                                 game,
-                                (s, v) => {
+                                (s, v) =>
+                                {
                                     if (s)
                                     {
                                         gameVersions[game] = v;
                                         successfullGames++;
-                                        Log("Successfully loaded versions of {0}/{1} games", successfullGames, gamesAvailable.Count);
+                                        Log(
+                                            "Successfully loaded versions of {0}/{1} games",
+                                            successfullGames,
+                                            gamesAvailable.Count
+                                        );
                                     }
                                     else
                                     {
@@ -210,7 +218,8 @@ namespace Oxide.Plugins
             webrequest.Enqueue(
                 API_BASE_URL + "games",
                 null,
-                (code, json) => {
+                (code, json) =>
+                {
                     if (code != 200)
                     {
                         callback(false);
@@ -240,7 +249,8 @@ namespace Oxide.Plugins
             webrequest.Enqueue(
                 API_BASE_URL + game,
                 null,
-                (code, json) => {
+                (code, json) =>
+                {
                     if (code != 200)
                     {
                         callback(false, default(VersionNumber));

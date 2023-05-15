@@ -20,29 +20,29 @@ namespace Oxide.Plugins
     [Description("Save and restore items in selected containers")]
     class Replenish : CovalencePlugin
     {
-        PluginSettings      settings;
+        PluginSettings settings;
         ReplenishController controller;
 
         const string PERMISSION_USE = "replenish.use";
 
         const string DATAFILE_NAME = "replenish.data";
 
-        const string M_PREFIX              = "Chat prefix",
-                     M_NO_PERMISSION       = "No permission",
-                     M_HELP                = "Help message",
-                     M_CONTAINER_SET       = "Container set for replenish",
-                     M_CONTAINER_UNSET     = "Container removed from replenish list",
-                     M_CONTAINER_INFO      = "Container info",
-                     M_CONTAINER_NOT_EMPTY = "Container is not empty",
-                     M_TIMED               = "Timed restore",
-                     M_WIPE_ONLY           = "Wipe restore",
-                     M_COMMAND_ONLY        = "Command restore",
-                     M_CONTAINER_NOT_FOUND = "Container not found",
-                     M_CONTAINER_NOT_SAVED = "Container not saved",
-                     M_NO_CONTAINERS_SAVED = "No saved containers",
-                     M_CONTAINER_RESTORED  = "Container restored",
-                     M_ALL_RESTORED        = "All containers restored",
-                     M_ALL_REMOVED         = "All containers removed from restore";
+        const string M_PREFIX = "Chat prefix",
+            M_NO_PERMISSION = "No permission",
+            M_HELP = "Help message",
+            M_CONTAINER_SET = "Container set for replenish",
+            M_CONTAINER_UNSET = "Container removed from replenish list",
+            M_CONTAINER_INFO = "Container info",
+            M_CONTAINER_NOT_EMPTY = "Container is not empty",
+            M_TIMED = "Timed restore",
+            M_WIPE_ONLY = "Wipe restore",
+            M_COMMAND_ONLY = "Command restore",
+            M_CONTAINER_NOT_FOUND = "Container not found",
+            M_CONTAINER_NOT_SAVED = "Container not saved",
+            M_NO_CONTAINERS_SAVED = "No saved containers",
+            M_CONTAINER_RESTORED = "Container restored",
+            M_ALL_RESTORED = "All containers restored",
+            M_ALL_REMOVED = "All containers removed from restore";
 
         static Replenish Instance;
 
@@ -72,11 +72,18 @@ namespace Oxide.Plugins
                         {
                             if (args.Length == 1)
                             {
-                                var cData = controller.SaveContainer(container, settings.DefaultReplenishTimer);
+                                var cData = controller.SaveContainer(
+                                    container,
+                                    settings.DefaultReplenishTimer
+                                );
 
                                 string msg = GetSaveTimeMessage(cData.Mode);
 
-                                Message(player, M_CONTAINER_SET, string.Format(msg, cData.RestoreTime));
+                                Message(
+                                    player,
+                                    M_CONTAINER_SET,
+                                    string.Format(msg, cData.RestoreTime)
+                                );
                             }
                             else
                             {
@@ -85,32 +92,48 @@ namespace Oxide.Plugins
                                     case "cmd":
                                         controller.SaveContainer(container, 0f);
 
-                                        Message(player, M_CONTAINER_SET, GetMessage(player, M_COMMAND_ONLY));
+                                        Message(
+                                            player,
+                                            M_CONTAINER_SET,
+                                            GetMessage(player, M_COMMAND_ONLY)
+                                        );
                                         break;
 
                                     case "wipe":
                                         controller.SaveContainer(container, -1f);
 
-                                        Message(player, M_CONTAINER_SET, GetMessage(player, M_WIPE_ONLY));
+                                        Message(
+                                            player,
+                                            M_CONTAINER_SET,
+                                            GetMessage(player, M_WIPE_ONLY)
+                                        );
                                         break;
 
                                     default:
                                         float seconds;
-                                        if (float.TryParse(
-                                            args[1],
-                                            NumberStyles.Number,
-                                            CultureInfo.InvariantCulture,
-                                            out seconds
-                                        ))
+                                        if (
+                                            float.TryParse(
+                                                args[1],
+                                                NumberStyles.Number,
+                                                CultureInfo.InvariantCulture,
+                                                out seconds
+                                            )
+                                        )
                                         {
-                                            var cData = controller.SaveContainer(container, seconds);
+                                            var cData = controller.SaveContainer(
+                                                container,
+                                                seconds
+                                            );
 
                                             string msg = GetSaveTimeMessage(cData.Mode);
 
                                             Message(
                                                 player,
                                                 M_CONTAINER_SET,
-                                                string.Format(GetMessage(player, msg), cData.RestoreTime)
+                                                string.Format(
+                                                    GetMessage(player, msg),
+                                                    cData.RestoreTime
+                                                )
                                             );
                                         }
                                         else
@@ -248,7 +271,7 @@ namespace Oxide.Plugins
                                 {
                                     if (!controller.RestoreNow(containerData))
                                     {
-                                        Message(player,M_CONTAINER_NOT_EMPTY);
+                                        Message(player, M_CONTAINER_NOT_EMPTY);
                                     }
                                     else
                                     {
@@ -337,7 +360,12 @@ namespace Oxide.Plugins
 
             RaycastHit hit;
 
-            bool bHit = Physics.Raycast(basePlayer.eyes.HeadRay(), out hit, 5f, LayerMask.GetMask("Deployed"));
+            bool bHit = Physics.Raycast(
+                basePlayer.eyes.HeadRay(),
+                out hit,
+                5f,
+                LayerMask.GetMask("Deployed")
+            );
 
             if (bHit)
             {
@@ -390,18 +418,20 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(
-                new Dictionary<string, string> {
+                new Dictionary<string, string>
+                {
                     [M_PREFIX] = "[Replenish] ",
                     [M_NO_PERMISSION] = "You have no access to this command",
-                    [M_HELP] = "Usage: /replenish [command] <args>\n" +
-                               "Commands:\n" +
-                               "save (<digit|'wipe'|'cmd'>) - Save container you are currently looking at or change settings for container\n" +
-                               "remove (<digit>) - Remove container from replenish\n" +
-                               "info (<digit>) - Get information about container\n" +
-                               "list - Get list of saved containers\n" +
-                               "restore (<digit>) - Restore specified container\n" +
-                               "restoreall - Restore all containers\n" +
-                               "clear - Remove all containers from replenish",
+                    [M_HELP] =
+                        "Usage: /replenish [command] <args>\n"
+                        + "Commands:\n"
+                        + "save (<digit|'wipe'|'cmd'>) - Save container you are currently looking at or change settings for container\n"
+                        + "remove (<digit>) - Remove container from replenish\n"
+                        + "info (<digit>) - Get information about container\n"
+                        + "list - Get list of saved containers\n"
+                        + "restore (<digit>) - Restore specified container\n"
+                        + "restoreall - Restore all containers\n"
+                        + "clear - Remove all containers from replenish",
                     [M_CONTAINER_SET] = "Container set to '{0}'",
                     [M_CONTAINER_UNSET] = "Container removed from replenish",
                     [M_CONTAINER_INFO] = "#{0}: {1}, {2} | {3}",
@@ -451,10 +481,7 @@ namespace Oxide.Plugins
 
         void MessageRaw(IPlayer player, string message)
         {
-            string prefix = GetMessage(
-                player,
-                M_PREFIX
-            );
+            string prefix = GetMessage(player, M_PREFIX);
 
             player.Message(prefix + message);
         }
@@ -480,7 +507,9 @@ namespace Oxide.Plugins
         {
             try
             {
-                var list = Interface.Oxide.DataFileSystem.ReadObject<List<ContainerData>>(DATAFILE_NAME);
+                var list = Interface.Oxide.DataFileSystem.ReadObject<List<ContainerData>>(
+                    DATAFILE_NAME
+                );
 
                 if (list == null)
                 {
@@ -546,7 +575,7 @@ namespace Oxide.Plugins
         class ReplenishController : MonoBehaviour
         {
             List<ContainerData> allContainers;
-            ContainerData       nextRestoreContainer;
+            ContainerData nextRestoreContainer;
 
             public ContainerData FindDataById(int id)
             {
@@ -592,7 +621,9 @@ namespace Oxide.Plugins
                 {
                     cData.RestoreTime = timer;
                     cData.ItemList.Clear();
-                    cData.ItemList.AddRange(container.inventory.itemList.Select(SerializableItem.FromItem));
+                    cData.ItemList.AddRange(
+                        container.inventory.itemList.Select(SerializableItem.FromItem)
+                    );
                     cData.OnRestored();
                 }
 
@@ -613,7 +644,10 @@ namespace Oxide.Plugins
 
             public bool RestoreNow(ContainerData data)
             {
-                Assert.IsTrue(nextRestoreContainer != null, "NextRestoreContainer is null in RestoreTick!");
+                Assert.IsTrue(
+                    nextRestoreContainer != null,
+                    "NextRestoreContainer is null in RestoreTick!"
+                );
 
                 var ent = BaseNetworkable.serverEntities.Find(data.NetId) as StorageContainer;
 
@@ -679,7 +713,8 @@ namespace Oxide.Plugins
 
             StorageContainer RespawnContainer(ContainerData data)
             {
-                var container = (StorageContainer)GameManager.server.CreateEntity(data.PrefabName, data.Position);
+                var container = (StorageContainer)
+                    GameManager.server.CreateEntity(data.PrefabName, data.Position);
 
                 container.Spawn();
 
@@ -696,7 +731,8 @@ namespace Oxide.Plugins
                 {
                     var data = list[i];
 
-                    var container = BaseNetworkable.serverEntities.Find(data.NetId) as StorageContainer;
+                    var container =
+                        BaseNetworkable.serverEntities.Find(data.NetId) as StorageContainer;
 
                     if (!container)
                     {
@@ -721,9 +757,14 @@ namespace Oxide.Plugins
 
             void RestoreTick()
             {
-                Assert.IsTrue(nextRestoreContainer != null, "NextRestoreContainer is null in RestoreTick!");
+                Assert.IsTrue(
+                    nextRestoreContainer != null,
+                    "NextRestoreContainer is null in RestoreTick!"
+                );
 
-                var ent = BaseNetworkable.serverEntities.Find(nextRestoreContainer.NetId) as StorageContainer;
+                var ent =
+                    BaseNetworkable.serverEntities.Find(nextRestoreContainer.NetId)
+                    as StorageContainer;
 
                 bool shouldRestore = false;
 
@@ -761,7 +802,10 @@ namespace Oxide.Plugins
                     return false;
                 }
 
-                if (data.ItemList.Count > container.inventory.capacity - container.inventory.itemList.Count)
+                if (
+                    data.ItemList.Count
+                    > container.inventory.capacity - container.inventory.itemList.Count
+                )
                 {
                     return false;
                 }
@@ -823,13 +867,14 @@ namespace Oxide.Plugins
 
         struct SerializableItem
         {
-            public int   ItemId;
-            public int   Amount;
+            public int ItemId;
+            public int Amount;
             public ulong SkinId;
 
             public static SerializableItem FromItem(Item item)
             {
-                return new SerializableItem {
+                return new SerializableItem
+                {
                     ItemId = item.info.itemid,
                     Amount = item.amount,
                     SkinId = item.skin
@@ -850,17 +895,22 @@ namespace Oxide.Plugins
 
         class ContainerData
         {
-            public uint                   NetId;
-            public Vector3                Position;
+            public uint NetId;
+            public Vector3 Position;
             public List<SerializableItem> ItemList;
-            public string                 PrefabName;
-            public float                  RestoreTime;
-
-            [JsonIgnore] public float NextRestoreTime;
+            public string PrefabName;
+            public float RestoreTime;
 
             [JsonIgnore]
-            public RestoreMode Mode => RestoreTime < 0 ? RestoreMode.Wipe :
-                RestoreTime == 0 ? RestoreMode.Command : RestoreMode.Timed;
+            public float NextRestoreTime;
+
+            [JsonIgnore]
+            public RestoreMode Mode =>
+                RestoreTime < 0
+                    ? RestoreMode.Wipe
+                    : RestoreTime == 0
+                        ? RestoreMode.Command
+                        : RestoreMode.Timed;
 
             public ContainerData() { }
 
@@ -916,12 +966,14 @@ namespace Oxide.Plugins
 
         class PluginSettings
         {
-            public static PluginSettings Default => new PluginSettings {
-                ClearContainerInventory = true,
-                DefaultReplenishTimer = 1800f,
-                RespawnContainer = false,
-                RequiresEmpty = false
-            };
+            public static PluginSettings Default =>
+                new PluginSettings
+                {
+                    ClearContainerInventory = true,
+                    DefaultReplenishTimer = 1800f,
+                    RespawnContainer = false,
+                    RequiresEmpty = false
+                };
 
             [JsonProperty("Clean container inventory upon replenish")]
             public bool ClearContainerInventory { get; set; }

@@ -20,7 +20,7 @@ namespace Oxide.Plugins
     {
         const string PERMISSIONUSE = "wipedatacleaner.wipe";
 
-        OxideMod       Oxide = Interface.Oxide;
+        OxideMod Oxide = Interface.Oxide;
         PluginSettings settings;
 
         #region Oxide hooks
@@ -40,11 +40,9 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig()
         {
-            settings = new PluginSettings {
-                FileNames = new List<string> {
-                    "somefile",
-                    "AnotherFile"
-                },
+            settings = new PluginSettings
+            {
+                FileNames = new List<string> { "somefile", "AnotherFile" },
                 Command = "wipe"
             };
             SaveConfig();
@@ -99,7 +97,10 @@ namespace Oxide.Plugins
 
             if (settings.EnableLogs)
             {
-                Log("Data files ready to wipe:\n{0}", JsonConvert.SerializeObject(filesToWipe, Formatting.Indented));
+                Log(
+                    "Data files ready to wipe:\n{0}",
+                    JsonConvert.SerializeObject(filesToWipe, Formatting.Indented)
+                );
             }
 
             List<string> ignoreList;
@@ -125,7 +126,8 @@ namespace Oxide.Plugins
                 if (settings.EnableLogs)
                 {
                     Log(message);
-                } else if (executer != null && !executer.IsServer)
+                }
+                else if (executer != null && !executer.IsServer)
                 {
                     executer.Message(message);
                 }

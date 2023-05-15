@@ -16,7 +16,7 @@ namespace Oxide.Plugins
     class RealisticExplosions : CovalencePlugin
     {
         static RealisticExplosions Instance;
-        PluginSettings             settings;
+        PluginSettings settings;
 
         #region Oxide hooks
 
@@ -91,9 +91,9 @@ namespace Oxide.Plugins
         class RealisticExplosion : MonoBehaviour
         {
             static List<DroppedItem> ItemList;
-            static List<BaseCorpse>  CorpseList;
+            static List<BaseCorpse> CorpseList;
 
-            BaseEntity     entity;
+            BaseEntity entity;
             PluginSettings settings;
 
             public static void Init()
@@ -192,14 +192,16 @@ namespace Oxide.Plugins
 
             bool IsVisible(BaseEntity baseEntity)
             {
-                return !settings.CheckVisibility || baseEntity.IsVisible(entity.transform.position + new Vector3(0, 0.5f));
+                return !settings.CheckVisibility
+                    || baseEntity.IsVisible(entity.transform.position + new Vector3(0, 0.5f));
             }
         }
 
         class PluginSettings
         {
             public static PluginSettings Default =>
-                new PluginSettings {
+                new PluginSettings
+                {
                     ExplosionRadius = 15f,
                     ExplosionForce = 500f,
                     CheckVisibility = false,
@@ -209,12 +211,16 @@ namespace Oxide.Plugins
 
             [JsonProperty("Explosion force")]
             public float ExplosionForce { get; set; }
+
             [JsonProperty("Explosion radius")]
             public float ExplosionRadius { get; set; }
+
             [JsonProperty("Check visibility from explosion to object (less performant)")]
             public bool CheckVisibility { get; set; }
+
             [JsonProperty("Affect ragdolls")]
             public bool AffectRagdolls { get; set; }
+
             [JsonProperty("Affect dropped items")]
             public bool AffectDroppedItems { get; set; }
         }

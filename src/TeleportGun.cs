@@ -9,7 +9,6 @@ namespace Oxide.Plugins
     [Description("Shoot something to teleport to it!")]
     class TeleportGun : CovalencePlugin
     {
-
         #region -Hooks-
 
 
@@ -21,12 +20,16 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig() { }
 
-        protected override void LoadDefaultMessages() => lang.RegisterMessages(defaultMessages, this, "en");
+        protected override void LoadDefaultMessages() =>
+            lang.RegisterMessages(defaultMessages, this, "en");
 
         void OnPlayerAttack(BasePlayer attacker, HitInfo info)
         {
             Item item;
-            if (enabledplayers.TryGetValue(attacker.IPlayer, out item) && info.Weapon?.GetItem() == item)
+            if (
+                enabledplayers.TryGetValue(attacker.IPlayer, out item)
+                && info.Weapon?.GetItem() == item
+            )
             {
                 attacker.MovePosition(info.HitPositionWorld);
             }
@@ -39,7 +42,6 @@ namespace Oxide.Plugins
                 Disable(player);
             }
         }
-
 
         #endregion
 
@@ -59,7 +61,8 @@ namespace Oxide.Plugins
             [CHAT_PREFIX] = "<color=yellow>[</color>TELEPORT GUN<color=yellow>]</color>",
             [ENABLED] = "<color=#47FF11>E</color>nabled teleport gun<color=#47FF11>.</color>",
             [DISABLED] = "<color=red>D</color>isabled teleport gun<color=red>.</color>",
-            [NO_PERMISSION] = "<color=red>Y</color>ou have no permission to use teleport gun<color=red>!</color>",
+            [NO_PERMISSION] =
+                "<color=red>Y</color>ou have no permission to use teleport gun<color=red>!</color>",
             [WRONG_ITEM] = "<color=yellow>A</color>ctive item must be a gun<color=yellow>!</color>"
         };
         Dictionary<IPlayer, Item> enabledplayers = new Dictionary<IPlayer, Item>();
@@ -81,9 +84,9 @@ namespace Oxide.Plugins
             {
                 Replier(player, NO_PERMISSION);
             }
-            else Enable((BasePlayer)player.Object);
+            else
+                Enable((BasePlayer)player.Object);
         }
-
 
         #endregion
 
@@ -97,16 +100,20 @@ namespace Oxide.Plugins
             {
                 enabledplayers.Add(player.IPlayer, heldEnt.GetItem());
                 if (autodisabletimer > 0)
-                    timers.Add(player, timer.Once(Convert.ToSingle(autodisabletimer), () => Disable(player)));
+                    timers.Add(
+                        player,
+                        timer.Once(Convert.ToSingle(autodisabletimer), () => Disable(player))
+                    );
                 Replier(player, ENABLED);
             }
-            else Replier(player, WRONG_ITEM);
+            else
+                Replier(player, WRONG_ITEM);
         }
 
         void Disable(BasePlayer player)
         {
             enabledplayers.Remove(player.IPlayer);
-            if(timers.ContainsKey(player))
+            if (timers.ContainsKey(player))
             {
                 timers[player].Destroy();
                 timers.Remove(player);
@@ -130,10 +137,13 @@ namespace Oxide.Plugins
         }
 
         void Replier(BasePlayer player, string message) => Replier(player.IPlayer, message);
-        void Replier(IPlayer player, string message) => player.Message(lang.GetMessage(message, this, player.Id), lang.GetMessage(CHAT_PREFIX, this, player.Id));
 
+        void Replier(IPlayer player, string message) =>
+            player.Message(
+                lang.GetMessage(message, this, player.Id),
+                lang.GetMessage(CHAT_PREFIX, this, player.Id)
+            );
 
         #endregion
-
     }
 }

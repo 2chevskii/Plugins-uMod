@@ -17,12 +17,12 @@ namespace Oxide.Plugins
     {
         const string PERMISSION_USE = "entitycleanup.use";
 
-        const string M_PREFIX           = "Chat prefix",
-                     M_NO_PERMISSION    = "No permission",
-                     M_INVALID_USAGE    = "Invalid usage",
-                     M_CLEANUP_STARTED  = "Cleanup started",
-                     M_CLEANUP_FINISHED = "Cleanup finished",
-                     M_CLEANUP_RUNNING  = "Cleanup running";
+        const string M_PREFIX = "Chat prefix",
+            M_NO_PERMISSION = "No permission",
+            M_INVALID_USAGE = "Invalid usage",
+            M_CLEANUP_STARTED = "Cleanup started",
+            M_CLEANUP_FINISHED = "Cleanup finished",
+            M_CLEANUP_RUNNING = "Cleanup running";
 
         PluginSettings settings;
         CleanupHandler handler;
@@ -53,7 +53,7 @@ namespace Oxide.Plugins
         }
 
         #endregion
-        
+
         #region Oxide hooks
 
         void Init()
@@ -80,12 +80,14 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(
-                new Dictionary<string, string> {
+                new Dictionary<string, string>
+                {
                     [M_PREFIX] = "[Entity Cleanup] ",
                     [M_NO_PERMISSION] = "<color=red>You have no access to this command</color>",
                     [M_INVALID_USAGE] = "Invalid command usage",
                     [M_CLEANUP_STARTED] = "Cleaning up old server entities...",
-                    [M_CLEANUP_FINISHED] = "Cleanup completed, purged <color=#34ebba>{0}</color> old entities",
+                    [M_CLEANUP_FINISHED] =
+                        "Cleanup completed, purged <color=#34ebba>{0}</color> old entities",
                     [M_CLEANUP_RUNNING] = "Cleanup is already running, wait until it completes"
                 },
                 this
@@ -157,14 +159,14 @@ namespace Oxide.Plugins
 
         class CleanupHandler : MonoBehaviour
         {
-            PluginSettings        settings;
+            PluginSettings settings;
             List<BaseNetworkable> entityList;
-            Coroutine             cleanupRoutine;
-            HashSet<string>       deployables;
+            Coroutine cleanupRoutine;
+            HashSet<string> deployables;
 
             bool IsCleanupRunning => cleanupRoutine != null;
 
-            event Action      OnCleanupStarted;
+            event Action OnCleanupStarted;
             event Action<int> OnCleanupComplete;
 
             public void Init(EntityCleanup plugin)
@@ -184,11 +186,16 @@ namespace Oxide.Plugins
                 entityList = Pool.GetList<BaseNetworkable>();
                 deployables = Pool.Get<HashSet<string>>();
 
-                var modDeployables = from itemDef in ItemManager.GetItemDefinitions()
-                                     group itemDef by itemDef.GetComponent<ItemModDeployable>()
-                                     into deps where deps.Key != null select deps.Key;
+                var modDeployables =
+                    from itemDef in ItemManager.GetItemDefinitions()
+                    group itemDef by itemDef.GetComponent<ItemModDeployable>() into deps
+                    where deps.Key != null
+                    select deps.Key;
 
-                foreach (var prefab in from depl in modDeployables select depl.entityPrefab.resourcePath)
+                foreach (
+                    var prefab in from depl in modDeployables
+                    select depl.entityPrefab.resourcePath
+                )
                 {
                     deployables.Add(prefab);
                 }
@@ -197,7 +204,7 @@ namespace Oxide.Plugins
             public void Shutdown()
             {
                 CancelInvoke();
-                
+
                 if (IsCleanupRunning)
                 {
                     StopCoroutine(cleanupRoutine);
@@ -290,15 +297,17 @@ namespace Oxide.Plugins
                 }
 
                 if (
-                    settings.Whitelist.Contains(entity.ShortPrefabName) ||
-                    settings.Whitelist.Contains(entity.PrefabName)
+                    settings.Whitelist.Contains(entity.ShortPrefabName)
+                    || settings.Whitelist.Contains(entity.PrefabName)
                 )
                 {
                     return false;
                 }
 
-                if (entity is StabilityEntity && settings.CleanupBuildings ||
-                    deployables.Contains(entity.gameObject.name) && settings.CleanupDeployables)
+                if (
+                    entity is StabilityEntity && settings.CleanupBuildings
+                    || deployables.Contains(entity.gameObject.name) && settings.CleanupDeployables
+                )
                 {
                     BuildingPrivlidge buildingPrivilege = entity.GetBuildingPrivilege();
                     bool hasBuildingPrivilege = buildingPrivilege != null;
@@ -310,20 +319,28 @@ namespace Oxide.Plugins
                             return false;
                         }
 
-                        if (settings.CheckOwnerIdPrivilegeAuthorized && buildingPrivilege.IsAuthed(entity.OwnerID))
+                        if (
+                            settings.CheckOwnerIdPrivilegeAuthorized
+                            && buildingPrivilege.IsAuthed(entity.OwnerID)
+                        )
                         {
                             return false;
                         }
 
-                        return settings.InsideHealthFractionTheshold == 0f || entity.Health() / entity.MaxHealth() < settings.InsideHealthFractionTheshold;
+                        return settings.InsideHealthFractionTheshold == 0f
+                            || entity.Health() / entity.MaxHealth()
+                                < settings.InsideHealthFractionTheshold;
                     }
 
                     if (!settings.RemoveOutsidePrivilege)
                     {
                         return false;
                     }
-                    
-                    return settings.OutsideHealthFractionTheshold == 0f || entity.Health() / entity.MaxHealth() < settings.OutsideHealthFractionTheshold;;
+
+                    return settings.OutsideHealthFractionTheshold == 0f
+                        || entity.Health() / entity.MaxHealth()
+                            < settings.OutsideHealthFractionTheshold;
+                    ;
                 }
 
                 return false;
@@ -336,27 +353,29 @@ namespace Oxide.Plugins
 
         class PluginSettings
         {
-            public static PluginSettings Default => new PluginSettings {
-                Interval = 3600,
-                CleanupBuildings = true,
-                CleanupDeployables = true,
-                RemoveOutsidePrivilege = true,
-                OutsideHealthFractionTheshold = 0.2f,
-                RemoveInsidePrivilege = false,
-                InsideHealthFractionTheshold = 0f,
-                Whitelist = Array.Empty<string>(),
-                CheckOwnerIdPrivilegeAuthorized = true
-            };
+            public static PluginSettings Default =>
+                new PluginSettings
+                {
+                    Interval = 3600,
+                    CleanupBuildings = true,
+                    CleanupDeployables = true,
+                    RemoveOutsidePrivilege = true,
+                    OutsideHealthFractionTheshold = 0.2f,
+                    RemoveInsidePrivilege = false,
+                    InsideHealthFractionTheshold = 0f,
+                    Whitelist = Array.Empty<string>(),
+                    CheckOwnerIdPrivilegeAuthorized = true
+                };
 
-            public int      Interval                        { get; set; }
-            public bool     CleanupBuildings                { get; set; }
-            public bool     CleanupDeployables              { get; set; }
-            public bool     RemoveOutsidePrivilege          { get; set; }
-            public float    OutsideHealthFractionTheshold   { get; set; }
-            public bool     RemoveInsidePrivilege           { get; set; }
-            public float    InsideHealthFractionTheshold    { get; set; }
-            public string[] Whitelist                       { get; set; }
-            public bool     CheckOwnerIdPrivilegeAuthorized { get; set; }
+            public int Interval { get; set; }
+            public bool CleanupBuildings { get; set; }
+            public bool CleanupDeployables { get; set; }
+            public bool RemoveOutsidePrivilege { get; set; }
+            public float OutsideHealthFractionTheshold { get; set; }
+            public bool RemoveInsidePrivilege { get; set; }
+            public float InsideHealthFractionTheshold { get; set; }
+            public string[] Whitelist { get; set; }
+            public bool CheckOwnerIdPrivilegeAuthorized { get; set; }
         }
 
         #endregion

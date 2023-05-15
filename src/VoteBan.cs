@@ -23,28 +23,28 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        const string M_PREFIX                 = "Chat prefix",
-                     M_VOTE_STARTED           = "Vote started",
-                     M_VOTE_PROGRESS          = "Vote in progress",
-                     M_VOTED                  = "Voted",
-                     M_ALREADY_VOTED          = "Voted already",
-                     M_NO_PERMISSION          = "No permission",
-                     M_NO_VOTE                = "No active vote",
-                     M_VOTE_TIMED_OUT         = "Vote timed out",
-                     M_VOTE_SUCCESS           = "Vote success",
-                     M_VOTE_CANCELLED         = "Vote cancelled",
-                     M_VOTE_CANCELLED_PLAYERS = "Vote cancelled (insufficient player count)",
-                     M_BAN_REASON             = "Ban reason",
-                     M_CANNOT_START_ADMIN     = "Vote cannot be started (cannot vote-out admins)",
-                     M_CANNOT_START_PLAYERS   = "Vote cannot be started (insufficient player count)",
-                     M_PLAYER_NOT_FOUND       = "Player not found",
-                     M_CANNOT_VOTE_SELF       = "Cannot vote-out self";
+        const string M_PREFIX = "Chat prefix",
+            M_VOTE_STARTED = "Vote started",
+            M_VOTE_PROGRESS = "Vote in progress",
+            M_VOTED = "Voted",
+            M_ALREADY_VOTED = "Voted already",
+            M_NO_PERMISSION = "No permission",
+            M_NO_VOTE = "No active vote",
+            M_VOTE_TIMED_OUT = "Vote timed out",
+            M_VOTE_SUCCESS = "Vote success",
+            M_VOTE_CANCELLED = "Vote cancelled",
+            M_VOTE_CANCELLED_PLAYERS = "Vote cancelled (insufficient player count)",
+            M_BAN_REASON = "Ban reason",
+            M_CANNOT_START_ADMIN = "Vote cannot be started (cannot vote-out admins)",
+            M_CANNOT_START_PLAYERS = "Vote cannot be started (insufficient player count)",
+            M_PLAYER_NOT_FOUND = "Player not found",
+            M_CANNOT_VOTE_SELF = "Cannot vote-out self";
 
         const string PERMISSION_MANAGE = "voteban.manage",
-                     PERMISSION_VOTE   = "voteban.vote";
+            PERMISSION_VOTE = "voteban.vote";
 
         PluginSettings settings;
-        VoteData       voteData;
+        VoteData voteData;
 
         #endregion
 
@@ -108,7 +108,12 @@ namespace Oxide.Plugins
                     canceller
                 );
 
-                Announce(M_VOTE_CANCELLED, canceller.Name, voteData.voteInitiator.Name, voteData.voteTarget.Name);
+                Announce(
+                    M_VOTE_CANCELLED,
+                    canceller.Name,
+                    voteData.voteInitiator.Name,
+                    voteData.voteTarget.Name
+                );
             }
             else
             {
@@ -133,12 +138,21 @@ namespace Oxide.Plugins
         {
             Interface.Oxide.CallHook("OnVotebanTimedOut", voteData.voteTarget);
 
-            Announce(M_VOTE_TIMED_OUT, voteData.voteInitiator.Name, voteData.voteTarget.Name, settings.VoteTime);
+            Announce(
+                M_VOTE_TIMED_OUT,
+                voteData.voteInitiator.Name,
+                voteData.voteTarget.Name,
+                settings.VoteTime
+            );
         }
 
         void OnVoteSuccess()
         {
-            Interface.Oxide.CallHook("OnVotebanSuccess", voteData.voteInitiator, voteData.voteTarget);
+            Interface.Oxide.CallHook(
+                "OnVotebanSuccess",
+                voteData.voteInitiator,
+                voteData.voteTarget
+            );
 
             Announce(M_VOTE_SUCCESS, voteData.voteInitiator.Name, voteData.voteTarget.Name);
 
@@ -167,7 +181,10 @@ namespace Oxide.Plugins
             record["fraction"] = voteData.VoteFraction;
             record["required_fraction"] = settings.PercentageRequired / 100f;
             record["voted_players"] = voteData.votedPlayers.ToArray();
-            record["required_voted_players"] = Mathf.RoundToInt(GetPlayerCountWithoutTarget(voteData.voteTarget) * (float)record["required_fraction"]);
+            record["required_voted_players"] = Mathf.RoundToInt(
+                GetPlayerCountWithoutTarget(voteData.voteTarget)
+                    * (float)record["required_fraction"]
+            );
             record["time_left"] = voteData.TimeLeft;
             record["start_time"] = voteData.startTime;
             record["end_time"] = voteData.endTime;
@@ -239,7 +256,9 @@ namespace Oxide.Plugins
                             voteData.voteTarget.Name,
                             (int)(voteData.VoteFraction * 100),
                             voteData.VotedPlayerCount,
-                            GetPlayersRequiredToVoteSuccess(GetPlayerCountWithoutTarget(voteData.voteTarget))
+                            GetPlayersRequiredToVoteSuccess(
+                                GetPlayerCountWithoutTarget(voteData.voteTarget)
+                            )
                         );
                         break;
                 }
@@ -331,16 +350,19 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(
-                new Dictionary<string, string> {
+                new Dictionary<string, string>
+                {
                     [M_PREFIX] = "[VoteBan] ",
                     [M_NO_PERMISSION] = "You are not allowed to use this command",
-                    [M_VOTE_STARTED] = "{0} has started the vote to ban {1}, use /voteban to vote for it",
+                    [M_VOTE_STARTED] =
+                        "{0} has started the vote to ban {1}, use /voteban to vote for it",
                     [M_VOTE_PROGRESS] =
                         "Vote to ban {1} is in progress, use /voteban to vote for it. Current vote progress: {2}% ({3}/{4}), time left: {5} seconds",
                     [M_VOTED] = "You've voted for banning player {0}",
                     [M_ALREADY_VOTED] = "You've voted already",
                     [M_NO_VOTE] = "No active vote found",
-                    [M_VOTE_TIMED_OUT] = "Vote to ban player {1} was unsuccessful, not enough players voted for it",
+                    [M_VOTE_TIMED_OUT] =
+                        "Vote to ban player {1} was unsuccessful, not enough players voted for it",
                     [M_VOTE_SUCCESS] =
                         "Vote to ban player {1} was successful, player will now be banned from the server",
                     [M_VOTE_CANCELLED] = "{0} has cancelled the vote for banning player {2}",
@@ -348,7 +370,8 @@ namespace Oxide.Plugins
                         "Vote for banning player {1} was cancelled because of insufficient player count ({2}/{3})",
                     [M_BAN_REASON] = "You've been voted-out",
                     [M_CANNOT_START_ADMIN] = "Ban vote cannot be started against admins",
-                    [M_CANNOT_START_PLAYERS] = "Not enough players on the server to start a vote ({0}/{1})",
+                    [M_CANNOT_START_PLAYERS] =
+                        "Not enough players on the server to start a vote ({0}/{1})",
                     [M_PLAYER_NOT_FOUND] = "Vote target ({0}) was not found",
                     [M_CANNOT_VOTE_SELF] = "You cannot vote against yourself"
                 },
@@ -415,15 +438,18 @@ namespace Oxide.Plugins
 
         class PluginSettings
         {
-            public static PluginSettings Default => new PluginSettings {
-                VoteTime = 600,
-                NotificationFrequency = 30,
-                MinPlayers = 5,
-                PercentageRequired = 70,
-                AllowBanningAdmins = false
-            };
+            public static PluginSettings Default =>
+                new PluginSettings
+                {
+                    VoteTime = 600,
+                    NotificationFrequency = 30,
+                    MinPlayers = 5,
+                    PercentageRequired = 70,
+                    AllowBanningAdmins = false
+                };
 
-            [JsonProperty("Vote time")] public int VoteTime { get; set; }
+            [JsonProperty("Vote time")]
+            public int VoteTime { get; set; }
 
             [JsonProperty("Notification frequency")]
             public int NotificationFrequency { get; set; }
@@ -434,7 +460,8 @@ namespace Oxide.Plugins
             [JsonProperty("Vote success percentage")]
             public int PercentageRequired { get; set; }
 
-            [JsonProperty("Allow banning admins")] public bool AllowBanningAdmins { get; set; }
+            [JsonProperty("Allow banning admins")]
+            public bool AllowBanningAdmins { get; set; }
         }
 
         #endregion
@@ -443,17 +470,18 @@ namespace Oxide.Plugins
 
         class VoteData
         {
-            public readonly IPlayer       voteTarget;
-            public readonly IPlayer       voteInitiator;
-            public          List<IPlayer> votedPlayers;
-            public          float         startTime;
-            public          float         endTime;
+            public readonly IPlayer voteTarget;
+            public readonly IPlayer voteInitiator;
+            public List<IPlayer> votedPlayers;
+            public float startTime;
+            public float endTime;
 
-            readonly        VoteBan       plugin;
-            Timer                         voteTimer;
+            readonly VoteBan plugin;
+            Timer voteTimer;
 
             public int VotedPlayerCount => votedPlayers.Count;
-            public float VoteFraction => (float)VotedPlayerCount / plugin.GetPlayerCountWithoutTarget(voteTarget);
+            public float VoteFraction =>
+                (float)VotedPlayerCount / plugin.GetPlayerCountWithoutTarget(voteTarget);
             public float TimeLeft => endTime - Time.realtimeSinceStartup;
 
             public VoteData(IPlayer initiator, IPlayer target, VoteBan plugin)

@@ -14,7 +14,6 @@ namespace Oxide.Plugins
     [Description("Complex developer API for 'Away from keyboard' players.")]
     class AFKAPI : CovalencePlugin
     {
-
         #region -Fields-
 
         const string BEEP_SOUND_PREFAB = "assets/prefabs/tools/pager/effects/beep.prefab";
@@ -30,10 +29,7 @@ namespace Oxide.Plugins
 
         IEnumerable<IPlayer> AFKPlayers
         {
-            get
-            {
-                return trackedPlayers.Where(kv => kv.Value.IsAFK).Select(kv => kv.Key);
-            }
+            get { return trackedPlayers.Where(kv => kv.Value.IsAFK).Select(kv => kv.Key); }
         }
 
         static AFKAPI instance;
@@ -103,44 +99,57 @@ namespace Oxide.Plugins
                     };
                 }
             }
+
             [JsonProperty(PropertyName = "General Settings")]
             public GeneralPluginSettings GeneralSettings { get; set; }
+
             [JsonProperty(PropertyName = "Accuracy Settings")]
             public ComparePluginSettings CompareSettings { get; set; }
+
             [JsonProperty(PropertyName = "Notification Settings")]
             public NotificationPluginSettings NotificationSettings { get; set; }
+
             public class GeneralPluginSettings
             {
                 [JsonProperty(PropertyName = "Seconds to consider player is AFK")]
                 public int SecondsToAFKStatus { get; set; }
+
                 [JsonProperty(PropertyName = "AFK Check Interval")]
                 public int StatusRefreshInterval { get; set; }
+
                 [JsonProperty(PropertyName = "Allow other plugins change settings of this API")]
                 public bool AllowSetupThroughAPI { get; set; }
             }
+
             public class ComparePluginSettings
             {
-                [JsonProperty(PropertyName = "Check rotation in pair with position (more accurate)")]
+                [JsonProperty(
+                    PropertyName = "Check rotation in pair with position (more accurate)"
+                )]
                 public bool CompareRotation { get; set; }
+
                 [JsonProperty(PropertyName = "Check for build attempts")]
                 public bool CompareBuild { get; set; }
+
                 [JsonProperty(PropertyName = "Check for communication attempts (chat/voice)")]
                 public bool CompareCommunication { get; set; }
+
                 [JsonProperty(PropertyName = "Check for item actions (craft/change/use/move)")]
                 public bool CompareItemActions { get; set; }
             }
+
             public class NotificationPluginSettings
             {
                 [JsonProperty(PropertyName = "Notify player before considering him AFK")]
                 public bool NotifyPlayer { get; set; }
+
                 [JsonProperty(PropertyName = "Notify player X seconds before considering him AFK")]
                 public int NotifyPlayerTime { get; set; }
+
                 [JsonProperty(PropertyName = "Notify with sound")]
                 public bool NotifyPlayerSound { get; set; }
             }
-
         }
-
 
         #endregion
 
@@ -148,22 +157,25 @@ namespace Oxide.Plugins
 
 
         const string M_CHAT_PREFIX = "Plugin prefix",
-        M_PLAYER_AFK_STATUS = "Player AFK status",
-        M_ERROR_NO_ARGS = "No valid arguments error",
-        M_OFFLINE_STATUS = "Offline status",
-        M_IS_AFK_STATUS = "Is AFK status",
-        M_IS_NOT_AFK_STATUS = "Is not AFK status",
-        M_AFK_PLAYER_LIST = "AFK player list",
-        M_NO_AFK_PLAYERS_FOUND = "No players AFK atm",
-        M_NOTIFICATION = "Notification for AFK player",
-        M_NO_PERMISSION = "No permission",
-        M_KICK_REASON = "Kick reason";
+            M_PLAYER_AFK_STATUS = "Player AFK status",
+            M_ERROR_NO_ARGS = "No valid arguments error",
+            M_OFFLINE_STATUS = "Offline status",
+            M_IS_AFK_STATUS = "Is AFK status",
+            M_IS_NOT_AFK_STATUS = "Is not AFK status",
+            M_AFK_PLAYER_LIST = "AFK player list",
+            M_NO_AFK_PLAYERS_FOUND = "No players AFK atm",
+            M_NOTIFICATION = "Notification for AFK player",
+            M_NO_PERMISSION = "No permission",
+            M_KICK_REASON = "Kick reason";
 
         readonly Dictionary<string, string> defmessages = new Dictionary<string, string>
         {
             { M_CHAT_PREFIX, "<color=#6797e5>[AFK API]</color> " },
             { M_PLAYER_AFK_STATUS, "The player <color=#fff268>{0}</color> AFK status: {1}" },
-            { M_ERROR_NO_ARGS, "<color=orange>Wrong command usage, no valid arguments specified</color>" },
+            {
+                M_ERROR_NO_ARGS,
+                "<color=orange>Wrong command usage, no valid arguments specified</color>"
+            },
             { M_OFFLINE_STATUS, "<color=red>OFFLINE</color>" },
             { M_IS_AFK_STATUS, "<color=yellow>IS AFK</color>" },
             { M_IS_NOT_AFK_STATUS, "<color=lime>NOT AFK</color>" },
@@ -174,20 +186,23 @@ namespace Oxide.Plugins
             { M_KICK_REASON, "AFK" }
         };
 
-        protected override void LoadDefaultMessages() => lang.RegisterMessages(defmessages, this, "en");
+        protected override void LoadDefaultMessages() =>
+            lang.RegisterMessages(defmessages, this, "en");
 
         void MessagePlayer(IPlayer player, string msg, bool prefix = true, params object[] args)
         {
             if (prefix)
             {
-                player.Message(lang.GetMessage(M_CHAT_PREFIX, this, player.Id) + string.Format(lang.GetMessage(msg, this, player.Id), args));
+                player.Message(
+                    lang.GetMessage(M_CHAT_PREFIX, this, player.Id)
+                        + string.Format(lang.GetMessage(msg, this, player.Id), args)
+                );
             }
             else
             {
                 player.Message(string.Format(lang.GetMessage(msg, this, player.Id), args));
             }
         }
-
 
         #endregion
 
@@ -290,7 +305,6 @@ namespace Oxide.Plugins
                 return false;
         }
 
-
         #endregion
 
         #region -Helpers-
@@ -315,7 +329,6 @@ namespace Oxide.Plugins
                 Unsubscribe(nameof(CanMoveItem));
             }
         }
-
 
         #endregion
 
@@ -417,7 +430,13 @@ namespace Oxide.Plugins
             trackedPlayers[player.IPlayer].OnAction();
         }
 
-        void CanMoveItem(Item item, PlayerInventory playerLoot, uint targetContainer, int targetSlot, int amount)
+        void CanMoveItem(
+            Item item,
+            PlayerInventory playerLoot,
+            uint targetContainer,
+            int targetSlot,
+            int amount
+        )
         {
             var player = playerLoot.baseEntity;
             if (player?.IPlayer == null)
@@ -426,7 +445,6 @@ namespace Oxide.Plugins
             }
             trackedPlayers[player.IPlayer].OnAction();
         }
-
 
         #endregion
 
@@ -457,11 +475,23 @@ namespace Oxide.Plugins
 
                     if (comp.IsAFK)
                     {
-                        MessagePlayer(player, M_PLAYER_AFK_STATUS, true, tPlayer.displayName, M_IS_AFK_STATUS);
+                        MessagePlayer(
+                            player,
+                            M_PLAYER_AFK_STATUS,
+                            true,
+                            tPlayer.displayName,
+                            M_IS_AFK_STATUS
+                        );
                     }
                     else
                     {
-                        MessagePlayer(player, M_PLAYER_AFK_STATUS, true, tPlayer.displayName, M_IS_NOT_AFK_STATUS);
+                        MessagePlayer(
+                            player,
+                            M_PLAYER_AFK_STATUS,
+                            true,
+                            tPlayer.displayName,
+                            M_IS_NOT_AFK_STATUS
+                        );
                     }
                 }
             }
@@ -483,7 +513,12 @@ namespace Oxide.Plugins
                 }
                 else
                 {
-                    MessagePlayer(player, M_AFK_PLAYER_LIST, false, string.Join("\n", list.Select(p => p.Name)));
+                    MessagePlayer(
+                        player,
+                        M_AFK_PLAYER_LIST,
+                        false,
+                        string.Join("\n", list.Select(p => p.Name))
+                    );
                 }
             }
         }
@@ -503,7 +538,6 @@ namespace Oxide.Plugins
             }
         }
 
-
         #endregion
 
         #region -Nested types-
@@ -517,7 +551,8 @@ namespace Oxide.Plugins
             {
                 get
                 {
-                    return TimeSinceLastAction >= instance.settings.GeneralSettings.SecondsToAFKStatus;
+                    return TimeSinceLastAction
+                        >= instance.settings.GeneralSettings.SecondsToAFKStatus;
                 }
             }
 
@@ -525,7 +560,10 @@ namespace Oxide.Plugins
             {
                 get
                 {
-                    return Mathf.Max(0f, TimeSinceLastAction - instance.settings.GeneralSettings.SecondsToAFKStatus);
+                    return Mathf.Max(
+                        0f,
+                        TimeSinceLastAction - instance.settings.GeneralSettings.SecondsToAFKStatus
+                    );
                 }
             }
 
@@ -560,8 +598,16 @@ namespace Oxide.Plugins
                 lastPosition = player.transform.position;
                 lastRotation = player.eyes.rotation;
 
-                InvokeRepeating(nameof(CheckPosition), instance.settings.GeneralSettings.StatusRefreshInterval, instance.settings.GeneralSettings.StatusRefreshInterval);
-                InvokeRepeating(nameof(CheckNotification), instance.settings.GeneralSettings.StatusRefreshInterval, instance.settings.GeneralSettings.StatusRefreshInterval);
+                InvokeRepeating(
+                    nameof(CheckPosition),
+                    instance.settings.GeneralSettings.StatusRefreshInterval,
+                    instance.settings.GeneralSettings.StatusRefreshInterval
+                );
+                InvokeRepeating(
+                    nameof(CheckNotification),
+                    instance.settings.GeneralSettings.StatusRefreshInterval,
+                    instance.settings.GeneralSettings.StatusRefreshInterval
+                );
             }
 
             void OnDestroy()
@@ -587,6 +633,7 @@ namespace Oxide.Plugins
                     OnAction();
                 }
             }
+
             bool RotationChanged()
             {
                 if (player.eyes.rotation != lastRotation)
@@ -610,7 +657,10 @@ namespace Oxide.Plugins
 
                 var tsla = TimeSinceLastAction;
 
-                if (instance.settings.GeneralSettings.SecondsToAFKStatus - TimeSinceLastAction > instance.settings.NotificationSettings.NotifyPlayerTime)
+                if (
+                    instance.settings.GeneralSettings.SecondsToAFKStatus - TimeSinceLastAction
+                    > instance.settings.NotificationSettings.NotifyPlayerTime
+                )
                 {
                     return;
                 }
@@ -639,8 +689,6 @@ namespace Oxide.Plugins
             #endregion
         }
 
-
         #endregion
-
     }
 }

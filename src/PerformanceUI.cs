@@ -20,19 +20,28 @@ namespace Oxide.Plugins
         {
             BasePlayer player = BasePlayer.Find("2CHEVSKII");
 
-            CuiElementContainer container = new CuiElementContainer();        //fadeout and fadein work now
+            CuiElementContainer container = new CuiElementContainer(); //fadeout and fadein work now
 
             string mainpanel = "pui.testui";
 
-            container.Add(new CuiPanel
-            {
-                CursorEnabled = false,
-                Image = { Color = "0.6 0.8 0.2 1", Material = "assets/icons/iconmaterial.mat" },
-                RectTransform = { AnchorMin = "0.5 0.5", AnchorMax = "0.5 0.5", OffsetMin = "-25 -10", OffsetMax = "25 10" }
-            }, "Hud", mainpanel);
+            container.Add(
+                new CuiPanel
+                {
+                    CursorEnabled = false,
+                    Image = { Color = "0.6 0.8 0.2 1", Material = "assets/icons/iconmaterial.mat" },
+                    RectTransform =
+                    {
+                        AnchorMin = "0.5 0.5",
+                        AnchorMax = "0.5 0.5",
+                        OffsetMin = "-25 -10",
+                        OffsetMax = "25 10"
+                    }
+                },
+                "Hud",
+                mainpanel
+            );
 
             CuiHelper.AddUi(player, container);
-
         }
 
         private void RemoveTestUI()
@@ -42,7 +51,6 @@ namespace Oxide.Plugins
                 CuiHelper.DestroyUi(player, "pui.testui");
             }
         }
-
 
         #region -Configuration-
 
@@ -73,7 +81,6 @@ namespace Oxide.Plugins
                 Config[key] = value;
         }
 
-
         #endregion
 
         #region -Language-
@@ -81,35 +88,53 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultMessages()
         {
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["Wrong command usage"] = "<color=yellow>Wrong command usage! Try \"/performance help\"!</color>",
-                ["User has no permission"] = "<color=red>You are not allowed to use this command!</color>",
-                ["Help command response"] = "Usage:\n/performance - Get a single text message with current server performance and Your ping\n/performance gui - Display a UI with live updated performance information",
-                ["Performance report"] = "Current server performance:\nTickrate: {0}\nFramerate: {1}\nFrametime: {2}\nYour ping: {3}"
-            }, this, "en");
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["Wrong command usage"] = "<color=yellow>Неверная команда! Попробуйте \"/performance help\"!</color>",
-                ["User has no permission"] = "<color=red>У Вас недостаточно прав для использования данной команды!</color>",
-                ["Help command response"] = "Использование:\n/performance - Получить сообщение о текущей производительнсти сервера и Вашем пинге\n/performance gui - Отобразить UI с информацией в реальном времени",
-                ["Performance report"] = "Текущая производительность:\nТикрейт: {0}\nКадров в секунду: {1}\nВремя кадра: {2}\nВаш пинг: {3}"
-            }, this, "ru");
+            lang.RegisterMessages(
+                new Dictionary<string, string>
+                {
+                    ["Wrong command usage"] =
+                        "<color=yellow>Wrong command usage! Try \"/performance help\"!</color>",
+                    ["User has no permission"] =
+                        "<color=red>You are not allowed to use this command!</color>",
+                    ["Help command response"] =
+                        "Usage:\n/performance - Get a single text message with current server performance and Your ping\n/performance gui - Display a UI with live updated performance information",
+                    ["Performance report"] =
+                        "Current server performance:\nTickrate: {0}\nFramerate: {1}\nFrametime: {2}\nYour ping: {3}"
+                },
+                this,
+                "en"
+            );
+            lang.RegisterMessages(
+                new Dictionary<string, string>
+                {
+                    ["Wrong command usage"] =
+                        "<color=yellow>Неверная команда! Попробуйте \"/performance help\"!</color>",
+                    ["User has no permission"] =
+                        "<color=red>У Вас недостаточно прав для использования данной команды!</color>",
+                    ["Help command response"] =
+                        "Использование:\n/performance - Получить сообщение о текущей производительнсти сервера и Вашем пинге\n/performance gui - Отобразить UI с информацией в реальном времени",
+                    ["Performance report"] =
+                        "Текущая производительность:\nТикрейт: {0}\nКадров в секунду: {1}\nВремя кадра: {2}\nВаш пинг: {3}"
+                },
+                this,
+                "ru"
+            );
         }
-
 
         #endregion
 
         #region -Variables-
 
 
-        [PluginReference] private Plugin ImageLibrary; //needed for proper image display
+        [PluginReference]
+        private Plugin ImageLibrary; //needed for proper image display
 
-        private Dictionary<BasePlayer, bool> guiUsersOpened, guiUsersCollapsed;
+        private Dictionary<BasePlayer, bool> guiUsersOpened,
+            guiUsersCollapsed;
 
         private int nominalTickrate = ConVar.Server.tickrate; //to determine how much current tickrate differs from original set
-        private int nominalFPS = ConVar.FPS.limit;//same but for fps
-        private int tickrate, ticks = 0; //actual tickrate
+        private int nominalFPS = ConVar.FPS.limit; //same but for fps
+        private int tickrate,
+            ticks = 0; //actual tickrate
 
         private bool isTimerRunning;
         private bool usePermissions = true;
@@ -119,7 +144,6 @@ namespace Oxide.Plugins
 
         private float UI_X = 0f;
         private float UI_Y = 0.83f;
-
 
         #endregion
 
@@ -131,7 +155,14 @@ namespace Oxide.Plugins
             if (!isTimerRunning) //check if timer needs to be restarted and calculates tickrate
             {
                 int starttick = ticks = 0;
-                timer.Once(1f, () => { tickrate = ticks - starttick; isTimerRunning = false; });
+                timer.Once(
+                    1f,
+                    () =>
+                    {
+                        tickrate = ticks - starttick;
+                        isTimerRunning = false;
+                    }
+                );
                 isTimerRunning = true;
             }
             if (ticks >= 101) //100 is the maximum available tickrate for rust servers (where are my 144Hz?)
@@ -144,7 +175,7 @@ namespace Oxide.Plugins
             LoadCFG();
             permission.RegisterPermission(permUse, this); //registers a permission for commands usage
             permission.RegisterPermission(permUseGUI, this); //permission for gui usage (since it's much more heavy than the chat command)
-                                                             //permission.GrantGroupPermission("default", permUse, this); //grants chat command to all
+            //permission.GrantGroupPermission("default", permUse, this); //grants chat command to all
             IconSize();
             //TestUI();
         }
@@ -190,7 +221,6 @@ namespace Oxide.Plugins
             }
         }
 
-
         #endregion
 
         #region -Commands-
@@ -202,15 +232,31 @@ namespace Oxide.Plugins
             switch (args.Length)
             {
                 case 0:
-                    if (permission.UserHasPermission(player.UserIDString, permUse) || !usePermissions)
+                    if (
+                        permission.UserHasPermission(player.UserIDString, permUse)
+                        || !usePermissions
+                    )
                     {
-                        string subMsg = lang.GetMessage("Performance report", this, player.UserIDString);
-                        string message = string.Format(subMsg, GetTickrate(), GetFPS(), GetFrametime(), GetUserPing(player));
+                        string subMsg = lang.GetMessage(
+                            "Performance report",
+                            this,
+                            player.UserIDString
+                        );
+                        string message = string.Format(
+                            subMsg,
+                            GetTickrate(),
+                            GetFPS(),
+                            GetFrametime(),
+                            GetUserPing(player)
+                        );
                         SendReply(player, message);
                     }
                     else
                     {
-                        SendReply(player, lang.GetMessage("User has no permission", this, player.UserIDString));
+                        SendReply(
+                            player,
+                            lang.GetMessage("User has no permission", this, player.UserIDString)
+                        );
                     }
                     //WRONGCOMMANDUSAGE
                     break;
@@ -218,21 +264,40 @@ namespace Oxide.Plugins
                     switch (args[0].ToLower())
                     {
                         case "gui": //OPEN OR CLOSE UI
-                            if (permission.UserHasPermission(player.UserIDString, permUseGUI) || !usePermissions)
+                            if (
+                                permission.UserHasPermission(player.UserIDString, permUseGUI)
+                                || !usePermissions
+                            )
                                 OpenCloseUI(player);
                             else
-                                SendReply(player, lang.GetMessage("User has no permission", this, player.UserIDString));
+                                SendReply(
+                                    player,
+                                    lang.GetMessage(
+                                        "User has no permission",
+                                        this,
+                                        player.UserIDString
+                                    )
+                                );
                             break;
                         case "help": //SENDS HELP MESSAGE
-                            SendReply(player, lang.GetMessage("Help command response", this, player.UserIDString));
+                            SendReply(
+                                player,
+                                lang.GetMessage("Help command response", this, player.UserIDString)
+                            );
                             break;
                         default:
-                            SendReply(player, lang.GetMessage("Wrong command usage", this, player.UserIDString));
+                            SendReply(
+                                player,
+                                lang.GetMessage("Wrong command usage", this, player.UserIDString)
+                            );
                             break;
                     }
                     break;
                 default:
-                    SendReply(player, lang.GetMessage("Wrong command usage", this, player.UserIDString));
+                    SendReply(
+                        player,
+                        lang.GetMessage("Wrong command usage", this, player.UserIDString)
+                    );
                     break;
             }
         }
@@ -244,7 +309,6 @@ namespace Oxide.Plugins
             if (player != null)
                 ExpandCollapseUI(player);
         }
-
 
         #endregion
 
@@ -266,7 +330,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private void ExpandCollapseUI(BasePlayer player)//invoked when player press a button
+        private void ExpandCollapseUI(BasePlayer player) //invoked when player press a button
         {
             guiUsersCollapsed.TryGetValue(player, out bool isCollapsed);
             if (isCollapsed)
@@ -318,7 +382,6 @@ namespace Oxide.Plugins
 
         private int GetUserPing(BasePlayer player) => Player.Ping(player.Connection);
 
-
         #endregion
 
         #region -UI-
@@ -336,7 +399,8 @@ namespace Oxide.Plugins
         private const string tickrateValue = "tickrateValue";
         private const string tickrateIcon = "tickrateIcon";
         private const string tickrateURL = "https://i.imgur.com/mnnficY.png";
-        private string tickColor, frameColor;
+        private string tickColor,
+            frameColor;
         private string bigUIAMin;
         private string bigUIAMax;
         private string smallUIAMin;
@@ -345,7 +409,6 @@ namespace Oxide.Plugins
         private const string fpsFTValue = "fpsFTValue";
         private const string fpsFTIcon = "fpsIcon";
         private const string fpsURL = "https://i.imgur.com/KmdsVvW.png";
-
 
         #endregion
 
@@ -371,30 +434,29 @@ namespace Oxide.Plugins
             int localFPS = GetFPS(); //local value to request fps only one time at a cycle instead of 3
             if (tickrate < nominalTickrate / 2)
             {
-                tickColor = "0.99 0.31 0.02 1";//RED
+                tickColor = "0.99 0.31 0.02 1"; //RED
             }
             else if (tickrate < nominalTickrate / 1.5 && tickrate > nominalTickrate / 2)
             {
-                tickColor = "1 0.84 0 1";//YELLOW
+                tickColor = "1 0.84 0 1"; //YELLOW
             }
             else
             {
-                tickColor = "1 1 1 1";//DEFAULT
+                tickColor = "1 1 1 1"; //DEFAULT
             }
             if (localFPS < nominalFPS / 2)
             {
-                frameColor = "0.99 0.31 0.02 1";//RED
+                frameColor = "0.99 0.31 0.02 1"; //RED
             }
             else if (localFPS < nominalFPS / 1.5 && localFPS > nominalFPS / 2)
             {
-                frameColor = "1 0.84 0 1";//YELLOW
+                frameColor = "1 0.84 0 1"; //YELLOW
             }
             else
             {
-                frameColor = "1 1 1 1";//DEFAULT
+                frameColor = "1 1 1 1"; //DEFAULT
             }
         }
-
 
         #endregion
 
@@ -402,133 +464,242 @@ namespace Oxide.Plugins
         {
             ColorSwitcher(ref tickColor, ref frameColor);
             expandedContainer.Clear(); //Clears existing elements to prevent duplication
-            expandedContainer.Add(new CuiPanel //Add main canvas to place all the elements
-            {
-                Image = { Color = "0.4 0.4 0.4 0" },
-                RectTransform = { AnchorMin = bigUIAMin, AnchorMax = bigUIAMax },
-                CursorEnabled = false,
-            }, "Hud", mainCanvas);
-            expandedContainer.Add(new CuiElement //Add backgound for tickrate value and icon
-            {
-                Parent = mainCanvas,
-                Name = tickrateBG,
-                Components =
+            expandedContainer.Add(
+                new CuiPanel //Add main canvas to place all the elements
                 {
-                    new CuiRawImageComponent{ Color = "0 0 0 1", Material = "assets/content/ui/uibackgroundblur-notice.mat", Sprite = "assets/standard assets/effects/imageeffects/textures/noise.png"},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0.26", AnchorMax = "1 0.48"}
-                }
-            });
-            expandedContainer.Add(new CuiElement //add tickrate icon with color applied
-            {
-                Parent = tickrateBG,
-                Name = tickrateIcon,
-                Components =
+                    Image = { Color = "0.4 0.4 0.4 0" },
+                    RectTransform = { AnchorMin = bigUIAMin, AnchorMax = bigUIAMax },
+                    CursorEnabled = false,
+                },
+                "Hud",
+                mainCanvas
+            );
+            expandedContainer.Add(
+                new CuiElement //Add backgound for tickrate value and icon
                 {
-                    new CuiRawImageComponent{ Color = tickColor, Sprite = "assets/content/textures/generic/fulltransparent.tga", Png = (string)ImageLibrary.Call("GetImage", tickrateIcon) ?? ""},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0", AnchorMax = "0.215 1"}
+                    Parent = mainCanvas,
+                    Name = tickrateBG,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = "0 0 0 1",
+                            Material = "assets/content/ui/uibackgroundblur-notice.mat",
+                            Sprite =
+                                "assets/standard assets/effects/imageeffects/textures/noise.png"
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0.26", AnchorMax = "1 0.48" }
+                    }
                 }
-            });
-            expandedContainer.Add(new CuiLabel //Add tickrate value
-            {
-                Text = { Text = string.Format("Tickrate: {0}", GetTickrate().ToString()), Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
-                RectTransform = { AnchorMin = "0.25 0.1", AnchorMax = "1 0.8" }
-            }, tickrateBG, tickrateValue);
-            expandedContainer.Add(new CuiElement //Add backgound for server fps and frametime
-            {
-                Parent = mainCanvas,
-                Name = fpsBG,
-                Components =
+            );
+            expandedContainer.Add(
+                new CuiElement //add tickrate icon with color applied
                 {
-                    new CuiRawImageComponent{ Color = "0 0 0 1", Material = "assets/content/ui/uibackgroundblur-notice.mat", Sprite = "assets/standard assets/effects/imageeffects/textures/noise.png"},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0.52", AnchorMax = "1 0.74"}
+                    Parent = tickrateBG,
+                    Name = tickrateIcon,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = tickColor,
+                            Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                            Png = (string)ImageLibrary.Call("GetImage", tickrateIcon) ?? ""
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "0.215 1" }
+                    }
                 }
-            });
-            expandedContainer.Add(new CuiElement //add fps icon with color applied
-            {
-                Parent = fpsBG,
-                Name = fpsFTIcon,
-                Components =
+            );
+            expandedContainer.Add(
+                new CuiLabel //Add tickrate value
                 {
-                    new CuiRawImageComponent{ Color = tickColor, Sprite = "assets/content/textures/generic/fulltransparent.tga", Png = (string)ImageLibrary.Call("GetImage", fpsFTIcon) ?? ""},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0", AnchorMax = "0.215 1"}
+                    Text =
+                    {
+                        Text = string.Format("Tickrate: {0}", GetTickrate().ToString()),
+                        Align = TextAnchor.MiddleCenter,
+                        Color = "1 1 1 1"
+                    },
+                    RectTransform = { AnchorMin = "0.25 0.1", AnchorMax = "1 0.8" }
+                },
+                tickrateBG,
+                tickrateValue
+            );
+            expandedContainer.Add(
+                new CuiElement //Add backgound for server fps and frametime
+                {
+                    Parent = mainCanvas,
+                    Name = fpsBG,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = "0 0 0 1",
+                            Material = "assets/content/ui/uibackgroundblur-notice.mat",
+                            Sprite =
+                                "assets/standard assets/effects/imageeffects/textures/noise.png"
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0.52", AnchorMax = "1 0.74" }
+                    }
                 }
-            });
-            expandedContainer.Add(new CuiLabel //Add server fps and frametime values
-            {
-                Text = { Text = string.Format("FPS: {0}", GetFPS().ToString()), Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" },
-                RectTransform = { AnchorMin = "0.25 0.1", AnchorMax = "1 0.8" }
-            }, fpsBG, fpsFTValue);
-            expandedContainer.Add(new CuiButton //Add button to change size of the UI
-            {
-                RectTransform = { AnchorMin = "0 0.78", AnchorMax = "1 1" },
-                Button = { Command = "performance.size", Color = "0.8 0.2 0.2 1" },
-                Text = { Text = "MINIMIZE", Align = TextAnchor.MiddleCenter, FontSize = 20 },
-            }, mainCanvas, ecButton);
+            );
+            expandedContainer.Add(
+                new CuiElement //add fps icon with color applied
+                {
+                    Parent = fpsBG,
+                    Name = fpsFTIcon,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = tickColor,
+                            Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                            Png = (string)ImageLibrary.Call("GetImage", fpsFTIcon) ?? ""
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "0.215 1" }
+                    }
+                }
+            );
+            expandedContainer.Add(
+                new CuiLabel //Add server fps and frametime values
+                {
+                    Text =
+                    {
+                        Text = string.Format("FPS: {0}", GetFPS().ToString()),
+                        Align = TextAnchor.MiddleCenter,
+                        Color = "1 1 1 1"
+                    },
+                    RectTransform = { AnchorMin = "0.25 0.1", AnchorMax = "1 0.8" }
+                },
+                fpsBG,
+                fpsFTValue
+            );
+            expandedContainer.Add(
+                new CuiButton //Add button to change size of the UI
+                {
+                    RectTransform = { AnchorMin = "0 0.78", AnchorMax = "1 1" },
+                    Button = { Command = "performance.size", Color = "0.8 0.2 0.2 1" },
+                    Text =
+                    {
+                        Text = "MINIMIZE",
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 20
+                    },
+                },
+                mainCanvas,
+                ecButton
+            );
         }
 
         private void BuildSmallUI() //Builds minimized UI
         {
             ColorSwitcher(ref tickColor, ref frameColor);
             collapsedContainer.Clear(); //Clears
-            collapsedContainer.Add(new CuiPanel //Canvas
-            {
-                Image = { Color = "0.4 0.4 0.4 0" },
-                RectTransform = { AnchorMin = smallUIAMin, AnchorMax = smallUIAMax },
-                CursorEnabled = false,
-            }, "Hud", mainCanvas);
-            collapsedContainer.Add(new CuiElement //tickrate panel
-            {
-                Parent = mainCanvas,
-                Name = tickrateBG,
-                Components =
+            collapsedContainer.Add(
+                new CuiPanel //Canvas
                 {
-                    new CuiRawImageComponent{ Color = "0 0 0 1", Material = "assets/content/ui/uibackgroundblur-notice.mat", Sprite = "assets/standard assets/effects/imageeffects/textures/noise.png"},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0.26", AnchorMax = "0.2 0.48"}
-                }
-            });
-            collapsedContainer.Add(new CuiElement //add tickrate icon with color applied
-            {
-                Parent = tickrateBG,
-                Name = tickrateIcon,
-                Components =
+                    Image = { Color = "0.4 0.4 0.4 0" },
+                    RectTransform = { AnchorMin = smallUIAMin, AnchorMax = smallUIAMax },
+                    CursorEnabled = false,
+                },
+                "Hud",
+                mainCanvas
+            );
+            collapsedContainer.Add(
+                new CuiElement //tickrate panel
                 {
-                    new CuiRawImageComponent{ Color = tickColor, Sprite = "assets/content/textures/generic/fulltransparent.tga", Png = (string)ImageLibrary.Call("GetImage", tickrateIcon) ?? ""},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0", AnchorMax = "0.95 1"}
+                    Parent = mainCanvas,
+                    Name = tickrateBG,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = "0 0 0 1",
+                            Material = "assets/content/ui/uibackgroundblur-notice.mat",
+                            Sprite =
+                                "assets/standard assets/effects/imageeffects/textures/noise.png"
+                        },
+                        new CuiRectTransformComponent
+                        {
+                            AnchorMin = "0 0.26",
+                            AnchorMax = "0.2 0.48"
+                        }
+                    }
                 }
-            });
-            collapsedContainer.Add(new CuiElement //framerate/frametime panel
-            {
-                Parent = mainCanvas,
-                Name = fpsBG,
-                Components =
+            );
+            collapsedContainer.Add(
+                new CuiElement //add tickrate icon with color applied
                 {
-                    new CuiRawImageComponent{ Color = "0 0 0 1", Material = "assets/content/ui/uibackgroundblur-notice.mat", Sprite = "assets/standard assets/effects/imageeffects/textures/noise.png"},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0.52", AnchorMax = "0.2 0.74"}
+                    Parent = tickrateBG,
+                    Name = tickrateIcon,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = tickColor,
+                            Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                            Png = (string)ImageLibrary.Call("GetImage", tickrateIcon) ?? ""
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "0.95 1" }
+                    }
                 }
-            });
-            collapsedContainer.Add(new CuiElement //add fps icon with color applied
-            {
-                Parent = fpsBG,
-                Name = fpsFTIcon,
-                Components =
+            );
+            collapsedContainer.Add(
+                new CuiElement //framerate/frametime panel
                 {
-                    new CuiRawImageComponent{ Color = tickColor, Sprite = "assets/content/textures/generic/fulltransparent.tga", Png = (string)ImageLibrary.Call("GetImage", fpsFTIcon) ?? ""},
-                    new CuiRectTransformComponent{ AnchorMin = "0 0", AnchorMax = "0.95 1"}
+                    Parent = mainCanvas,
+                    Name = fpsBG,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = "0 0 0 1",
+                            Material = "assets/content/ui/uibackgroundblur-notice.mat",
+                            Sprite =
+                                "assets/standard assets/effects/imageeffects/textures/noise.png"
+                        },
+                        new CuiRectTransformComponent
+                        {
+                            AnchorMin = "0 0.52",
+                            AnchorMax = "0.2 0.74"
+                        }
+                    }
                 }
-            });
-            collapsedContainer.Add(new CuiButton //button
-            {
-                RectTransform = { AnchorMin = "0 0.78", AnchorMax = "0.2 1" },
-                Button = { Command = "performance.size", Color = "0.14 0.89 0.31 1" },
-                Text = { Text = "+", Align = TextAnchor.MiddleCenter, FontSize = 20 },
-            }, mainCanvas, ecButton);
-
+            );
+            collapsedContainer.Add(
+                new CuiElement //add fps icon with color applied
+                {
+                    Parent = fpsBG,
+                    Name = fpsFTIcon,
+                    Components =
+                    {
+                        new CuiRawImageComponent
+                        {
+                            Color = tickColor,
+                            Sprite = "assets/content/textures/generic/fulltransparent.tga",
+                            Png = (string)ImageLibrary.Call("GetImage", fpsFTIcon) ?? ""
+                        },
+                        new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "0.95 1" }
+                    }
+                }
+            );
+            collapsedContainer.Add(
+                new CuiButton //button
+                {
+                    RectTransform = { AnchorMin = "0 0.78", AnchorMax = "0.2 1" },
+                    Button = { Command = "performance.size", Color = "0.14 0.89 0.31 1" },
+                    Text =
+                    {
+                        Text = "+",
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = 20
+                    },
+                },
+                mainCanvas,
+                ecButton
+            );
         }
-
 
         #endregion
 
         //UI is WIP
-
     }
 }

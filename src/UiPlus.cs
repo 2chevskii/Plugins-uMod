@@ -20,29 +20,36 @@ using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.UI;
 
+// ReSharper disable InconsistentNaming
+
 namespace Oxide.Plugins
 {
     [Info("UiPlus", "2CHEVSKII", "2.1.0")]
     [Description("Adds various custom elements to the user interface")]
     class UiPlus : CovalencePlugin
     {
-        const string ICON_CLOCK            = "https://i.imgur.com/K53fjzg.png",
-                     ICON_ACTIVE_PLAYERS   = "https://i.imgur.com/r7L4jW2.png",
-                     ICON_SLEEPING_PLAYERS = "https://i.imgur.com/D0JFYfe.png",
-                     ICON_SERVER_REWARDS   = "https://i.imgur.com/tpSErWL.png",
-                     ICON_ECONOMICS        = "https://i.imgur.com/KH9NcrC.png";
+        const string ICON_CLOCK = "https://i.imgur.com/K53fjzg.png",
+            ICON_ACTIVE_PLAYERS = "https://i.imgur.com/r7L4jW2.png",
+            ICON_SLEEPING_PLAYERS = "https://i.imgur.com/D0JFYfe.png",
+            ICON_SERVER_REWARDS = "https://i.imgur.com/tpSErWL.png",
+            ICON_ECONOMICS = "https://i.imgur.com/KH9NcrC.png";
 
         const string PERMISSION_SEE = "uiplus.see";
 
         static UiPlus Instance;
-        static ulong  ImageId = unchecked((ulong)nameof(UiPlus).GetHashCode() + 13);
+        static ulong ImageId = unchecked((ulong)nameof(UiPlus).GetHashCode() + 13);
 
-        [PluginReference] Plugin ImageLibrary;
-        [PluginReference] Plugin ServerRewards;
-        [PluginReference] Plugin Economics;
+        [PluginReference]
+        Plugin ImageLibrary;
+
+        [PluginReference]
+        Plugin ServerRewards;
+
+        [PluginReference]
+        Plugin Economics;
 
         PluginSettings settings;
-        bool           iconsReady;
+        bool iconsReady;
 
         [Conditional("DEBUG")]
         static void DebugLog(string format, params object[] args)
@@ -83,7 +90,8 @@ namespace Oxide.Plugins
             ImageLibrary.Call(
                 "ImportImageList",
                 nameof(UiPlus),
-                new Dictionary<string, string> {
+                new Dictionary<string, string>
+                {
                     { "Clock", settings.Clock.IconUrl },
                     { "ActivePlayers", settings.ActivePlayers.IconUrl },
                     { "SleepingPlayers", settings.SleepingPlayers.IconUrl },
@@ -92,13 +100,11 @@ namespace Oxide.Plugins
                 },
                 ImageId,
                 false,
-                new Action(
-                    () =>
-                    {
-                        iconsReady = true;
-                        UiPlusComponent.Initialize(settings);
-                    }
-                )
+                new Action(() =>
+                {
+                    iconsReady = true;
+                    UiPlusComponent.Initialize(settings);
+                })
             );
         }
 
@@ -142,7 +148,9 @@ namespace Oxide.Plugins
 
                 if (settings.SleepingPlayers == null)
                 {
-                    LogWarning("SleepingPlayers settings appear to be null: resetting to default...");
+                    LogWarning(
+                        "SleepingPlayers settings appear to be null: resetting to default..."
+                    );
                     settings.SleepingPlayers = PluginSettings.Default.SleepingPlayers;
                     hasChanged = true;
                 }
@@ -221,63 +229,64 @@ namespace Oxide.Plugins
             const string PANEL_MATERIAL = "assets/content/ui/uibackgroundblur.mat";
 
             const string NAME_CLOCK_PANEL = "uiplus.ui::clock-panel",
-                         NAME_CLOCK_TEXT  = "uiplus.ui::clock-text",
-                         NAME_CLOCK_ICON  = "uiplus.ui::clock-icon",
-                         NAME_AP_PANEL    = "uiplus.ui::activeplayers-panel",
-                         NAME_AP_TEXT     = "uiplus.ui::activeplayers-text",
-                         NAME_AP_ICON     = "uiplus.ui::activeplayers-icon",
-                         NAME_SP_PANEL    = "uiplus.ui::sleepingplayers-panel",
-                         NAME_SP_TEXT     = "uiplus.ui::sleepingplayers-text",
-                         NAME_SP_ICON     = "uiplus.ui::sleepingplayers-icon",
-                         NAME_SR_PANEL    = "uiplus.ui::serverrewards-panel",
-                         NAME_SR_TEXT     = "uiplus.ui::serverrewards-text",
-                         NAME_SR_ICON     = "uiplus.ui::serverrewards-icon",
-                         NAME_ECO_PANEL   = "uiplus.ui::economics-panel",
-                         NAME_ECO_TEXT    = "uiplus.ui::economics-text",
-                         NAME_ECO_ICON    = "uiplus.ui::economics-icon";
+                NAME_CLOCK_TEXT = "uiplus.ui::clock-text",
+                NAME_CLOCK_ICON = "uiplus.ui::clock-icon",
+                NAME_AP_PANEL = "uiplus.ui::activeplayers-panel",
+                NAME_AP_TEXT = "uiplus.ui::activeplayers-text",
+                NAME_AP_ICON = "uiplus.ui::activeplayers-icon",
+                NAME_SP_PANEL = "uiplus.ui::sleepingplayers-panel",
+                NAME_SP_TEXT = "uiplus.ui::sleepingplayers-text",
+                NAME_SP_ICON = "uiplus.ui::sleepingplayers-icon",
+                NAME_SR_PANEL = "uiplus.ui::serverrewards-panel",
+                NAME_SR_TEXT = "uiplus.ui::serverrewards-text",
+                NAME_SR_ICON = "uiplus.ui::serverrewards-icon",
+                NAME_ECO_PANEL = "uiplus.ui::economics-panel",
+                NAME_ECO_TEXT = "uiplus.ui::economics-text",
+                NAME_ECO_ICON = "uiplus.ui::economics-icon";
 
             const string COLOR_PANEL = "0.6 0.6 0.6 0.1",
-                         COLOR_ICON  = "1 1 1 0.9",
-                         COLOR_TEXT  = "0.9 0.9 0.9 0.75";
+                COLOR_ICON = "1 1 1 0.9",
+                COLOR_TEXT = "0.9 0.9 0.9 0.75";
 
             const string TEXT_PLACEHOLDER = "__text__";
 
             static HashSet<UiPlusComponent> AllComponents;
 
             static string ClockPanel,
-                          ActivePlayersPanel,
-                          SleepingPlayersPanel,
-                          ServerRewardsPanel,
-                          EconomicsPanel,
-                          ClockIcon,
-                          ActivePlayersIcon,
-                          SleepingPlayersIcon,
-                          ServerRewardsIcon,
-                          EconomicsIcon,
-                          ClockText,
-                          ActivePlayersText,
-                          SleepingPlayersText,
-                          ServerRewardsText,
-                          EconomicsText;
+                ActivePlayersPanel,
+                SleepingPlayersPanel,
+                ServerRewardsPanel,
+                EconomicsPanel,
+                ClockIcon,
+                ActivePlayersIcon,
+                SleepingPlayersIcon,
+                ServerRewardsIcon,
+                EconomicsIcon,
+                ClockText,
+                ActivePlayersText,
+                SleepingPlayersText,
+                ServerRewardsText,
+                EconomicsText;
 
             static string RecentClockText,
-                          RecentApText,
-                          RecentSpText;
+                RecentApText,
+                RecentSpText;
 
             static int lastActivePlayers,
-                       lastSleepingPlayers;
+                lastSleepingPlayers;
 
             static float lastClockUpdate;
 
             static StringBuilder Builder;
 
-            int lastSrPts, lastEcoPts;
+            int lastSrPts,
+                lastEcoPts;
 
             bool isSRLoaded,
-                 isEcoLoaded,
-                 isVisible;
+                isEcoLoaded,
+                isVisible;
 
-            BasePlayer     player;
+            BasePlayer player;
             PluginSettings Settings;
 
             bool IsVisible
@@ -319,8 +328,16 @@ namespace Oxide.Plugins
                 AllComponents = null;
                 Builder = null;
 
-                ClockPanel = ClockIcon = ClockText = ActivePlayersPanel = ActivePlayersIcon =
-                    ActivePlayersText = SleepingPlayersPanel = SleepingPlayersIcon = SleepingPlayersText = null;
+                ClockPanel =
+                    ClockIcon =
+                    ClockText =
+                    ActivePlayersPanel =
+                    ActivePlayersIcon =
+                    ActivePlayersText =
+                    SleepingPlayersPanel =
+                    SleepingPlayersIcon =
+                    SleepingPlayersText =
+                        null;
 
                 RecentClockText = RecentApText = RecentSpText = null;
 
@@ -349,19 +366,28 @@ namespace Oxide.Plugins
             static void BuildUi()
             {
                 Assert.IsNull(ClockPanel, "Using BuildUi while ClockPanel is not null!");
-                Assert.IsNull(ActivePlayersPanel, "Using BuildUi while ActivePlayersPanel is not null!");
-                Assert.IsNull(SleepingPlayersPanel, "Using BuildUi while SleepingPlayersPanel is not null!");
+                Assert.IsNull(
+                    ActivePlayersPanel,
+                    "Using BuildUi while ActivePlayersPanel is not null!"
+                );
+                Assert.IsNull(
+                    SleepingPlayersPanel,
+                    "Using BuildUi while SleepingPlayersPanel is not null!"
+                );
 
                 DebugLog("Building UI...");
 
                 CuiElementContainer reusableContainer = new CuiElementContainer();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_CLOCK_PANEL,
                         Parent = "Hud",
-                        Components = {
-                            new CuiImageComponent {
+                        Components =
+                        {
+                            new CuiImageComponent
+                            {
                                 Color = COLOR_PANEL,
                                 ImageType = Image.Type.Simple,
                                 Material = PANEL_MATERIAL
@@ -380,13 +406,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_CLOCK_ICON,
                         Parent = NAME_CLOCK_PANEL,
-                        Components = {
-                            new CuiRawImageComponent {
+                        Components =
+                        {
+                            new CuiRawImageComponent
+                            {
                                 Color = COLOR_ICON,
-                                Png = Instance.ImageLibrary.Call<string>("GetImage", "Clock", ImageId)
+                                Png = Instance.ImageLibrary.Call<string>(
+                                    "GetImage",
+                                    "Clock",
+                                    ImageId
+                                )
                             },
                             GetIconTransform()
                         }
@@ -398,20 +431,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_CLOCK_TEXT,
                         Parent = NAME_CLOCK_PANEL,
-                        Components = {
-                            new CuiTextComponent {
+                        Components =
+                        {
+                            new CuiTextComponent
+                            {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
                                 Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.Clock.FontSize
                             },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0",
-                                AnchorMax = "1 1"
-                            }
+                            new CuiRectTransformComponent { AnchorMin = "0.4 0", AnchorMax = "1 1" }
                         }
                     }
                 );
@@ -421,11 +454,14 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_AP_PANEL,
                         Parent = "Hud",
-                        Components = {
-                            new CuiImageComponent {
+                        Components =
+                        {
+                            new CuiImageComponent
+                            {
                                 Color = COLOR_PANEL,
                                 ImageType = Image.Type.Simple,
                                 Material = PANEL_MATERIAL
@@ -444,13 +480,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_AP_ICON,
                         Parent = NAME_AP_PANEL,
-                        Components = {
-                            new CuiRawImageComponent {
+                        Components =
+                        {
+                            new CuiRawImageComponent
+                            {
                                 Color = COLOR_ICON,
-                                Png = Instance.ImageLibrary.Call<string>("GetImage", "ActivePlayers", ImageId)
+                                Png = Instance.ImageLibrary.Call<string>(
+                                    "GetImage",
+                                    "ActivePlayers",
+                                    ImageId
+                                )
                             },
                             GetIconTransform()
                         }
@@ -462,20 +505,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_AP_TEXT,
                         Parent = NAME_AP_PANEL,
-                        Components = {
-                            new CuiTextComponent {
+                        Components =
+                        {
+                            new CuiTextComponent
+                            {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
                                 Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.ActivePlayers.FontSize
                             },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0",
-                                AnchorMax = "1 1"
-                            }
+                            new CuiRectTransformComponent { AnchorMin = "0.4 0", AnchorMax = "1 1" }
                         }
                     }
                 );
@@ -485,11 +528,14 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SP_PANEL,
                         Parent = "Hud",
-                        Components = {
-                            new CuiImageComponent {
+                        Components =
+                        {
+                            new CuiImageComponent
+                            {
                                 Color = COLOR_PANEL,
                                 ImageType = Image.Type.Simple,
                                 Material = PANEL_MATERIAL
@@ -508,13 +554,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SP_ICON,
                         Parent = NAME_SP_PANEL,
-                        Components = {
-                            new CuiRawImageComponent {
+                        Components =
+                        {
+                            new CuiRawImageComponent
+                            {
                                 Color = COLOR_ICON,
-                                Png = Instance.ImageLibrary.Call<string>("GetImage", "SleepingPlayers", ImageId)
+                                Png = Instance.ImageLibrary.Call<string>(
+                                    "GetImage",
+                                    "SleepingPlayers",
+                                    ImageId
+                                )
                             },
                             GetIconTransform()
                         }
@@ -526,20 +579,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SP_TEXT,
                         Parent = NAME_SP_PANEL,
-                        Components = {
-                            new CuiTextComponent {
+                        Components =
+                        {
+                            new CuiTextComponent
+                            {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
                                 Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.SleepingPlayers.FontSize
                             },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0",
-                                AnchorMax = "1 1"
-                            }
+                            new CuiRectTransformComponent { AnchorMin = "0.4 0", AnchorMax = "1 1" }
                         }
                     }
                 );
@@ -549,11 +602,14 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SR_PANEL,
                         Parent = "Hud",
-                        Components = {
-                            new CuiImageComponent {
+                        Components =
+                        {
+                            new CuiImageComponent
+                            {
                                 Color = COLOR_PANEL,
                                 ImageType = Image.Type.Simple,
                                 Material = PANEL_MATERIAL
@@ -572,13 +628,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SR_ICON,
                         Parent = NAME_SR_PANEL,
-                        Components = {
-                            new CuiRawImageComponent {
+                        Components =
+                        {
+                            new CuiRawImageComponent
+                            {
                                 Color = COLOR_ICON,
-                                Png = Instance.ImageLibrary.Call<string>("GetImage", "ServerRewards", ImageId)
+                                Png = Instance.ImageLibrary.Call<string>(
+                                    "GetImage",
+                                    "ServerRewards",
+                                    ImageId
+                                )
                             },
                             GetIconTransform()
                         }
@@ -590,20 +653,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_SR_TEXT,
                         Parent = NAME_SR_PANEL,
-                        Components = {
-                            new CuiTextComponent {
+                        Components =
+                        {
+                            new CuiTextComponent
+                            {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
                                 Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.ServerRewards.FontSize
                             },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0",
-                                AnchorMax = "1 1"
-                            }
+                            new CuiRectTransformComponent { AnchorMin = "0.4 0", AnchorMax = "1 1" }
                         }
                     }
                 );
@@ -613,11 +676,14 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_ECO_PANEL,
                         Parent = "Hud",
-                        Components = {
-                            new CuiImageComponent {
+                        Components =
+                        {
+                            new CuiImageComponent
+                            {
                                 Color = COLOR_PANEL,
                                 ImageType = Image.Type.Simple,
                                 Material = PANEL_MATERIAL
@@ -636,13 +702,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_ECO_ICON,
                         Parent = NAME_ECO_PANEL,
-                        Components = {
-                            new CuiRawImageComponent {
+                        Components =
+                        {
+                            new CuiRawImageComponent
+                            {
                                 Color = COLOR_ICON,
-                                Png = Instance.ImageLibrary.Call<string>("GetImage", "Economics", ImageId)
+                                Png = Instance.ImageLibrary.Call<string>(
+                                    "GetImage",
+                                    "Economics",
+                                    ImageId
+                                )
                             },
                             GetIconTransform()
                         }
@@ -654,20 +727,20 @@ namespace Oxide.Plugins
                 reusableContainer.Clear();
 
                 reusableContainer.Add(
-                    new CuiElement {
+                    new CuiElement
+                    {
                         Name = NAME_ECO_TEXT,
                         Parent = NAME_ECO_PANEL,
-                        Components = {
-                            new CuiTextComponent {
+                        Components =
+                        {
+                            new CuiTextComponent
+                            {
                                 Color = COLOR_TEXT,
                                 Align = TextAnchor.MiddleCenter,
                                 Text = TEXT_PLACEHOLDER,
                                 FontSize = Instance.settings.Economics.FontSize
                             },
-                            new CuiRectTransformComponent {
-                                AnchorMin = "0.4 0",
-                                AnchorMax = "1 1"
-                            }
+                            new CuiRectTransformComponent { AnchorMin = "0.4 0", AnchorMax = "1 1" }
                         }
                     }
                 );
@@ -683,7 +756,8 @@ namespace Oxide.Plugins
 
             static CuiRectTransformComponent GetPanelTransform(float x, float y, float scale)
             {
-                return new CuiRectTransformComponent {
+                return new CuiRectTransformComponent
+                {
                     AnchorMin = $"{x} {y}",
                     AnchorMax = $"{x} {y}",
                     OffsetMin = $"{-35 * scale} {-15 * scale}",
@@ -693,7 +767,8 @@ namespace Oxide.Plugins
 
             static CuiRectTransformComponent GetIconTransform()
             {
-                return new CuiRectTransformComponent {
+                return new CuiRectTransformComponent
+                {
                     AnchorMin = "0.05 0.1",
                     AnchorMax = "0.4 0.9"
                 };
@@ -725,13 +800,21 @@ namespace Oxide.Plugins
             {
                 Builder.Append(format);
 
-                Builder.Replace("hh", _24 ? time.Hours.ToString("00") : (time.Hours % 12.00001).ToString("00"))
-                       .Replace("mm", time.Minutes.ToString("00"))
-                       .Replace("ss", time.Seconds.ToString("00"));
+                Builder
+                    .Replace(
+                        "hh",
+                        _24 ? time.Hours.ToString("00") : (time.Hours % 12.00001).ToString("00")
+                    )
+                    .Replace("mm", time.Minutes.ToString("00"))
+                    .Replace("ss", time.Seconds.ToString("00"));
 
-                Builder.Replace("h", _24 ? time.Hours.ToString("0") : (time.Hours % 12.00001).ToString("0"))
-                       .Replace("m", time.Minutes.ToString("0"))
-                       .Replace("s", time.Seconds.ToString("0"));
+                Builder
+                    .Replace(
+                        "h",
+                        _24 ? time.Hours.ToString("0") : (time.Hours % 12.00001).ToString("0")
+                    )
+                    .Replace("m", time.Minutes.ToString("0"))
+                    .Replace("s", time.Seconds.ToString("0"));
 
                 if (Instance.settings.UiClockFormatAppendAmPm && !_24)
                 {
@@ -754,7 +837,10 @@ namespace Oxide.Plugins
 
             static void UpdateClockText()
             {
-                RecentClockText = ReplaceText(ClockText, FormatTime(GetServerTime(), Instance.settings.UiClockFormat));
+                RecentClockText = ReplaceText(
+                    ClockText,
+                    FormatTime(GetServerTime(), Instance.settings.UiClockFormat)
+                );
 
                 DebugLog("New Clock text:\n{0}", RecentClockText);
 
@@ -779,8 +865,14 @@ namespace Oxide.Plugins
 
             void Awake()
             {
-                Assert.IsTrue(Instance.iconsReady, "Initializing component before icons were cached!");
-                Assert.IsNotNull(AllComponents, "Initializing component while AllComponents is null!");
+                Assert.IsTrue(
+                    Instance.iconsReady,
+                    "Initializing component before icons were cached!"
+                );
+                Assert.IsNotNull(
+                    AllComponents,
+                    "Initializing component while AllComponents is null!"
+                );
 
                 player = GetComponent<BasePlayer>();
 
@@ -838,9 +930,16 @@ namespace Oxide.Plugins
 
             void SetVisible(bool wantsVisible)
             {
-                Assert.IsFalse(isVisible == wantsVisible, "Using SetVisible to set the same value!!!");
+                Assert.IsFalse(
+                    isVisible == wantsVisible,
+                    "Using SetVisible to set the same value!!!"
+                );
 
-                DebugLog("Setting panels visible to {0} for player: {1}", wantsVisible, player.displayName);
+                DebugLog(
+                    "Setting panels visible to {0} for player: {1}",
+                    wantsVisible,
+                    player.displayName
+                );
 
                 if (Settings.Clock.Enable)
                 {
@@ -916,10 +1015,7 @@ namespace Oxide.Plugins
             {
                 if (!player.IsDead() && !player.IsSleeping())
                 {
-                    DebugLog(
-                        "Ui tick on player {0}",
-                        player.displayName
-                    );
+                    DebugLog("Ui tick on player {0}", player.displayName);
 
                     IsVisible = true;
                     UpdateText(
@@ -951,7 +1047,11 @@ namespace Oxide.Plugins
                     DebugLog("Re-Rendering clock text");
                     CuiHelper.DestroyUi(player, NAME_CLOCK_TEXT);
 
-                    DebugLog("Sending clock text to player {0}:\n{1}", player.displayName, ClockText);
+                    DebugLog(
+                        "Sending clock text to player {0}:\n{1}",
+                        player.displayName,
+                        ClockText
+                    );
 
                     CuiHelper.AddUi(player, RecentClockText);
                 }
@@ -1006,72 +1106,102 @@ namespace Oxide.Plugins
 
         class PluginSettings
         {
-            public static PluginSettings Default => new PluginSettings {
-                Clock = new PanelSettings {
-                    Enable = true,
-                    PosX = 0.04f,
-                    PosY = 0.046f,
-                    Scale = 1f,
-                    IconUrl = ICON_CLOCK,
-                    FontSize = 15
-                },
-                ActivePlayers = new PanelSettings {
-                    Enable = true,
-                    PosX = 0.097f,
-                    PosY = 0.046f,
-                    Scale = 1f,
-                    IconUrl = ICON_ACTIVE_PLAYERS,
-                    FontSize = 15
-                },
-                SleepingPlayers = new PanelSettings {
-                    Enable = true,
-                    PosX = 0.154f,
-                    PosY = 0.046f,
-                    Scale = 1f,
-                    IconUrl = ICON_SLEEPING_PLAYERS,
-                    FontSize = 15
-                },
-                ServerRewards = new PanelSettings {
-                    Enable = false,
-                    PosX = 0.211f,
-                    PosY = 0.046f,
-                    Scale = 1f,
-                    IconUrl = ICON_SERVER_REWARDS,
-                    FontSize = 15
-                },
-                Economics = new PanelSettings {
-                    Enable = false,
-                    PosX = 0.268f,
-                    PosY = 0.046f,
-                    Scale = 1f,
-                    IconUrl = ICON_ECONOMICS,
-                    FontSize = 15
-                },
-                UiUpdateInterval = 2f,
-                UiClockFormat = "24::hh:mm", // 12::/24::, (hh):(mm):(ss) (h|m|s)
-                UiClockFormatAppendAmPm = false
-            };
+            public static PluginSettings Default =>
+                new PluginSettings
+                {
+                    Clock = new PanelSettings
+                    {
+                        Enable = true,
+                        PosX = 0.04f,
+                        PosY = 0.046f,
+                        Scale = 1f,
+                        IconUrl = ICON_CLOCK,
+                        FontSize = 15
+                    },
+                    ActivePlayers = new PanelSettings
+                    {
+                        Enable = true,
+                        PosX = 0.097f,
+                        PosY = 0.046f,
+                        Scale = 1f,
+                        IconUrl = ICON_ACTIVE_PLAYERS,
+                        FontSize = 15
+                    },
+                    SleepingPlayers = new PanelSettings
+                    {
+                        Enable = true,
+                        PosX = 0.154f,
+                        PosY = 0.046f,
+                        Scale = 1f,
+                        IconUrl = ICON_SLEEPING_PLAYERS,
+                        FontSize = 15
+                    },
+                    ServerRewards = new PanelSettings
+                    {
+                        Enable = false,
+                        PosX = 0.211f,
+                        PosY = 0.046f,
+                        Scale = 1f,
+                        IconUrl = ICON_SERVER_REWARDS,
+                        FontSize = 15
+                    },
+                    Economics = new PanelSettings
+                    {
+                        Enable = false,
+                        PosX = 0.268f,
+                        PosY = 0.046f,
+                        Scale = 1f,
+                        IconUrl = ICON_ECONOMICS,
+                        FontSize = 15
+                    },
+                    UiUpdateInterval = 2f,
+                    UiClockFormat = "24::hh:mm", // 12::/24::, (hh):(mm):(ss) (h|m|s)
+                    UiClockFormatAppendAmPm = false
+                };
 
-            [JsonProperty("Clock")] public PanelSettings Clock { get; set; }
-            [JsonProperty("Active players")] public PanelSettings ActivePlayers { get; set; }
-            [JsonProperty("Sleeping players")] public PanelSettings SleepingPlayers { get; set; }
-            [JsonProperty("Server rewards")] public PanelSettings ServerRewards { get; set; }
-            [JsonProperty("Economics")] public PanelSettings Economics { get; set; }
+            [JsonProperty("Clock")]
+            public PanelSettings Clock { get; set; }
 
-            [JsonProperty("Ui update interval")] public float UiUpdateInterval { get; set; }
-            [JsonProperty("Ui time format")] public string UiClockFormat { get; set; }
+            [JsonProperty("Active players")]
+            public PanelSettings ActivePlayers { get; set; }
+
+            [JsonProperty("Sleeping players")]
+            public PanelSettings SleepingPlayers { get; set; }
+
+            [JsonProperty("Server rewards")]
+            public PanelSettings ServerRewards { get; set; }
+
+            [JsonProperty("Economics")]
+            public PanelSettings Economics { get; set; }
+
+            [JsonProperty("Ui update interval")]
+            public float UiUpdateInterval { get; set; }
+
+            [JsonProperty("Ui time format")]
+            public string UiClockFormat { get; set; }
 
             [JsonProperty("Append AM/PM to 12 hr time format")]
             public bool UiClockFormatAppendAmPm { get; set; }
 
             public class PanelSettings
             {
-                [JsonProperty("Enable")] public bool Enable { get; set; }
-                [JsonProperty("Position X")] public float PosX { get; set; }
-                [JsonProperty("Position Y")] public float PosY { get; set; }
-                [JsonProperty("Scale")] public float Scale { get; set; }
-                [JsonProperty("Icon URL")] public string IconUrl { get; set; }
-                [JsonProperty("Font size")] public int FontSize { get; set; }
+                [JsonProperty("Enable")]
+                public bool Enable { get; set; }
+
+                [JsonProperty("Position X")]
+                public float PosX { get; set; }
+
+                [JsonProperty("Position Y")]
+                public float PosY { get; set; }
+
+                [JsonProperty("Scale")]
+                public float Scale { get; set; }
+
+                [JsonProperty("Icon URL")]
+                public string IconUrl { get; set; }
+
+                [JsonProperty("Font size")]
+                public int FontSize { get; set; }
             }
         }
     }

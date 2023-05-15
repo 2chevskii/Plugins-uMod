@@ -25,25 +25,25 @@ namespace Oxide.Plugins
     {
         #region Fields
 
-        const string PERMISSION_USE    = "whereismyhorse.use";
+        const string PERMISSION_USE = "whereismyhorse.use";
         const string PERMISSION_USE_ON = "whereismyhorse.useon";
-        const int    DEFAULT_COOLDOWN  = 300;
-        const string HORSE_PREFAB      = "assets/rust.ai/nextai/testridablehorse.prefab";
+        const int DEFAULT_COOLDOWN = 300;
+        const string HORSE_PREFAB = "assets/rust.ai/nextai/testridablehorse.prefab";
 
-        const string M_CHAT_PREFIX        = "Prefix",
-                     M_NO_PERMISSION      = "No permission",
-                     M_CANT_SPAWN_INDOORS = "Can't spawn indoors",
-                     M_SPAWNED            = "Spawned",
-                     M_COOLDOWN           = "Cooldown",
-                     M_NO_ESCAPE          = "NoEscape",
-                     M_NRE                = "NRE",
-                     M_HORSE_NEARBY       = "Horse nearby",
-                     M_PLAYER_NOT_FOUND   = "Player not found",
-                     M_HORSE_SPAWNED      = "Horse spawned (on player)",
-                     M_NO_POINT_FOR_SPAWN = "No point for spawn";
+        const string M_CHAT_PREFIX = "Prefix",
+            M_NO_PERMISSION = "No permission",
+            M_CANT_SPAWN_INDOORS = "Can't spawn indoors",
+            M_SPAWNED = "Spawned",
+            M_COOLDOWN = "Cooldown",
+            M_NO_ESCAPE = "NoEscape",
+            M_NRE = "NRE",
+            M_HORSE_NEARBY = "Horse nearby",
+            M_PLAYER_NOT_FOUND = "Player not found",
+            M_HORSE_SPAWNED = "Horse spawned (on player)",
+            M_NO_POINT_FOR_SPAWN = "No point for spawn";
 
         const float /*RAYCAST_DISTANCE   = 20f,*/
-                    HORSE_NEARBY_RANGE = 5f;
+        HORSE_NEARBY_RANGE = 5f;
 
         //readonly int layerMask = LayerMask.GetMask(
         //    nameof(Layer.Terrain),
@@ -94,7 +94,11 @@ namespace Oxide.Plugins
 
         #region Core
 
-        bool FindSpawnPoint(BasePlayer targetPlayer, out Vector3 spawnPoint, float spawnDistance = 3f) // move horse on top of the construction block if present
+        bool FindSpawnPoint(
+            BasePlayer targetPlayer,
+            out Vector3 spawnPoint,
+            float spawnDistance = 3f
+        ) // move horse on top of the construction block if present
         {
             var refPos = targetPlayer.ServerPosition;
             var refRot = targetPlayer.eyes.rotation;
@@ -102,7 +106,8 @@ namespace Oxide.Plugins
             var mod = 1;
             for (var i = 0; i <= 90; i++)
             {
-                var rotation = refRot * Quaternion.Inverse(Quaternion.AngleAxis(i * mod, Vector3.up));
+                var rotation =
+                    refRot * Quaternion.Inverse(Quaternion.AngleAxis(i * mod, Vector3.up));
                 var direction = rotation * Vector3.forward * spawnDistance;
                 var pos = refPos + direction;
 
@@ -157,7 +162,9 @@ namespace Oxide.Plugins
 
         int GetSmallestCooldown(IPlayer player)
         {
-            var perms = settings.CooldownGroups.Keys.Where(p => player.HasPermission(ConstructPermission(p))).ToArray();
+            var perms = settings.CooldownGroups.Keys
+                .Where(p => player.HasPermission(ConstructPermission(p)))
+                .ToArray();
 
             if (perms.Length == 0)
             {
@@ -275,7 +282,12 @@ namespace Oxide.Plugins
                 var targetId = args[0];
                 var targetPlayer = players.FindPlayer(targetId);
 
-                if (targetPlayer == null || !targetPlayer.IsConnected || targetPlayer.IsSleeping || targetPlayer.Health <= 0)
+                if (
+                    targetPlayer == null
+                    || !targetPlayer.IsConnected
+                    || targetPlayer.IsSleeping
+                    || targetPlayer.Health <= 0
+                )
                 {
                     Message(player, M_PLAYER_NOT_FOUND, targetId);
                 }
@@ -296,12 +308,7 @@ namespace Oxide.Plugins
                     Message(player, M_HORSE_SPAWNED, targetPlayer.Name);
                     Message(targetPlayer, M_SPAWNED);
 
-                    Interface.CallHook(
-                        "OnHorseSpawned",
-                        player,
-                        targetPlayer,
-                        horse
-                    );
+                    Interface.CallHook("OnHorseSpawned", player, targetPlayer, horse);
                 }
             }
         }
@@ -329,7 +336,8 @@ namespace Oxide.Plugins
 
         RidableHorse SpawnHorse(Vector3 position, Quaternion rotation, ulong ownerid)
         {
-            var horse = (RidableHorse)GameManager.server.CreateEntity(HORSE_PREFAB, position, rotation);
+            var horse = (RidableHorse)
+                GameManager.server.CreateEntity(HORSE_PREFAB, position, rotation);
             horse.Spawn();
 
             horse.tag += "wmhorse";
@@ -380,22 +388,35 @@ namespace Oxide.Plugins
 
         void Message(IPlayer player, string langKey, params object[] args)
         {
-            player.Message(lang.GetMessage(langKey, this, player.Id), lang.GetMessage("Prefix", this, player.Id), args);
+            player.Message(
+                lang.GetMessage(langKey, this, player.Id),
+                lang.GetMessage("Prefix", this, player.Id),
+                args
+            );
         }
 
-        protected override void LoadDefaultMessages() => lang.RegisterMessages(new Dictionary<string, string> {
-            { M_NO_PERMISSION, "You have no access to that command." },
-            { M_NO_POINT_FOR_SPAWN, "Cannot spawn horse at the current position." },
-            { M_CANT_SPAWN_INDOORS, "You can use that command only when outside!" },
-            { M_SPAWNED, "Your horse has been spawned, sir! Don't forget to feed it!" },
-            { M_COOLDOWN, "You have called you horse recently, wait a bit, please. ({0} seconds left)" },
-            { M_CHAT_PREFIX, "[WHERE IS MY HORSE]" },
-            { M_NO_ESCAPE, "Can't use command while escape blocked!" },
-            { M_NRE, "Could not spawn a horse, it's null. Maybe next time?" },
-            { M_HORSE_NEARBY, "There is a horse very close, consider using it instead." },
-            { M_PLAYER_NOT_FOUND, "Player {0} was not found." },
-            { M_HORSE_SPAWNED, "Horse was spawned for player {0}" }
-        }, this, "en");
+        protected override void LoadDefaultMessages() =>
+            lang.RegisterMessages(
+                new Dictionary<string, string>
+                {
+                    { M_NO_PERMISSION, "You have no access to that command." },
+                    { M_NO_POINT_FOR_SPAWN, "Cannot spawn horse at the current position." },
+                    { M_CANT_SPAWN_INDOORS, "You can use that command only when outside!" },
+                    { M_SPAWNED, "Your horse has been spawned, sir! Don't forget to feed it!" },
+                    {
+                        M_COOLDOWN,
+                        "You have called you horse recently, wait a bit, please. ({0} seconds left)"
+                    },
+                    { M_CHAT_PREFIX, "[WHERE IS MY HORSE]" },
+                    { M_NO_ESCAPE, "Can't use command while escape blocked!" },
+                    { M_NRE, "Could not spawn a horse, it's null. Maybe next time?" },
+                    { M_HORSE_NEARBY, "There is a horse very close, consider using it instead." },
+                    { M_PLAYER_NOT_FOUND, "Player {0} was not found." },
+                    { M_HORSE_SPAWNED, "Horse was spawned for player {0}" }
+                },
+                this,
+                "en"
+            );
 
         #endregion
 
@@ -404,8 +425,10 @@ namespace Oxide.Plugins
         class PluginSettings
         {
             public static PluginSettings Default =>
-                new PluginSettings {
-                    CooldownGroups = new Dictionary<string, int> {
+                new PluginSettings
+                {
+                    CooldownGroups = new Dictionary<string, int>
+                    {
                         ["nocooldown"] = 0,
                         ["vip"] = 30
                     },
@@ -415,10 +438,13 @@ namespace Oxide.Plugins
 
             [JsonProperty("Cooldowns")]
             public Dictionary<string, int> CooldownGroups { get; set; }
+
             [JsonProperty("Allow usage inside building")]
             public bool AllowInside { get; set; }
+
             [JsonProperty("Use NoEscape")]
             public bool UseNoEscape { get; set; }
+
             [JsonProperty("Prevent looting for non-owner")]
             public bool PreventLooting { get; set; }
         }

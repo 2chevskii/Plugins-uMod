@@ -8,341 +8,356 @@ using Random = UnityEngine.Random;
 
 namespace Oxide.Plugins
 {
-	[Info("NPC Drop Gun", "2CHEVSKII", "2.0.8")]
-	[Description("Forces NPC to drop used gun and other items after death")]
-	public class NPCDropGun : RustPlugin
-	{
-		#region Fields
+    [Info("NPC Drop Gun", "2CHEVSKII", "2.0.8")]
+    [Description("Forces NPC to drop used gun and other items after death")]
+    public class NPCDropGun : RustPlugin
+    {
+        #region Fields
 
-		Settings settings;
-		Dictionary<BasePlayer, List<Item>> delayedItems;
+        Settings settings;
+        Dictionary<BasePlayer, List<Item>> delayedItems;
 
-		#endregion
+        #endregion
 
-		#region Oxide hooks
+        #region Oxide hooks
 
-		void Init() => delayedItems = new Dictionary<BasePlayer, List<Item>>();
+        void Init() => delayedItems = new Dictionary<BasePlayer, List<Item>>();
 
-		void OnServerInitialized()
-		{
-			// Warn if BotSpawn may cause unexpected behaviour
-			if ((bool)Manager.GetPlugin("BotSpawn"))
-				PrintWarning($"BotSpawn plugin found! Some ammo and loot might not be handled correctly!");
-		}
+        void OnServerInitialized()
+        {
+            // Warn if BotSpawn may cause unexpected behaviour
+            if ((bool)Manager.GetPlugin("BotSpawn"))
+                PrintWarning(
+                    $"BotSpawn plugin found! Some ammo and loot might not be handled correctly!"
+                );
+        }
 
-		void OnEntityDeath(BasePlayer player)
-		{
-			if (player is NPCPlayer)
-			{
-				DoSpawns(player);
-			}
-		}
+        void OnEntityDeath(BasePlayer player)
+        {
+            if (player is NPCPlayer)
+            {
+                DoSpawns(player);
+            }
+        }
 
-		void OnCorpsePopulate(BasePlayer player, PlayerCorpse corpse)
-		{
-			if (!player || !corpse || !delayedItems.ContainsKey(player))
-			{
-				return;
-			}
-
-			if (settings.RemoveDefault)
-			{
-				for (int i = 0; i < corpse.containers.Length; i++)
-				{
-					corpse.containers[i].Clear();
-				}
-			}
-
-			var list = delayedItems[player];
-
-			for (int i = 0; i < list.Count; i++)
-			{
-				var item = list[i];
-				if (!item.MoveToContainer(corpse.containers[0]) && !item.MoveToContainer(corpse.containers[2]))
-                {
-                    if (settings.DropNearFull)
-                        ApplyVelocity(DropNearPosition(item, corpse.transform.position + new Vector3(0, 0.3f)));
-					else item.Remove();
-				}
+        void OnCorpsePopulate(BasePlayer player, PlayerCorpse corpse)
+        {
+            if (!player || !corpse || !delayedItems.ContainsKey(player))
+            {
+                return;
             }
 
-			Pool.FreeList(ref list);
+            if (settings.RemoveDefault)
+            {
+                for (int i = 0; i < corpse.containers.Length; i++)
+                {
+                    corpse.containers[i].Clear();
+                }
+            }
 
-			delayedItems.Remove(player);
-		}
+            var list = delayedItems[player];
 
-		#endregion
+            for (int i = 0; i < list.Count; i++)
+            {
+                var item = list[i];
+                if (
+                    !item.MoveToContainer(corpse.containers[0])
+                    && !item.MoveToContainer(corpse.containers[2])
+                )
+                {
+                    if (settings.DropNearFull)
+                        ApplyVelocity(
+                            DropNearPosition(item, corpse.transform.position + new Vector3(0, 0.3f))
+                        );
+                    else
+                        item.Remove();
+                }
+            }
 
-		#region Core
+            Pool.FreeList(ref list);
 
-		void DoSpawns(BasePlayer player)
-		{
-			delayedItems[player] = Pool.GetList<Item>();
+            delayedItems.Remove(player);
+        }
 
-			if (Random.Range(0.0f, 1.0f) <= settings.Meds.DropChance)
-			{
-				var meds = SpawnMeds();
+        #endregion
 
-				if (meds != null)
-				{
-					delayedItems[player].Add(meds);
-				}
-			}
+        #region Core
 
-			var definition = player.inventory?.containerBelt?.FindItemByUID(player.svActiveItemID)?.info;
+        void DoSpawns(BasePlayer player)
+        {
+            delayedItems[player] = Pool.GetList<Item>();
 
-			if (definition == null)
-			{
-				return;
-			}
+            if (Random.Range(0.0f, 1.0f) <= settings.Meds.DropChance)
+            {
+                var meds = SpawnMeds();
 
-			var itemWeapon = ItemManager.Create(definition, 1, settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL);
+                if (meds != null)
+                {
+                    delayedItems[player].Add(meds);
+                }
+            }
 
-			if (itemWeapon == null)
-			{
-				return;
-			}
+            var definition = player.inventory
+                ?.containerBelt?.FindItemByUID(player.svActiveItemID)
+                ?.info;
 
-			var condition = Random.Range(settings.Guns.Condition.Min, settings.Guns.Condition.Max);
+            if (definition == null)
+            {
+                return;
+            }
 
-			itemWeapon.conditionNormalized = condition / 100;
+            var itemWeapon = ItemManager.Create(
+                definition,
+                1,
+                settings.Guns.RandomSkin ? GetRandomSkin(definition) : 0uL
+            );
 
-			var heldEnt = itemWeapon.GetHeldEntity();
+            if (itemWeapon == null)
+            {
+                return;
+            }
 
-			if (heldEnt is BaseProjectile && Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance)
-			{
-				var ammo = SpawnAmmo(heldEnt as BaseProjectile);
+            var condition = Random.Range(settings.Guns.Condition.Min, settings.Guns.Condition.Max);
 
-				if (ammo != null)
-				{
-					delayedItems[player].Add(ammo);
-				}
-			}
+            itemWeapon.conditionNormalized = condition / 100;
 
-			if (Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance)
-			{
-				SetAttachments(itemWeapon);
+            var heldEnt = itemWeapon.GetHeldEntity();
 
-				if (settings.GunIntoCorpse || !player.eyes || !heldEnt)
-				{
-					delayedItems[player].Add(itemWeapon);
-				}
-				else
-				{
-					ApplyVelocity(DropNearPosition(itemWeapon, player.eyes.position));
-				}
-			}
-		}
+            if (heldEnt is BaseProjectile && Random.Range(0.0f, 1.0f) <= settings.Ammo.DropChance)
+            {
+                var ammo = SpawnAmmo(heldEnt as BaseProjectile);
 
-		Item SpawnMeds()
-		{
-			int amount = Random.Range((int)settings.Meds.Amount.Min, (int)settings.Meds.Amount.Max);
+                if (ammo != null)
+                {
+                    delayedItems[player].Add(ammo);
+                }
+            }
 
-			return amount < 1 ? null : ItemManager.CreateByName("syringe.medical", amount);
-		}
+            if (Random.Range(0.0f, 1.0f) <= settings.Guns.DropChance)
+            {
+                SetAttachments(itemWeapon);
 
-		Item SpawnAmmo(BaseProjectile weapon)
-		{
-			if (!weapon.primaryMagazine.ammoType)
-			{
-				return null;
-			}
+                if (settings.GunIntoCorpse || !player.eyes || !heldEnt)
+                {
+                    delayedItems[player].Add(itemWeapon);
+                }
+                else
+                {
+                    ApplyVelocity(DropNearPosition(itemWeapon, player.eyes.position));
+                }
+            }
+        }
 
-			int amount = Random.Range((int)settings.Ammo.Amount.Min, (int)settings.Ammo.Amount.Max);
+        Item SpawnMeds()
+        {
+            int amount = Random.Range((int)settings.Meds.Amount.Min, (int)settings.Meds.Amount.Max);
 
-			return amount < 1 ? null : ItemManager.Create(weapon.primaryMagazine.ammoType, amount);
-		}
+            return amount < 1 ? null : ItemManager.CreateByName("syringe.medical", amount);
+        }
 
-		Item SetAttachments(Item item)
-		{
-			if (settings.Guns.Attachments.Length < 1 || item.contents == null)
-			{
-				return item;
-			}
+        Item SpawnAmmo(BaseProjectile weapon)
+        {
+            if (!weapon.primaryMagazine.ammoType)
+            {
+                return null;
+            }
 
-			var attachmentCount = Random.Range(settings.Guns.AttachmentCount.Min, settings.Guns.AttachmentCount.Max);
+            int amount = Random.Range((int)settings.Ammo.Amount.Min, (int)settings.Ammo.Amount.Max);
 
-			for (int i = 0; i < attachmentCount; i++)
-			{
-				var attachment = settings.Guns.Attachments.GetRandom();
+            return amount < 1 ? null : ItemManager.Create(weapon.primaryMagazine.ammoType, amount);
+        }
 
-				var attachmentItem = ItemManager.CreateByPartialName(attachment);
+        Item SetAttachments(Item item)
+        {
+            if (settings.Guns.Attachments.Length < 1 || item.contents == null)
+            {
+                return item;
+            }
 
-				if (attachmentItem == null || !item.contents.CanAccept(attachmentItem))
-				{
-					continue;
-				}
+            var attachmentCount = Random.Range(
+                settings.Guns.AttachmentCount.Min,
+                settings.Guns.AttachmentCount.Max
+            );
 
-				attachmentItem.MoveToContainer(item.contents);
-			}
+            for (int i = 0; i < attachmentCount; i++)
+            {
+                var attachment = settings.Guns.Attachments.GetRandom();
 
-			return item;
-		}
+                var attachmentItem = ItemManager.CreateByPartialName(attachment);
 
-		BaseEntity DropNearPosition(Item item, Vector3 pos) => item.CreateWorldObject(pos);
+                if (attachmentItem == null || !item.contents.CanAccept(attachmentItem))
+                {
+                    continue;
+                }
 
-		BaseEntity ApplyVelocity(BaseEntity entity)
-		{
-			entity.SetVelocity(new Vector3(Random.Range(-4f, 4f), Random.Range(-0.3f, 2f), Random.Range(-4f, 4f)));
-			entity.SetAngularVelocity(
-				new Vector3(Random.Range(-10f, 10f),
-				Random.Range(-10f, 10f),
-				Random.Range(-10f, 10f))
-			);
-			entity.SendNetworkUpdateImmediate();
-			return entity;
-		}
+                attachmentItem.MoveToContainer(item.contents);
+            }
 
-		ulong GetRandomSkin(ItemDefinition idef)
-		{
-			if (!idef)
-				return 0;
+            return item;
+        }
 
-			List<int> skins = Pool.GetList<int>();
+        BaseEntity DropNearPosition(Item item, Vector3 pos) => item.CreateWorldObject(pos);
 
-			if (idef.skins != null && idef.skins.Length > 0)
-			{
-				skins.AddRange(from skin in idef.skins select skin.id);
-			}
+        BaseEntity ApplyVelocity(BaseEntity entity)
+        {
+            entity.SetVelocity(
+                new Vector3(Random.Range(-4f, 4f), Random.Range(-0.3f, 2f), Random.Range(-4f, 4f))
+            );
+            entity.SetAngularVelocity(
+                new Vector3(
+                    Random.Range(-10f, 10f),
+                    Random.Range(-10f, 10f),
+                    Random.Range(-10f, 10f)
+                )
+            );
+            entity.SendNetworkUpdateImmediate();
+            return entity;
+        }
 
-			if (idef.skins2 != null && idef.skins2.Length > 0)
-			{
-				skins.AddRange(from skin in idef.skins2 where skin != null select skin.DefinitionId);
-			}
+        ulong GetRandomSkin(ItemDefinition idef)
+        {
+            if (!idef)
+                return 0;
 
-			var randomSkin = skins.GetRandom();
+            List<int> skins = Pool.GetList<int>();
 
-			Pool.FreeList(ref skins);
+            if (idef.skins != null && idef.skins.Length > 0)
+            {
+                skins.AddRange(from skin in idef.skins select skin.id);
+            }
 
-			return randomSkin == 0 ? 0 : ItemDefinition.FindSkin(idef.itemid, randomSkin);
-		}
+            if (idef.skins2 != null && idef.skins2.Length > 0)
+            {
+                skins.AddRange(
+                    from skin in idef.skins2
+                    where skin != null
+                    select skin.DefinitionId
+                );
+            }
 
-		#endregion
+            var randomSkin = skins.GetRandom();
 
-		#region Configuration
+            Pool.FreeList(ref skins);
 
-		protected override void LoadDefaultConfig()
-		{
-			settings = Settings.Default;
-			SaveConfig();
-		}
+            return randomSkin == 0 ? 0 : ItemDefinition.FindSkin(idef.itemid, randomSkin);
+        }
 
-		protected override void LoadConfig()
-		{
-			base.LoadConfig();
-			try
-			{
-				settings = Config.ReadObject<Settings>();
+        #endregion
 
-				if (settings == null)
-				{
-					throw new Exception();
-				}
-			}
-			catch
-			{
-				LoadDefaultConfig();
-			}
-		}
+        #region Configuration
 
-		protected override void SaveConfig() => Config.WriteObject(settings);
+        protected override void LoadDefaultConfig()
+        {
+            settings = Settings.Default;
+            SaveConfig();
+        }
 
-		class Settings
-		{
-			public GunSettings Guns { get; set; }
-			public OtherSettings Ammo { get; set; }
-			public OtherSettings Meds { get; set; }
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            try
+            {
+                settings = Config.ReadObject<Settings>();
 
-			[JsonProperty("Put weapon into corpse")]
-			public bool GunIntoCorpse { get; set; }
-			[JsonProperty("Remove default loot from corpse")]
-			public bool RemoveDefault { get; set; }
-			[JsonProperty("Drop spawned items near corpse (otherwise just delete them)")]
-			public bool DropNearFull { get; set; }
+                if (settings == null)
+                {
+                    throw new Exception();
+                }
+            }
+            catch
+            {
+                LoadDefaultConfig();
+            }
+        }
 
-			public static Settings Default => new Settings
-			{
-				Guns = new GunSettings
-				{
-					DropChance = 1.0f,
-					AttachmentCount = new RangeSettings
-					{
-						Min = 0,
-						Max = 2
-					},
-					Condition = new RangeSettings
-					{
-						Min = 5,
-						Max = 95
-					},
-					RandomSkin = true,
-					Attachments = new[]
-					{
-						"weapon.mod.8x.scope",
-						"weapon.mod.flashlight",
-						"weapon.mod.holosight",
-						"weapon.mod.lasersight",
-						"weapon.mod.muzzleboost",
-						"weapon.mod.muzzlebrake",
-						"weapon.mod.silencer",
-						"weapon.mod.simplesight",
-						"weapon.mod.small.scope"
-					}
-				},
-				Ammo = new OtherSettings
-				{
-					DropChance = 0.8f,
-					Amount = new RangeSettings
-					{
-						Min = 10,
-						Max = 55
-					}
-				},
-				Meds = new OtherSettings
-				{
-					DropChance = 0.4f,
-					Amount = new RangeSettings
-					{
-						Min = 1,
-						Max = 3
-					}
-				},
-				DropNearFull = true,
-				GunIntoCorpse = false,
-				RemoveDefault = false
-			};
+        protected override void SaveConfig() => Config.WriteObject(settings);
 
-			public class GunSettings : DropChanceSettings
-			{
-				[JsonProperty("Gun condition")]
-				public RangeSettings Condition { get; set; }
-				[JsonProperty("Attachment count")]
-				public RangeSettings AttachmentCount { get; set; }
-				[JsonProperty("Attachment list")]
-				public string[] Attachments { get; set; }
-				[JsonProperty("Assign random skin")]
-				public bool RandomSkin { get; set; }
-			}
+        class Settings
+        {
+            public GunSettings Guns { get; set; }
+            public OtherSettings Ammo { get; set; }
+            public OtherSettings Meds { get; set; }
 
-			public class DropChanceSettings
-			{
-				[JsonProperty("Drop chance")]
-				public float DropChance { get; set; }
-			}
+            [JsonProperty("Put weapon into corpse")]
+            public bool GunIntoCorpse { get; set; }
 
-			public class OtherSettings : DropChanceSettings
-			{
-				[JsonProperty("Amount to drop")]
-				public RangeSettings Amount { get; set; }
-			}
+            [JsonProperty("Remove default loot from corpse")]
+            public bool RemoveDefault { get; set; }
 
-			public class RangeSettings
-			{
-				public uint Min { get; set; }
-				public uint Max { get; set; }
-			}
-		}
+            [JsonProperty("Drop spawned items near corpse (otherwise just delete them)")]
+            public bool DropNearFull { get; set; }
 
-		#endregion
-	}
+            public static Settings Default =>
+                new Settings
+                {
+                    Guns = new GunSettings
+                    {
+                        DropChance = 1.0f,
+                        AttachmentCount = new RangeSettings { Min = 0, Max = 2 },
+                        Condition = new RangeSettings { Min = 5, Max = 95 },
+                        RandomSkin = true,
+                        Attachments = new[]
+                        {
+                            "weapon.mod.8x.scope",
+                            "weapon.mod.flashlight",
+                            "weapon.mod.holosight",
+                            "weapon.mod.lasersight",
+                            "weapon.mod.muzzleboost",
+                            "weapon.mod.muzzlebrake",
+                            "weapon.mod.silencer",
+                            "weapon.mod.simplesight",
+                            "weapon.mod.small.scope"
+                        }
+                    },
+                    Ammo = new OtherSettings
+                    {
+                        DropChance = 0.8f,
+                        Amount = new RangeSettings { Min = 10, Max = 55 }
+                    },
+                    Meds = new OtherSettings
+                    {
+                        DropChance = 0.4f,
+                        Amount = new RangeSettings { Min = 1, Max = 3 }
+                    },
+                    DropNearFull = true,
+                    GunIntoCorpse = false,
+                    RemoveDefault = false
+                };
+
+            public class GunSettings : DropChanceSettings
+            {
+                [JsonProperty("Gun condition")]
+                public RangeSettings Condition { get; set; }
+
+                [JsonProperty("Attachment count")]
+                public RangeSettings AttachmentCount { get; set; }
+
+                [JsonProperty("Attachment list")]
+                public string[] Attachments { get; set; }
+
+                [JsonProperty("Assign random skin")]
+                public bool RandomSkin { get; set; }
+            }
+
+            public class DropChanceSettings
+            {
+                [JsonProperty("Drop chance")]
+                public float DropChance { get; set; }
+            }
+
+            public class OtherSettings : DropChanceSettings
+            {
+                [JsonProperty("Amount to drop")]
+                public RangeSettings Amount { get; set; }
+            }
+
+            public class RangeSettings
+            {
+                public uint Min { get; set; }
+                public uint Max { get; set; }
+            }
+        }
+
+        #endregion
+    }
 }

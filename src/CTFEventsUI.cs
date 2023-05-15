@@ -11,7 +11,6 @@ namespace Oxide.Plugins
     [Info("CTFEvents UI", "2CHEVSKII", "0.1.0")]
     class CTFEventsUI : CovalencePlugin
     {
-
         void OnServerInitialized()
         {
             foreach (BasePlayer basePlayer in BasePlayer.activePlayerList)

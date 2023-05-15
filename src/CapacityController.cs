@@ -47,7 +47,10 @@ namespace Oxide.Plugins
         {
             string name;
 
-            if (shortNameToDisplay.TryGetValue(entity.ShortPrefabName, out name) && config.deployables.ContainsKey(name))
+            if (
+                shortNameToDisplay.TryGetValue(entity.ShortPrefabName, out name)
+                && config.deployables.ContainsKey(name)
+            )
             {
                 entity.inventory.capacity = config.deployables[name];
                 entity.SendNetworkUpdate();
@@ -85,7 +88,9 @@ namespace Oxide.Plugins
 
                 if (modDeployable)
                 {
-                    var ent = GameManager.server.CreatePrefab(modDeployable.entityPrefab.resourcePath, false)?.GetComponent<StorageContainer>();
+                    var ent = GameManager.server
+                        .CreatePrefab(modDeployable.entityPrefab.resourcePath, false)
+                        ?.GetComponent<StorageContainer>();
 
                     if (ent)
                     {
@@ -104,7 +109,11 @@ namespace Oxide.Plugins
                     if (modContainer)
                     {
                         var item = ItemManager.Create(def);
-                        if (item != null && item.GetHeldEntity() is BaseProjectile && modContainer.capacity > 0)
+                        if (
+                            item != null
+                            && item.GetHeldEntity() is BaseProjectile
+                            && modContainer.capacity > 0
+                        )
                         {
                             if (!config.weapons.ContainsKey(def.displayName.english))
                             {
@@ -141,7 +150,8 @@ namespace Oxide.Plugins
             {
                 config = Config.ReadObject<Configuration>();
 
-                if (config == null) throw new Exception();
+                if (config == null)
+                    throw new Exception();
             }
             catch
             {
@@ -156,14 +166,16 @@ namespace Oxide.Plugins
 
         class Configuration
         {
-            public static Configuration Default => new Configuration
-            {
-                weapons = new Dictionary<string, int>(),
-                deployables = new Dictionary<string, int>()
-            };
+            public static Configuration Default =>
+                new Configuration
+                {
+                    weapons = new Dictionary<string, int>(),
+                    deployables = new Dictionary<string, int>()
+                };
 
             [JsonProperty("Weapons")]
             public Dictionary<string, int> weapons;
+
             [JsonProperty("Deployables")]
             public Dictionary<string, int> deployables;
 

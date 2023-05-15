@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,15 +11,9 @@ namespace Oxide.Plugins
     {
         PluginSettings settings;
 
-        bool CTFEvents_OnFinished(BasePlayer winner)
-        {
+        bool CTFEvents_OnFinished(BasePlayer winner) { }
 
-        }
-
-        bool CTFEvents_OnFinished(List<BasePlayer> winners)
-        {
-
-        }
+        bool CTFEvents_OnFinished(List<BasePlayer> winners) { }
 
         bool TryFindRewardForPlayer(BasePlayer player, out PluginSettings.Reward reward)
         {
@@ -56,8 +49,6 @@ namespace Oxide.Plugins
 
                     return true;
             }
-
-
         }
 
         PluginSettings.Reward[] GetAssociatedRewards(string perm)
@@ -132,31 +123,32 @@ namespace Oxide.Plugins
 
         class PluginSettings
         {
-            public static PluginSettings Default => new PluginSettings
-            {
-                Rewards = new Dictionary<string, Reward[]>
+            public static PluginSettings Default =>
+                new PluginSettings
                 {
-                    [""] = new[]
+                    Rewards = new Dictionary<string, Reward[]>
                     {
-                        new Reward
+                        [""] = new[]
                         {
-                            SRPoints = 0,
-                            EcoPoints = 0,
-                            Commands = Array.Empty<string>(),
-                            ItemRewards = new []
+                            new Reward
                             {
-                                new ItemReward
+                                SRPoints = 0,
+                                EcoPoints = 0,
+                                Commands = Array.Empty<string>(),
+                                ItemRewards = new[]
                                 {
-                                    Item = "rifle.ak",
-                                    Amount = 1,
-                                    SkinId = 0ul,
-                                    CustomName = "[reward]${name}"
+                                    new ItemReward
+                                    {
+                                        Item = "rifle.ak",
+                                        Amount = 1,
+                                        SkinId = 0ul,
+                                        CustomName = "[reward]${name}"
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            };
+                };
 
             public Dictionary<string, Reward[]> Rewards { get; set; }
 
@@ -164,7 +156,7 @@ namespace Oxide.Plugins
             {
                 public int SRPoints;
                 public int EcoPoints;
-                public string[] Commands; // ${username}, ${userid} 
+                public string[] Commands; // ${username}, ${userid}
                 public ItemReward[] ItemRewards;
             }
 
@@ -199,7 +191,8 @@ namespace Oxide.Plugins
                             def = ItemManager.FindItemDefinition(shortname);
                         }
                     }
-                    else def = null;
+                    else
+                        def = null;
 
                     return def != null;
                 }

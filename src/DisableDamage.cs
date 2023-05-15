@@ -7,7 +7,6 @@ namespace Oxide.Plugins
     [Description("Allows players with permission to disable other player's damage.")]
     public class DisableDamage : CovalencePlugin
     {
-
         #region [Fields]
 
 
@@ -52,7 +51,6 @@ namespace Oxide.Plugins
         const string M_HELP = "Help message";
         const string M_UNAVAILABLE = "Command unavailable";
 
-
         #endregion
 
         #region [Configuration]
@@ -84,31 +82,41 @@ namespace Oxide.Plugins
             SaveConfig();
         }
 
-
         #endregion
 
         #region [Localization]
 
 
-        protected override void LoadDefaultMessages() => lang.RegisterMessages(defmessages, this, "en");
+        protected override void LoadDefaultMessages() =>
+            lang.RegisterMessages(defmessages, this, "en");
 
-        void Replier(BasePlayer player, string message, params string[] args) => player.ChatMessage($"{lang.GetMessage(M_PREFIX, this)} {string.Format(lang.GetMessage(message, this), args)}");
+        void Replier(BasePlayer player, string message, params string[] args) =>
+            player.ChatMessage(
+                $"{lang.GetMessage(M_PREFIX, this)} {string.Format(lang.GetMessage(message, this), args)}"
+            );
 
         Dictionary<string, string> defmessages = new Dictionary<string, string>
         {
             [M_PREFIX] = "<color=red>[</color>DISABLE DAMAGE<color=red>]</color>",
-            [M_NO_PERMISSION] = "<color=red>Y</color>ou have no permission to use this command<color=red>!</color>",
+            [M_NO_PERMISSION] =
+                "<color=red>Y</color>ou have no permission to use this command<color=red>!</color>",
             [M_SELF_DAMAGE_ENABLED] = "Your damage has been <color=#36d859>enabled</color>.",
             [M_SELF_DAMAGE_DISABLED] = "Your damage has been <color=red>disabled</color>.",
-            [M_PLAYER_DAMAGE_ENABLED] = "You <color=#36d859>enabled</color> damage for player <color=#36a1d8>{0}</color>.",
-            [M_PLAYER_DAMAGE_DISABLED] = "You <color=red>disabled</color> damage for player <color=#36a1d8>{0}</color>.",
-            [M_ENABLED_BY] = "Your damage has been <color=#36d859>enabled</color> by <color=#36a1d8>{0}</color>.",
-            [M_DISABLED_BY] = "Your damage has been <color=red>disabled</color> by <color=#36a1d8>{0}</color>.",
-            [M_PLAYER_NOT_FOUND] = "<color=red>N</color>o player found with that name<color=red>!</color>",
-            [M_HELP] = "<color=yellow>Wrong command usage!</color>\n<color=#36a1d8>/dd</color> - enable/disable your damage\n<color=#36a1d8>/dd <username or userid></color> - disable damage for specific user.",
-            [M_UNAVAILABLE] = "This command is <color=yellow>unavailable</color> while \"<color=#F2BC14>Damage disabled by default</color>\" is \"<color=#195FFF>true</color>\" in the config file!"
+            [M_PLAYER_DAMAGE_ENABLED] =
+                "You <color=#36d859>enabled</color> damage for player <color=#36a1d8>{0}</color>.",
+            [M_PLAYER_DAMAGE_DISABLED] =
+                "You <color=red>disabled</color> damage for player <color=#36a1d8>{0}</color>.",
+            [M_ENABLED_BY] =
+                "Your damage has been <color=#36d859>enabled</color> by <color=#36a1d8>{0}</color>.",
+            [M_DISABLED_BY] =
+                "Your damage has been <color=red>disabled</color> by <color=#36a1d8>{0}</color>.",
+            [M_PLAYER_NOT_FOUND] =
+                "<color=red>N</color>o player found with that name<color=red>!</color>",
+            [M_HELP] =
+                "<color=yellow>Wrong command usage!</color>\n<color=#36a1d8>/dd</color> - enable/disable your damage\n<color=#36a1d8>/dd <username or userid></color> - disable damage for specific user.",
+            [M_UNAVAILABLE] =
+                "This command is <color=yellow>unavailable</color> while \"<color=#F2BC14>Damage disabled by default</color>\" is \"<color=#195FFF>true</color>\" in the config file!"
         };
-
 
         #endregion
 
@@ -181,7 +189,6 @@ namespace Oxide.Plugins
             }
         }
 
-
         #endregion
 
         #region [Hooks]
@@ -192,15 +199,26 @@ namespace Oxide.Plugins
             if (info != null && info.InitiatorPlayer != null && entity != null)
             {
                 BasePlayer player = info.InitiatorPlayer;
-                if ((disDefaultdmg || (player.IsConnected && player.userID.IsSteamId() && DisabledDamage.Contains(player.userID)))
-                        && ((entity is BasePlayer && displayerdmg)
-                                || (entity is BaseNpc && disNPCdmg)
-                                || (entity is BaseAnimalNPC && disAnimaldmg)
-                                || (entity is BuildingBlock && disStructdmg)
-                                || ((entity.GetComponent<Deployable>() != null) && disStructdmg)
-                                || (entity.PrefabName.Contains("barrel") && disBarreldmg)
-                                || (entity is BaseHelicopter && disHelidmg)
-                                || ((entity is BaseVehicle) && disTransportdmg)))
+                if (
+                    (
+                        disDefaultdmg
+                        || (
+                            player.IsConnected
+                            && player.userID.IsSteamId()
+                            && DisabledDamage.Contains(player.userID)
+                        )
+                    )
+                    && (
+                        (entity is BasePlayer && displayerdmg)
+                        || (entity is BaseNpc && disNPCdmg)
+                        || (entity is BaseAnimalNPC && disAnimaldmg)
+                        || (entity is BuildingBlock && disStructdmg)
+                        || ((entity.GetComponent<Deployable>() != null) && disStructdmg)
+                        || (entity.PrefabName.Contains("barrel") && disBarreldmg)
+                        || (entity is BaseHelicopter && disHelidmg)
+                        || ((entity is BaseVehicle) && disTransportdmg)
+                    )
+                )
                 {
                     info.damageTypes.ScaleAll(0);
                 }
@@ -217,7 +235,9 @@ namespace Oxide.Plugins
                 {
                     try
                     {
-                        DisabledDamage = Interface.Oxide.DataFileSystem.GetFile("DisableDamage").ReadObject<List<ulong>>();
+                        DisabledDamage = Interface.Oxide.DataFileSystem
+                            .GetFile("DisableDamage")
+                            .ReadObject<List<ulong>>();
                     }
                     catch
                     {
@@ -229,8 +249,11 @@ namespace Oxide.Plugins
             }
         }
 
-        void Unload() { if (!disDefaultdmg && savedisabled) Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(DisabledDamage); }
-
+        void Unload()
+        {
+            if (!disDefaultdmg && savedisabled)
+                Interface.Oxide.DataFileSystem.GetFile("DisableDamage").WriteObject(DisabledDamage);
+        }
 
         #endregion
 
@@ -245,8 +268,6 @@ namespace Oxide.Plugins
             public bool DisableDamageToBradley { get; set; }
 
             public bool RestoreOnStartup { get; set; }
-
-
         }
     }
 }
