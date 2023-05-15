@@ -54,7 +54,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="$(ReferencesDirectory)\*.dll" />
-    <Reference Remove="$(ReferencesDirectory)\Oxide.References.dll" />
+    <Reference Remove="..\include\references\Oxide.References.dll" />
   </ItemGroup>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
