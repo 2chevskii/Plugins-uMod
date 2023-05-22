@@ -188,130 +188,120 @@ namespace Oxide.Plugins
                         {
                             Instance.Log("GetInventory response: {0}", body);
 
-                            /*List<InventoryEntry> items = JsonConvert.DeserializeObject<List<InventoryEntry>>(
+                            List<InventoryEntry> items = JsonConvert.DeserializeObject<List<InventoryEntry>>(
                                 body,
                                 new JsonSerializerSettings {
                                     ContractResolver = new CamelCasePropertyNamesContractResolver()
                                 }
-                            );*/
-
-                            List<InventoryEntry> items = new List<InventoryEntry> {
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                                new InventoryEntry {
-                                    Id = "1",
-                                    Good = new BaseGoodInfo {
-                                        Name = "Some good",
-                                        IconId = "123"
-                                    }
-                                },
-                            };
-
-                            int i = 1;
-                            items.ForEach(
-                                item =>
-                                {
-                                    item.Id = i.ToString();
-                                    item.Good.Name = i.ToString();
-                                    i++;
-                                }
                             );
+
+                            /*List<InventoryEntry> items = new List<InventoryEntry> {
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                                new InventoryEntry {
+                                    Id = "1",
+                                    Good = new BaseGoodInfo {
+                                        Name = "Some good",
+                                        IconId = "123"
+                                    }
+                                },
+                            };*/
 
                             callback(items);
                         }
@@ -323,7 +313,9 @@ namespace Oxide.Plugins
 
             public void RedeemItem(string userId, string entryId, Action<int, string> callback)
             {
-                string requestPath = MAIN_API_URL.Replace("{userid}", userId) + $"/inventory/{entryId}/redeem";
+                // string requestPath = MAIN_API_URL.Replace("{userid}", userId) + $"/inventory/{entryId}/redeem";
+
+                string requestPath = MAIN_API_URL + $"/plugin/customer/STEAM/{userId}/inventory/{entryId}/redeem";
 
                 Interface.Oxide.LogInfo("Request path: {0}", requestPath);
 
@@ -576,6 +568,31 @@ namespace Oxide.Plugins
                     return;
                 }
 
+                Instance.Log("Redeeming item {0}", id);
+
+                CuiHelper.DestroyUi(_player, Builder.Names.ItemList.Card(id).RedeemButton);
+                /*CuiHelper.AddUi(
+                    _player,
+                    new List<CuiElement> {
+                        new CuiElement {
+                            Parent = Builder.Names.ItemList.Card(id).RedeemButton,
+                            Name = Builder.Names.ItemList.Card(id).RedeemButtonLabel,
+                            Components = {
+                                new CuiTextComponent {
+                                    Text = "REDEEMING...",
+                                    Align = TextAnchor.MiddleCenter
+                                },
+                                new CuiRectTransformComponent {
+                                    AnchorMin = "0 0",
+                                    AnchorMax = "1 1"
+                                }
+                            }
+                        }
+                    }
+                );*/
+
+                CuiHelper.AddUi(_player, Builder.GetRedeemingButton(id));
+
                 Instance._api.RedeemItem(_player.UserIDString, id,
                     (code, _) =>
                     {
@@ -585,11 +602,11 @@ namespace Oxide.Plugins
                             return;
                         }
 
-                        var indexOnPage = entryIndex % Builder.ITEMS_PER_PAGE;
 
-                        var entry = _inventory[entryIndex];
+                        Instance.Log("Redeemed item {0}", id);
+                        /*var indexOnPage = entryIndex % Builder.ITEMS_PER_PAGE;
 
-
+                        var entry = _inventory[entryIndex];*/
                     });
             }
 
@@ -643,6 +660,56 @@ namespace Oxide.Plugins
                 public const  int   ITEMS_PER_PAGE = COLUMN_COUNT * ROW_COUNT;
                 private const float COLUMN_GAP     = .005f;
                 private const float ROW_GAP        = .01f;
+
+                public static string GetRedeemingButton(string id)
+                {
+                    /*new CuiElement {
+                        Parent = ncard.Container,
+                        Name = ncard.RedeemButton,
+                        Components = {
+                            new CuiButtonComponent {
+                                Command = $"gmonetize.redeemitem {inventoryEntry.Id}",
+                                Color = "0.2 0.6 0.2 0.6"
+                            },
+                            GetTransform(
+                                .05f,
+                                .02f,
+                                .95f,
+                                .18f
+                            )
+                        }
+                    }*/
+                    var ncard = Names.ItemList.Card(id);
+
+                    return CuiHelper.ToJson(
+                        new List<CuiElement> {
+                            new CuiElement {
+                                Parent = ncard.Container,
+                                Name = ncard.RedeemButton,
+                                Components = {
+                                    new CuiButtonComponent {Color = "0.4 0.4 0.4 0.5"},
+                                    GetTransform(
+                                        .05f,
+                                        .02f,
+                                        .95f,
+                                        .18f
+                                    )
+                                }
+                            },
+                            new CuiElement {
+                                Parent = ncard.RedeemButton,
+                                Name = ncard.RedeemButtonLabel,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Text = "REDEEMING...",
+                                        Align = TextAnchor.MiddleCenter,
+                                        Color = "0.6 0.6 0.6 0.8"
+                                    }
+                                }
+                            }
+                        }
+                    );
+                }
 
                 public static string GetMainContainer()
                 {
@@ -808,18 +875,21 @@ namespace Oxide.Plugins
 
                 public static string GetCard(int indexOnPage, Api.InventoryEntry inventoryEntry)
                 {
+                    const string defaultIcon = "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png";
+                    var ncard = Names.ItemList.Card(inventoryEntry.Id);
+
                     CuiElementContainer container = new CuiElementContainer {
                         new CuiElement {
                             Parent = Names.ItemList.CONTAINER,
-                            Name = "itemcard.container",
+                            Name = ncard.Container,
                             Components = {
                                 new CuiImageComponent {Color = "0.4 0.4 0.4 0.6"},
                                 GetGridTransform(indexOnPage)
                             }
                         },
                         new CuiElement {
-                            Parent = "itemcard.container",
-                            Name = "itemcard.icon.container",
+                            Parent = ncard.Container,
+                            Name = ncard.InnerContainer,
                             Components = {
                                 new CuiImageComponent {Color = "1 1 1 0"},
                                 GetTransform(
@@ -831,8 +901,8 @@ namespace Oxide.Plugins
                             }
                         },
                         new CuiElement {
-                            Parent = "itemcard.container",
-                            Name = "itemcard.name.label",
+                            Parent = ncard.Container,
+                            Name = ncard.NameLabel,
                             Components = {
                                 new CuiTextComponent {
                                     Text = string.IsNullOrEmpty(inventoryEntry.Good.Name)
@@ -845,17 +915,8 @@ namespace Oxide.Plugins
                             }
                         },
                         new CuiElement {
-                            Parent = "itemcard.icon.container",
-                            Components = {
-                                new CuiRawImageComponent {
-                                    Url = "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png"
-                                },
-                                GetTransform()
-                            }
-                        },
-                        new CuiElement {
-                            Parent = "itemcard.container",
-                            Name = "itemcard.button.redeem",
+                            Parent = ncard.Container,
+                            Name = ncard.RedeemButton,
                             Components = {
                                 new CuiButtonComponent {
                                     Command = $"gmonetize.redeemitem {inventoryEntry.Id}",
@@ -870,8 +931,8 @@ namespace Oxide.Plugins
                             }
                         },
                         new CuiElement {
-                            Parent = "itemcard.button.redeem",
-                            Name = "itemcard.button.redeem.label",
+                            Parent = ncard.RedeemButton,
+                            Name = ncard.RedeemButtonLabel,
                             Components = {
                                 new CuiTextComponent {
                                     Text = "REDEEM",
@@ -882,6 +943,44 @@ namespace Oxide.Plugins
                             }
                         }
                     };
+                    var iconEl = new CuiElement {
+                        Parent = ncard.InnerContainer,
+                        Name = ncard.Icon,
+                        Components = {
+                            GetTransform()
+                        }
+                    };
+                    if (string.IsNullOrEmpty(inventoryEntry.Good.IconId))
+                    {
+                        switch (inventoryEntry.Type)
+                        {
+                            case Api.InventoryEntry.EntryType.ITEM:
+                                iconEl.Components.Insert(0, new CuiImageComponent {
+                                    ItemId = inventoryEntry.Item.ItemId
+                                });
+                                break;
+
+                            case Api.InventoryEntry.EntryType.KIT:
+                                iconEl.Components.Insert(0, new CuiImageComponent {
+                                    ItemId = inventoryEntry.Items[0].ItemId
+                                });
+                                break;
+
+                            default:
+                                iconEl.Components.Insert(0, new CuiRawImageComponent {
+                                    Url = defaultIcon
+                                });
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        iconEl.Components.Insert(0, new CuiRawImageComponent {
+                            Url = "https://api.gmonetize.ru/static/v2/image/" + inventoryEntry.Good.IconId
+                        });
+                    }
+
+                    container.Add(iconEl);
 
                     return CuiHelper.ToJson(container);
                 }
@@ -1031,6 +1130,7 @@ namespace Oxide.Plugins
                             public string RedeemStatusText => InnerContainer + "redeem-status-text";
 
                             private string Base => $"gmonetize.itemlist.card.{_id}.";
+                            public string NameLabel => Base + "label.name";
 
                             public ItemListCard(string id)
                             {
