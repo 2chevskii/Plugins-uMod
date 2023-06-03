@@ -1,20 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Facepunch;
-using Network;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
 using UnityEngine;
-
-//using Layer = Rust.Layer;
-
-/*  API:
- *  OnHorseSpawned(byPlayer, forPlayer, horse);
- */
 
 namespace Oxide.Plugins
 {
@@ -60,7 +52,57 @@ namespace Oxide.Plugins
                 HandleRegularCommand(player);
             }
 
+            if (args[0] == "list")
+            {
+                HandleListCommand(player);
+            }
+
             return true;
+        }
+
+        void HandleListCommand(IPlayer player)
+        {
+            if (!player.HasPermission(PERMISSION_USE))
+            {
+                MessagePlayer(player, Messages.NO_PERMISSION);
+                return;
+            }
+
+            bool noHorses = true;
+
+            var basePlayer = (BasePlayer)player.Object;
+            for (var i = _spawnData.Count - 1; i >= 0; i--)
+            {
+                var data = _spawnData[i];
+                if (!data.IsNetworkableAlive)
+                {
+                    _spawnData.RemoveAt(i);
+                    continue;
+                }
+
+                if (data.OwnerId == player.Id)
+                {
+                    var ent = data.GetEntity();
+                    string name = ent._name;
+                    var breed = ent.breeds[ent.currentBreed].breedName.english;
+                    var distance = Vector3.Distance(basePlayer.ServerPosition, ent.ServerPosition);
+
+                    MessagePlayer(
+                        player,
+                        Messages.HORSE_INFO,
+                        name,
+                        breed,
+                        distance
+                    );
+
+                    noHorses = false;
+                }
+            }
+
+            if (noHorses)
+            {
+                MessagePlayer(player, Messages.NO_HORSES);
+            }
         }
 
         void HandleRegularCommand(IPlayer player)
@@ -114,7 +156,7 @@ namespace Oxide.Plugins
 
             _spawnData.Add(spawnData);
 
-            Interface.CallHook("OnHorseSpawned", spawnData.ToDictionary());
+            Interface.CallHook("OnWmHorseSpawned", spawnData.ToDictionary());
         }
 
         RidableHorse SpawnHorseAtPosition(Vector3 position, BasePlayer owner)
@@ -140,6 +182,12 @@ namespace Oxide.Plugins
             Quaternion playerRotation = player.eyes.rotation;
 
             const float SPAWN_DISTANCE = 3f;
+
+            // TODO: Scanning from min to max for each angle
+            const float SPAWN_DISTANCE_MIN = 1f;
+            const float SPAWN_DISTANCE_MAX = 4f;
+            const float SPAWN_DISTANCE_STEP = .2f;
+
 
             int mod = 1;
             for (int i = 0; i <= 90; i++)
@@ -411,6 +459,8 @@ namespace Oxide.Plugins
             public const string ESCAPE_BLOCKED               = "Spawning blocked by NoEscape";
             public const string NO_SPAWN_POSITION            = "Could not find spawn position";
             public const string CANNOT_SPAWN_INSIDE_BUILDING = "Cannot spawn inside building";
+            public const string HORSE_INFO                   = "Horse info";
+            public const string NO_HORSES                    = "No horses";
 
             public static readonly Dictionary<string, Dictionary<string, string>> DefaultMessages =
                 new Dictionary<string, Dictionary<string, string>> {
