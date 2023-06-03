@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Facepunch;
 using Network;
 using Newtonsoft.Json;
@@ -26,12 +27,9 @@ namespace Oxide.Plugins
         private const string                    HORSE_PREFAB = "assets/rust.ai/nextai/testridablehorse.prefab";
         private       Configuration             _configuration;
         private       List<HorseSpawnData>      _spawnData;
-        private       Dictionary<string, float> _lastSpawnTimeIndex;
 
         void Init()
         {
-            _spawnData = new List<HorseSpawnData>();
-            _lastSpawnTimeIndex = new Dictionary<string, float>();
             permission.RegisterPermission(PERMISSION_USE, this);
             permission.RegisterPermission(PERMISSION_USE_ON_PLAYER, this);
 
@@ -40,6 +38,20 @@ namespace Oxide.Plugins
                 covalence.RegisterCommand(command, this, HandleCommand);
             }
         }
+
+        #region Oxide hooks
+
+        void OnServerInitialized()
+        {
+            LoadData();
+        }
+
+        void Unload()
+        {
+            SaveData();
+        }
+
+        #endregion
 
         bool HandleCommand(IPlayer player, string _, string[] args)
         {
@@ -94,9 +106,24 @@ namespace Oxide.Plugins
                 return;
             }
 
-            RidableHorse poorAnimal = (RidableHorse)GameManager.server.CreateEntity(HORSE_PREFAB, spawnPosition);
+            // TODO: Call CanSpawnWmHorse(player, player)
+
+            RidableHorse poorAnimal = SpawnHorseAtPosition(spawnPosition, basePlayer);
+
+            var spawnData = HorseSpawnData.FromRidableHorse(poorAnimal);
+
+            _spawnData.Add(spawnData);
+
+            Interface.CallHook("OnHorseSpawned", spawnData.ToDictionary());
+        }
+
+        RidableHorse SpawnHorseAtPosition(Vector3 position, BasePlayer owner)
+        {
+            BaseEntity poorAnimal = GameManager.server.CreateEntity(HORSE_PREFAB, position);
             poorAnimal.Spawn();
-            poorAnimal.OwnerID = basePlayer.userID;
+            poorAnimal.OwnerID = owner.userID;
+
+            return (RidableHorse)poorAnimal;
         }
 
         bool TryFindSpawnPosition(BasePlayer player, out Vector3 spawnPoint)
@@ -156,6 +183,15 @@ namespace Oxide.Plugins
             return false;
         }
 
+        HorseSpawnData GetMostRecentHorseSpawnData(IPlayer player)
+        {
+            HorseSpawnData data = _spawnData.Where(x => x.OwnerId == player.Id)
+                                            .OrderBy(x => x.SpawnRealtimeSinceStartup)
+                                            .FirstOrDefault();
+
+            return data;
+        }
+
         void SetPlayerCooldown(IPlayer player)
         {
             _lastSpawnTimeIndex[player.Id] = Time.realtimeSinceStartup;
@@ -164,29 +200,27 @@ namespace Oxide.Plugins
         bool IsPlayerOnCooldown(IPlayer player, int cooldown, out int cooldownSecondsLeft)
         {
             cooldownSecondsLeft = 0;
-            float lastSpawnTime;
-            if (!_lastSpawnTimeIndex.TryGetValue(player.Id, out lastSpawnTime))
-            {
+            HorseSpawnData lastSpawnData = GetMostRecentHorseSpawnData(player);
+            if (lastSpawnData == null)
                 return false;
-            }
 
-            float timeSinceLastSpawn = Time.realtimeSinceStartup - lastSpawnTime;
-            float cooldownTimeLeft = cooldown - timeSinceLastSpawn;
-            if (cooldownTimeLeft >= 1f)
+            float timeSinceLastSpawn = Time.realtimeSinceStartup - lastSpawnData.SpawnRealtimeSinceStartup;
+
+            float cooldownLeft = cooldown - timeSinceLastSpawn;
+            if (cooldownLeft >= 1)
             {
-                cooldownSecondsLeft = Mathf.CeilToInt(cooldownTimeLeft);
+                cooldownSecondsLeft = Mathf.CeilToInt(cooldownLeft);
                 return true;
-            }
-
-            if (timeSinceLastSpawn > 1000f)
-            {
-                // somewhat of a cleanup
-                _lastSpawnTimeIndex.Remove(player.Id);
             }
 
             return false;
         }
 
+        /// <summary>
+        /// Returns smallest cooldown based on groups player is assigned to and configuration file
+        /// </summary>
+        /// <param name="player"></param>
+        /// <returns></returns>
         int GetPlayerCooldown(IPlayer player)
         {
             KeyValuePair<string, int>[] playerCooldownGroups =
@@ -220,6 +254,8 @@ namespace Oxide.Plugins
             return false;
         }
 
+        #region Message handling
+
         void MessagePlayer(IPlayer player, string message, params object[] args)
         {
             string prefix = lang.GetMessage(Messages.PREFIX, this, player.Id);
@@ -248,6 +284,10 @@ namespace Oxide.Plugins
                 lang.RegisterMessages(pair.Value, this, pair.Key);
             }
         }
+
+        #endregion
+
+        #region Configuration handling
 
         protected override void LoadDefaultConfig()
         {
@@ -338,15 +378,39 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
+        #region Persistence handling
+
+        private void LoadData()
+        {
+            DynamicConfigFile file = Interface.Oxide.DataFileSystem.GetFile("spawn_data");
+            _spawnData = file.ReadObject<List<HorseSpawnData>>();
+            if (_spawnData == null)
+            {
+                _spawnData = new List<HorseSpawnData>();
+            }
+        }
+
+        private void SaveData()
+        {
+            DynamicConfigFile file = Interface.Oxide.DataFileSystem.GetFile("spawn_data");
+            file.WriteObject(_spawnData);
+        }
+
+        #endregion
+
+        #region Lang API messages class
+
         class Messages
         {
-            public const string PREFIX            = "Chat prefix";
-            public const string NO_PERMISSION     = "No permission";
-            public const string COOLDOWN          = "Cooldown in progress";
-            public const string HORSE_NEARBY      = "Horse nearby";
-            public const string ESCAPE_BLOCKED    = "Spawning blocked by NoEscape";
-            public const string NO_SPAWN_POSITION = "Could not find spawn position";
-            public const string CANNOT_SPAWN_INSIDE_BUILDING         = "Cannot spawn inside building";
+            public const string PREFIX                       = "Chat prefix";
+            public const string NO_PERMISSION                = "No permission";
+            public const string COOLDOWN                     = "Cooldown in progress";
+            public const string HORSE_NEARBY                 = "Horse nearby";
+            public const string ESCAPE_BLOCKED               = "Spawning blocked by NoEscape";
+            public const string NO_SPAWN_POSITION            = "Could not find spawn position";
+            public const string CANNOT_SPAWN_INSIDE_BUILDING = "Cannot spawn inside building";
 
             public static readonly Dictionary<string, Dictionary<string, string>> DefaultMessages =
                 new Dictionary<string, Dictionary<string, string>> {
@@ -358,6 +422,10 @@ namespace Oxide.Plugins
                     }
                 };
         }
+
+        #endregion
+
+        #region Configuration class
 
         class Configuration
         {
@@ -437,7 +505,8 @@ namespace Oxide.Plugins
             /// <param name="configFile"></param>
             public static void Migrate(WhereIsMyHorse plugin, DynamicConfigFile configFile)
             {
-                Dictionary<string, int> configVersionObj = configFile.Get<Dictionary<string, int>>("Configuration version (Do not modify)");
+                Dictionary<string, int> configVersionObj =
+                    configFile.Get<Dictionary<string, int>>("Configuration version (Do not modify)");
                 VersionNumber configVersion;
                 if (configVersionObj == null)
                 {
@@ -493,25 +562,55 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
+        #region Persistence data class
+
         private class HorseSpawnData
         {
-            public string SpawnerId { get; }
-            public string OwnerId { get; }
-            public uint HorseEntityNetId { get; }
-            public float SpawnRealtimeSinceStartup { get; }
+            public string OwnerId { get; set; }
+            public NetworkableId NetId { get; set; }
+            public float SpawnRealtimeSinceStartup { get; set; }
 
-            public HorseSpawnData(
-                string spawnerId,
-                string ownerId,
-                uint horseEntityNetId,
-                float spawnRealtimeSinceStartup
-            )
+            public bool IsNetworkableAlive
             {
-                SpawnerId = spawnerId;
-                OwnerId = ownerId;
-                HorseEntityNetId = horseEntityNetId;
-                SpawnRealtimeSinceStartup = spawnRealtimeSinceStartup;
+                get
+                {
+                    BaseNetworkable _;
+                    return BaseNetworkable.serverEntities.entityList.TryGetValue(NetId, out _);
+                }
+            }
+
+            public static HorseSpawnData FromRidableHorse(RidableHorse horse)
+            {
+                return new HorseSpawnData {
+                    OwnerId = horse.OwnerID.ToString(),
+                    NetId = horse.net.ID,
+                    SpawnRealtimeSinceStartup = horse.spawnTime
+                };
+            }
+
+            public RidableHorse GetEntity()
+            {
+                BaseNetworkable networkable;
+                if (!BaseNetworkable.serverEntities.entityList.TryGetValue(NetId, out networkable))
+                {
+                    return null;
+                }
+
+                return (RidableHorse)networkable;
+            }
+
+            public IReadOnlyDictionary<string, object> ToDictionary()
+            {
+                return new Dictionary<string, object> {
+                    {"OwnerId", OwnerId},
+                    {"NetId", NetId},
+                    {"SpawnRealtimeSinceStartup", SpawnRealtimeSinceStartup}
+                };
             }
         }
+
+        #endregion
     }
 }
