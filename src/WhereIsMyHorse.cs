@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core;
@@ -14,11 +13,13 @@ namespace Oxide.Plugins
     [Description("Here is your horse, sir!")]
     class WhereIsMyHorse : CovalencePlugin
     {
-        private const string                    PERMISSION_USE = "whereismyhorse.use";
-        private const string                    PERMISSION_USE_ON_PLAYER = "whereismyhorse.useonplayer";
-        private const string                    HORSE_PREFAB = "assets/rust.ai/nextai/testridablehorse.prefab";
-        private       Configuration             _configuration;
-        private       List<HorseSpawnData>      _spawnData;
+        private const string               PERMISSION_USE           = "whereismyhorse.use";
+        private const string               PERMISSION_USE_ON_PLAYER = "whereismyhorse.useonplayer";
+        private const string               HORSE_PREFAB             = "assets/rust.ai/nextai/testridablehorse.prefab";
+        private       Configuration        _configuration;
+        private       List<HorseSpawnData> _spawnData;
+
+        #region Oxide hooks
 
         void Init()
         {
@@ -30,8 +31,6 @@ namespace Oxide.Plugins
                 covalence.RegisterCommand(command, this, HandleCommand);
             }
         }
-
-        #region Oxide hooks
 
         void OnServerInitialized()
         {
@@ -51,8 +50,7 @@ namespace Oxide.Plugins
             {
                 HandleRegularCommand(player);
             }
-
-            if (args[0] == "list")
+            else if (args[0] == "list")
             {
                 HandleListCommand(player);
             }
@@ -70,11 +68,11 @@ namespace Oxide.Plugins
 
             bool noHorses = true;
 
-            var basePlayer = (BasePlayer)player.Object;
-            for (var i = _spawnData.Count - 1; i >= 0; i--)
+            BasePlayer basePlayer = (BasePlayer)player.Object;
+            for (int i = _spawnData.Count - 1; i >= 0; i--)
             {
-                var data = _spawnData[i];
-                if (!data.IsNetworkableAlive)
+                HorseSpawnData data = _spawnData[i];
+                if (!data.IsAlive)
                 {
                     _spawnData.RemoveAt(i);
                     continue;
@@ -82,10 +80,10 @@ namespace Oxide.Plugins
 
                 if (data.OwnerId == player.Id)
                 {
-                    var ent = data.GetEntity();
+                    RidableHorse ent = data.GetEntity();
                     string name = ent._name;
-                    var breed = ent.breeds[ent.currentBreed].breedName.english;
-                    var distance = Vector3.Distance(basePlayer.ServerPosition, ent.ServerPosition);
+                    string breed = ent.breeds[ent.currentBreed].breedName.english;
+                    float distance = Vector3.Distance(basePlayer.ServerPosition, ent.ServerPosition);
 
                     MessagePlayer(
                         player,
@@ -114,10 +112,18 @@ namespace Oxide.Plugins
             }
 
             int playerCooldown = GetPlayerCooldown(player);
+
+            Log("Player {0} min cooldown: {1}s", player.Name, playerCooldown);
             int cooldownSecondsLeft;
             if (IsPlayerOnCooldown(player, playerCooldown, out cooldownSecondsLeft))
             {
                 MessagePlayer(player, Messages.COOLDOWN, cooldownSecondsLeft);
+                return;
+            }
+
+            if (!CanPlayerSpawnAnotherHorse(player))
+            {
+                MessagePlayer(player, Messages.MAX_HORSES_COUNT, _configuration.MaxOwnedHorses);
                 return;
             }
 
@@ -152,11 +158,16 @@ namespace Oxide.Plugins
 
             RidableHorse poorAnimal = SpawnHorseAtPosition(spawnPosition, basePlayer);
 
-            var spawnData = HorseSpawnData.FromRidableHorse(poorAnimal);
+            HorseSpawnData spawnData = HorseSpawnData.FromRidableHorse(poorAnimal);
 
             _spawnData.Add(spawnData);
 
             Interface.CallHook("OnWmHorseSpawned", spawnData.ToDictionary());
+        }
+
+        bool CanPlayerSpawnAnotherHorse(IPlayer player)
+        {
+            return _configuration.MaxOwnedHorses > GetAliveHorsesCount(player);
         }
 
         RidableHorse SpawnHorseAtPosition(Vector3 position, BasePlayer owner)
@@ -184,9 +195,9 @@ namespace Oxide.Plugins
             const float SPAWN_DISTANCE = 3f;
 
             // TODO: Scanning from min to max for each angle
-            const float SPAWN_DISTANCE_MIN = 1f;
+            /*const float SPAWN_DISTANCE_MIN = 1f;
             const float SPAWN_DISTANCE_MAX = 4f;
-            const float SPAWN_DISTANCE_STEP = .2f;
+            const float SPAWN_DISTANCE_STEP = .2f;*/
 
 
             int mod = 1;
@@ -231,57 +242,6 @@ namespace Oxide.Plugins
             return false;
         }
 
-        HorseSpawnData GetMostRecentHorseSpawnData(IPlayer player)
-        {
-            HorseSpawnData data = _spawnData.Where(x => x.OwnerId == player.Id)
-                                            .OrderBy(x => x.SpawnRealtimeSinceStartup)
-                                            .FirstOrDefault();
-
-            return data;
-        }
-
-        void SetPlayerCooldown(IPlayer player)
-        {
-            _lastSpawnTimeIndex[player.Id] = Time.realtimeSinceStartup;
-        }
-
-        bool IsPlayerOnCooldown(IPlayer player, int cooldown, out int cooldownSecondsLeft)
-        {
-            cooldownSecondsLeft = 0;
-            HorseSpawnData lastSpawnData = GetMostRecentHorseSpawnData(player);
-            if (lastSpawnData == null)
-                return false;
-
-            float timeSinceLastSpawn = Time.realtimeSinceStartup - lastSpawnData.SpawnRealtimeSinceStartup;
-
-            float cooldownLeft = cooldown - timeSinceLastSpawn;
-            if (cooldownLeft >= 1)
-            {
-                cooldownSecondsLeft = Mathf.CeilToInt(cooldownLeft);
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Returns smallest cooldown based on groups player is assigned to and configuration file
-        /// </summary>
-        /// <param name="player"></param>
-        /// <returns></returns>
-        int GetPlayerCooldown(IPlayer player)
-        {
-            KeyValuePair<string, int>[] playerCooldownGroups =
-                _configuration.CooldownGroups.Where(group => player.BelongsToGroup(group.Key)).ToArray();
-
-            if (playerCooldownGroups.Length == 0)
-            {
-                return _configuration.DefaultCooldown;
-            }
-
-            return playerCooldownGroups.Min(x => x.Value);
-        }
-
         bool IsHorseNearby(Vector3 position)
         {
             List<RidableHorse> list = Pool.GetList<RidableHorse>();
@@ -294,12 +254,61 @@ namespace Oxide.Plugins
         bool GetIsEscapeBlocked(IPlayer player)
         {
             object result = Interface.CallHook("IsEscapeBlocked", player.Id);
-            if (result != null && result is bool && (bool)result == true)
+            if (result != null && result is bool && (bool)result)
             {
                 return true;
             }
 
             return false;
+        }
+
+        bool IsMaxCountReached(IPlayer player) => GetPlayerHorseCount(player) <
+                                                  GetPlayerGroupsConfig(player, _configuration.OwnedHorsesCount, false);
+
+        bool IsOnCooldown(IPlayer player) => GetSecondsSinceLastRecallOrSpawn(player) >=
+                                             GetPlayerGroupsConfig(player, _configuration.Cooldown, true);
+
+        int GetSecondsSinceLastRecallOrSpawn(IPlayer player) { }
+
+        int GetPlayerHorseCount(IPlayer player) { }
+
+        T GetPlayerGroupsConfig<T>(IPlayer player, Configuration.GroupsConfiguration<T> configuration, bool min)
+            where T : IComparable<T>
+        {
+            T selectedValue = default(T);
+            bool isSelected = false;
+
+            foreach (KeyValuePair<string, T> pair in configuration.Groups)
+            {
+                string groupName = pair.Key;
+
+                if (!player.BelongsToGroup(groupName))
+                {
+                    continue;
+                }
+
+                T value = pair.Value;
+
+                if (!isSelected &&
+                    ((min && value.CompareTo(configuration.Default) == -1) ||
+                     (!min && value.CompareTo(configuration.Default) == 1)))
+                {
+                    selectedValue = value;
+                    isSelected = true;
+                    continue;
+                }
+
+                if ((min && value.CompareTo(selectedValue) == -1) || (!min && value.CompareTo(selectedValue) == 1))
+                {
+                    selectedValue = value;
+                    isSelected = true;
+                }
+            }
+
+            if (!isSelected)
+                return configuration.Default;
+
+            return selectedValue;
         }
 
         #region Message handling
@@ -340,7 +349,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             LogWarning("Loading default configuration");
-            _configuration = Configuration.GetDefault(this);
+            _configuration = Configuration.GetDefault();
             SaveConfig();
         }
 
@@ -355,7 +364,6 @@ namespace Oxide.Plugins
 
             try
             {
-                Configuration.Migrate(this, Config);
                 _configuration = Config.ReadObject<Configuration>();
                 if (_configuration == null)
                 {
@@ -364,7 +372,7 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                bool shouldSave = false;
+                /*bool shouldSave = false;
 
                 if (_configuration.NearbyRange < 0)
                 {
@@ -417,7 +425,7 @@ namespace Oxide.Plugins
                 {
                     SaveConfig();
                     LogWarning("Configuration saved with corrected values");
-                }
+                }*/
             }
             catch (Exception e)
             {
@@ -461,13 +469,22 @@ namespace Oxide.Plugins
             public const string CANNOT_SPAWN_INSIDE_BUILDING = "Cannot spawn inside building";
             public const string HORSE_INFO                   = "Horse info";
             public const string NO_HORSES                    = "No horses";
+            public const string MAX_HORSES_COUNT             = "Maximum count of horses spawned";
 
             public static readonly Dictionary<string, Dictionary<string, string>> DefaultMessages =
                 new Dictionary<string, Dictionary<string, string>> {
                     {
                         "en", new Dictionary<string, string> {
                             {PREFIX, "[WHERE IS MY HORSE]"},
-                            {NO_PERMISSION, "You are not allowed to use this command"}
+                            {NO_PERMISSION, "You are not allowed to use this command"},
+                            {COOLDOWN, "You've recently called your horse, wait a little ({0} seconds left)"},
+                            {HORSE_NEARBY, "There is a horse nearby already"},
+                            {ESCAPE_BLOCKED, "You have an escape block in progress"},
+                            {NO_SPAWN_POSITION, "Could not find a spawn position for your horse"},
+                            {CANNOT_SPAWN_INSIDE_BUILDING, "Cannot call a horse inside building"},
+                            {HORSE_INFO, "{0} - {1}, {2:0.0}m away from you"},
+                            {NO_HORSES, "You have no horses"},
+                            {MAX_HORSES_COUNT, "You've maximum count of horses ({0})"}
                         }
                     }
                 };
@@ -479,37 +496,11 @@ namespace Oxide.Plugins
 
         class Configuration
         {
-            private static readonly ConfigurationMigration[] Migrations = {
-                new ConfigurationMigration(
-                    new VersionNumber(0, 0, 0),
-                    new VersionNumber(2, 0, 0),
-                    config =>
-                    {
-                        config["Configuration version (Do not modify)"] = new VersionNumber(2, 0, 0);
-                        config["Cooldown groups"] = config["Cooldowns"];
-                        config.Remove("Cooldowns");
-                        config["Allow spawning horses in buildings"] = config["Allow usage inside building"];
-                        config.Remove("Allow usage inside building");
-                        config["Prevent examining horses for non-owners"] = config["Prevent looting for non-owner"];
-                        config.Remove("Prevent looting for non-owner");
-                        config["Check if player is raid-blocked by NoEscape"] = config["Use NoEscape"];
-                        config.Remove("Use NoEscape");
-                        config["Disallow spawning horse this close to another"] = 5f;
-                        config["Commands"] = new[] {"horse"};
-                        config["Default cooldown"] = 300;
-                        config["Max count of owned horses"] = 1;
-                    }
-                )
-            };
+            [JsonProperty("Cooldown")]
+            public GroupsConfiguration<int> Cooldown { get; set; }
 
-            [JsonProperty("Configuration version (Do not modify)")]
-            public VersionNumber Version { get; set; }
-
-            [JsonProperty("Cooldown groups")]
-            public Dictionary<string, int> CooldownGroups { get; set; }
-
-            [JsonProperty("Default cooldown")]
-            public int DefaultCooldown { get; set; }
+            [JsonProperty("Owned horses count")]
+            public GroupsConfiguration<int> OwnedHorsesCount { get; set; }
 
             [JsonProperty("Allow spawning horses in buildings")]
             public bool AllowInside { get; set; }
@@ -520,95 +511,67 @@ namespace Oxide.Plugins
             [JsonProperty("Disallow spawning horse this close to another")]
             public float NearbyRange { get; set; }
 
-            [JsonProperty("Check if player is raid-blocked by NoEscape")]
-            public bool UseNoEscape { get; set; }
+            [JsonProperty("NoEscape integration")]
+            public NoEscapeIntegrationConfiguration NoEscapeIntegration { get; set; }
+
+            [JsonProperty("Return settings")]
+            public HorseReturnConfiguration ReturnSettings { get; set; }
 
             [JsonProperty("Commands")]
             public string[] Commands { get; set; }
 
-            [JsonProperty("Max count of owned horses")]
-            public int MaxOwnedHorses { get; set; }
+            [JsonProperty("Decrease count of owned horses upon horse death")]
+            public bool DecreaseOwnedCountOnHorseDeath { get; set; }
 
-            public static Configuration GetDefault(WhereIsMyHorse plugin)
+            [JsonProperty("Count horses given by other players")]
+            public bool CountGivenHorses { get; set; }
+
+            public static Configuration GetDefault() => new Configuration {
+                CooldownGroups = new Dictionary<string, int> {
+                    {"nocooldown", 0},
+                    {"vip", 60}
+                },
+                AllowInside = false,
+                PreventNonOwnerLooting = false,
+                NearbyRange = 5f,
+                NoEscapeIntegration = new NoEscapeIntegrationConfiguration {
+                    CheckOnSpawn = true,
+                    CheckOnRemove = true
+                },
+                ReturnSettings = new HorseReturnConfiguration {
+                    Enabled = false,
+                    HealHorse = false,
+                    ResetCooldown = false
+                },
+                Commands = new[] {"horse"},
+                DefaultCooldown = 300,
+                MaxOwnedHorses = 1
+            };
+
+            public class NoEscapeIntegrationConfiguration
             {
-                return new Configuration {
-                    Version = plugin.Version,
-                    CooldownGroups = new Dictionary<string, int> {
-                        {"nocooldown", 0},
-                        {"vip", 60}
-                    },
-                    AllowInside = false,
-                    PreventNonOwnerLooting = false,
-                    NearbyRange = 5f,
-                    UseNoEscape = true,
-                    Commands = new[] {"horse"},
-                    DefaultCooldown = 300,
-                    MaxOwnedHorses = 1
-                };
+                [JsonProperty("Check on spawn")]
+                public bool CheckOnSpawn { get; set; }
+
+                [JsonProperty("Check on return")]
+                public bool CheckOnRemove { get; set; }
             }
 
-            /// <summary>
-            /// Migrates configuration file, if it's incompatible with current plugin version.
-            /// Only upgrade migrations are supported (for example, from version 1.0.0 to version 2.0.0)
-            /// </summary>
-            /// <param name="currentVersion"></param>
-            /// <param name="configFile"></param>
-            public static void Migrate(WhereIsMyHorse plugin, DynamicConfigFile configFile)
+            public class HorseReturnConfiguration
             {
-                Dictionary<string, int> configVersionObj =
-                    configFile.Get<Dictionary<string, int>>("Configuration version (Do not modify)");
-                VersionNumber configVersion;
-                if (configVersionObj == null)
-                {
-                    configVersion = default(VersionNumber);
-                }
-                else
-                {
-                    configVersion = new VersionNumber(
-                        configVersionObj["Major"],
-                        configVersionObj["Minor"],
-                        configVersionObj["Patch"]
-                    );
-                }
+                public bool Enabled { get; set; }
 
-                if (configVersion == plugin.Version)
-                {
-                    return;
-                }
+                [JsonProperty("Heal horse on return")]
+                public bool HealHorse { get; set; }
 
-                foreach (ConfigurationMigration currentMigration in Migrations)
-                {
-                    if (currentMigration.From != configVersion)
-                    {
-                        continue;
-                    }
-
-                    plugin.LogWarning(
-                        "Migrating configuration file from v{0} to v{1}",
-                        configVersion,
-                        currentMigration.To
-                    );
-                    currentMigration.Migrate(configFile);
-                    configVersion = currentMigration.To;
-                }
-
-                configFile.Save();
-
-                plugin.LogWarning("Configuration migrated!");
+                [JsonProperty("Reset cooldown")]
+                public bool ResetCooldown { get; set; }
             }
 
-            private class ConfigurationMigration
+            public class GroupsConfiguration<T>
             {
-                public VersionNumber From { get; }
-                public VersionNumber To { get; }
-                public Action<DynamicConfigFile> Migrate { get; }
-
-                public ConfigurationMigration(VersionNumber from, VersionNumber to, Action<DynamicConfigFile> migrate)
-                {
-                    From = from;
-                    To = to;
-                    Migrate = migrate;
-                }
+                public T Default { get; set; }
+                public Dictionary<string, T> Groups { get; set; }
             }
         }
 
@@ -621,23 +584,20 @@ namespace Oxide.Plugins
             public string OwnerId { get; set; }
             public NetworkableId NetId { get; set; }
             public float SpawnRealtimeSinceStartup { get; set; }
+            public DateTimeOffset CreatedAt { get; set; }
+            public DateTimeOffset RecalledAt { get; set; }
+            public bool IsReturned { get; set; }
+            public DateTimeOffset ReturnedAt { get; set; }
 
-            public bool IsNetworkableAlive
+
+            public bool IsAlive
             {
                 get
                 {
-                    BaseNetworkable _;
-                    return BaseNetworkable.serverEntities.entityList.TryGetValue(NetId, out _);
+                    BaseNetworkable networkable;
+                    return BaseNetworkable.serverEntities.entityList.TryGetValue(NetId, out networkable) &&
+                           ((networkable as RidableHorse)?.IsAlive() ?? false);
                 }
-            }
-
-            public static HorseSpawnData FromRidableHorse(RidableHorse horse)
-            {
-                return new HorseSpawnData {
-                    OwnerId = horse.OwnerID.ToString(),
-                    NetId = horse.net.ID,
-                    SpawnRealtimeSinceStartup = horse.spawnTime
-                };
             }
 
             public RidableHorse GetEntity()
@@ -648,15 +608,23 @@ namespace Oxide.Plugins
                     return null;
                 }
 
+                if (!((networkable as RidableHorse)?.IsAlive() ?? false))
+                {
+                    return null;
+                }
+
                 return (RidableHorse)networkable;
             }
 
-            public IReadOnlyDictionary<string, object> ToDictionary()
+            public IReadOnlyDictionary<string, object> Serialize()
             {
                 return new Dictionary<string, object> {
                     {"OwnerId", OwnerId},
                     {"NetId", NetId},
-                    {"SpawnRealtimeSinceStartup", SpawnRealtimeSinceStartup}
+                    {"CreatedAt", CreatedAt},
+                    {"RecalledAt", RecalledAt},
+                    {"IsReturned", IsReturned},
+                    {"ReturnedAt", ReturnedAt}
                 };
             }
         }
