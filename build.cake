@@ -65,6 +65,8 @@ Task("Install:DepotDownloader")
     Verbose("Creating filelist for app 258550");
 
     FileWriteText(depotDownloaderDir.CombineWithFilePath("filelist_258550.txt"), "regex:Managed\\/.*\\.dll");
+
+    Information("DepotDownloader installation finished");
 });
 
 Task("UpdateReferences:OriginalLibraries")
@@ -75,29 +77,20 @@ Task("UpdateReferences:OriginalLibraries")
     EnsureDirectoryExists(tempDir);
     CleanDirectory(tempDir);
 
-    StartProcess("dotnet", new ProcessSettings {
+    DotNetExecute(depotdownloaderDllPath,
+    new ProcessArgumentBuilder()
+    .AppendSwitch("-app", "258550")
+    .AppendSwitch("-filelist", depotDownloaderDir.CombineWithFilePath("filelist_258550.txt").ToString())
+    .AppendSwitch("-dir", tempDir.ToString()),
+    new DotNetExecuteSettings{
         WorkingDirectory = tempDir,
-        Arguments = $"{depotdownloaderDllPath} -app 258550 " +
-        $"-filelist {depotDownloaderDir.CombineWithFilePath("filelist_258550.txt")} "
-        + $"-dir {tempDir}",
-        RedirectStandardOutput = true,
-        RedirectedStandardOutputHandler = log => {
-            if(!string.IsNullOrEmpty(log))
-                Verbose("DepotDownloader: {0}", log);
-            return log;
-        },
-        RedirectStandardError = true,
-        RedirectedStandardErrorHandler = log => {
-            if(!string.IsNullOrEmpty(log))
-                Error("DepotDownloader: {0}", log);
-            return log;
-        }
+        Verbosity = DotNetVerbosity.Normal
     });
 
+    EnsureDirectoryExists(referencesDir);
     CleanDirectory(referencesDir);
 
     MoveFiles(tempDir.CombineWithFilePath("**/*.dll").ToString(), referencesDir);
-
 });
 
 Task("UpdateReferences:OxideLibraries")
