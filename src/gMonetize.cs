@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using ConVar;
 using Newtonsoft.Json;
@@ -20,6 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
+    // ReSharper disable once ClassNeverInstantiated.Global
     [Info("gMonetize", "2CHEVSKII", "1.0.1")]
     public class gMonetize : CovalencePlugin
     {
@@ -86,10 +88,6 @@ namespace Oxide.Plugins
 
             switch (command)
             {
-                case "gmonetize.open":
-                    basePlayer.SendMessage("gMonetize_Open", SendMessageOptions.RequireReceiver);
-                    break;
-
                 case "gmonetize.close":
                     basePlayer.SendMessage("gMonetize_Close", SendMessageOptions.RequireReceiver);
                     break;
@@ -107,7 +105,7 @@ namespace Oxide.Plugins
                     break;
 
                 default:
-                    if (_configuration.ChatCommands.Contains(command))
+                    if (command == "gmonetize.open" || _configuration.ChatCommands.Contains(command))
                     {
                         basePlayer.SendMessage("gMonetize_Open", SendMessageOptions.RequireReceiver);
                     }
@@ -172,11 +170,15 @@ namespace Oxide.Plugins
             [JsonProperty("API key")]
             public string ApiKey { get; set; }
 
+            [JsonProperty("Api base URL")]
+            public string ApiBaseUrl { get; set; }
+
             [JsonProperty("Chat commands")]
             public string[] ChatCommands { get; set; }
 
             public static PluginConfiguration GetDefault() => new PluginConfiguration {
                 ApiKey = "Change me",
+                ApiBaseUrl = "https://api.gmonetize.ru",
                 ChatCommands = new[] {"shop"}
             };
         }
@@ -187,12 +189,12 @@ namespace Oxide.Plugins
 
         private class Api
         {
-            private const string MAIN_API_URL          = "https://api.gmonetize.ru/main/v3/plugin/";
-            private const string STATIC_API_URL        = "https://api.gmonetize.ru/static/v2/image/";
-            private const string HEARTBEAT_REQUEST_URL = MAIN_API_URL + "server/ping";
-
             private readonly JsonSerializerSettings     _serializerSettings;
             private readonly Dictionary<string, string> _requestHeaders;
+
+            private string MainApiUrl => Instance._configuration.ApiBaseUrl + "/main/v3/plugin";
+            private string StaticApiUrl => Instance._configuration.ApiBaseUrl + "/static/v2/image";
+            private string HeartbeatRequestUrl => MainApiUrl + "/server/ping";
 
             public Api()
             {
@@ -222,6 +224,8 @@ namespace Oxide.Plugins
                         {
                             List<InventoryEntry> items =
                                 JsonConvert.DeserializeObject<List<InventoryEntry>>(body, _serializerSettings);
+
+                            LogDebug("Inventory:\n{0}", JsonConvert.SerializeObject(items, Formatting.Indented));
                             onSuccess(items);
                             return;
                         }
@@ -274,7 +278,7 @@ namespace Oxide.Plugins
                 );
 
                 Instance.webrequest.Enqueue(
-                    HEARTBEAT_REQUEST_URL,
+                    HeartbeatRequestUrl,
                     JsonConvert.SerializeObject(heartbeat),
                     (code, body) =>
                     {
@@ -292,29 +296,33 @@ namespace Oxide.Plugins
                 );
             }
 
-            public string GetIconUrl(string iconId) => STATIC_API_URL + iconId;
+            public string GetIconUrl(string iconId) => $"{StaticApiUrl}/{iconId}";
 
             private string GetInventoryUrl(string userId)
             {
-                const string BASE_REQUEST_PATH = "customer/STEAM/{userId}/inventory";
-
-                return MAIN_API_URL + BASE_REQUEST_PATH.Replace("{userId}", userId);
+                return $"{MainApiUrl}/customer/STEAM/{userId}/inventory";
             }
 
             private string GetRedeemUrl(string userId, string entryId)
             {
-                const string BASE_REQUEST_PATH = "customer/STEAM/{userId}/inventory/{entryId}/redeem";
-
-                return MAIN_API_URL + BASE_REQUEST_PATH.Replace("{userId}", userId).Replace("{entryId}", entryId);
+                return $"{MainApiUrl}/customer/STEAM/{userId}/inventory/{entryId}/redeem";
             }
 
+            [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
             public class InventoryEntry
             {
                 public string Id { get; set; }
                 public EntryType Type { get; set; }
-                public BaseGoodInfo Good { get; set; }
+                public string Name { get; set; }
+                public string IconId { get; set; }
+                public TimeSpan? WipeBlockDuration { get; set; }
+                public bool IsRefundable { get; set; }
+                public string GoodId { get; set; }
                 public RustItem Item { get; set; }
+
+                [SuppressMessage("ReSharper", "CollectionNeverUpdated.Local")]
                 public List<RustItem> Items { get; set; }
+
                 public Rank Rank { get; set; }
                 public Research Research { get; set; }
 
@@ -323,23 +331,35 @@ namespace Oxide.Plugins
                     ITEM,
                     KIT,
                     RANK,
-                    RESEARCH
+                    RESEARCH,
+                    CUSTOM
                 }
             }
 
-            public class BaseGoodInfo
-            {
-                public string Id { get; set; }
-                public string Name { get; set; }
-                public string IconId { get; set; }
-            }
-
+            [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
             public class RustItem
             {
                 public string Id { get; set; }
                 public int ItemId { get; set; }
                 public int Amount { get; set; }
                 public RustItemMeta Meta { get; set; }
+                public string IconId { get; set; }
+
+                public ItemDefinition GetItemDefinition()
+                {
+                    return ItemManager.FindItemDefinition(ItemId);
+                }
+
+                public Item ToItem()
+                {
+                    var item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
+                    if (item.hasCondition)
+                    {
+                        item.conditionNormalized = Mathf.Max(0.1f, Meta.Condition);
+                    }
+
+                    return item;
+                }
 
                 public class RustItemMeta
                 {
@@ -358,9 +378,12 @@ namespace Oxide.Plugins
             public class Research
             {
                 public string Id { get; set; }
-                public string ResearchId { get; set; }
+                public int ResearchId { get; set; }
             }
 
+            /// <summary>
+            /// DTO to update server's state in the store
+            /// </summary>
             private struct ServerHeartbeat
             {
                 [JsonProperty("motd")]
@@ -563,7 +586,7 @@ namespace Oxide.Plugins
                     id,
                     () =>
                     {
-                        var entry = _inventory[entryIndex];
+                        Api.InventoryEntry entry = _inventory[entryIndex];
                         GiveRedeemedItems(entry);
                         RemoveCurrentPageItems();
 
@@ -615,15 +638,29 @@ namespace Oxide.Plugins
                     case Api.InventoryEntry.EntryType.RANK:
                         break;
                     case Api.InventoryEntry.EntryType.RESEARCH:
-                        // FIXME: Not sure about this one
-                        int res = int.Parse(entry.Research.ResearchId);
-                        if (!_player.cachedPersistantPlayer.unlockedItems.Contains(res))
-                        {
-                            _player.cachedPersistantPlayer.unlockedItems.Add(res);
-                        }
-
+                        RedeemResearchItem(entry.Research);
                         break;
                 }
+            }
+
+            private void RedeemRustItem(Api.RustItem rustItem)
+            {
+                var item = rustItem.ToItem();
+
+                if (item == null)
+                {
+                    Instance.LogError("Failed to create Item object from Api.RustItem[{0}:{1}]", rustItem.Id, rustItem.ItemId);
+                    return;
+                }
+
+                _player.GiveItem(item);
+            }
+
+            private void RedeemResearchItem(Api.Research research)
+            {
+                int itemId = research.ResearchId;
+                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
+                _player.blueprints.Unlock(itemDefinition);
             }
 
             private void State_ItemsLoadError(int errorCode)
@@ -785,6 +822,30 @@ namespace Oxide.Plugins
                 return totalSlots - claimedSlots;
             }
 
+            private bool IsAvailableForResearch(Api.Research research)
+            {
+                int itemId = research.ResearchId;
+
+                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
+
+                if (itemDefinition == null)
+                {
+                    Instance.LogWarning("Not found ItemDefinition for itemid {0} in IsAvailableForResearch", itemId);
+                    return false;
+                }
+
+
+                bool isUnlocked = _player.blueprints.IsUnlocked(itemDefinition);
+                LogDebug(
+                    "Player {0} item {1} is unlocked: {2}",
+                    _player.displayName,
+                    itemDefinition.displayName.english,
+                    isUnlocked
+                );
+
+                return !isUnlocked;
+            }
+
             private bool CanReceiveItem(Api.InventoryEntry item)
             {
                 switch (item.Type)
@@ -796,6 +857,8 @@ namespace Oxide.Plugins
                     case Api.InventoryEntry.EntryType.RANK:
                         return false;
                     case Api.InventoryEntry.EntryType.RESEARCH:
+                        return IsAvailableForResearch(item.Research);
+                    case Api.InventoryEntry.EntryType.CUSTOM:
                         return false;
                     default: return false;
                 }
@@ -820,11 +883,12 @@ namespace Oxide.Plugins
 
             private static class Builder
             {
-                public const  int   COLUMN_COUNT   = 7;
-                public const  int   ROW_COUNT      = 3;
-                public const  int   ITEMS_PER_PAGE = COLUMN_COUNT * ROW_COUNT;
-                private const float COLUMN_GAP     = .005f;
-                private const float ROW_GAP        = .01f;
+                public const  int    COLUMN_COUNT     = 7;
+                public const  int    ROW_COUNT        = 3;
+                public const  int    ITEMS_PER_PAGE   = COLUMN_COUNT * ROW_COUNT;
+                private const float  COLUMN_GAP       = .005f;
+                private const float  ROW_GAP          = .01f;
+                private const string DEFAULT_ICON_URL = "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png";
 
                 public static string GetRedeemingButton(string id)
                 {
@@ -1069,7 +1133,7 @@ namespace Oxide.Plugins
                         Name = Names.ItemList.Card(cardId).RedeemButton,
                         Components = {
                             new CuiButtonComponent {
-                                Command = command,
+                                Command = isDisabled ? null : command,
                                 Color = buttonColor
                             },
                             buttonTransform
@@ -1097,7 +1161,6 @@ namespace Oxide.Plugins
 
                 public static IEnumerable<CuiElement> GetCard(int indexOnPage, Api.InventoryEntry inventoryEntry)
                 {
-                    const string defaultIcon = "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png";
                     Names.ItemList.ItemListCard ncard = Names.ItemList.Card(inventoryEntry.Id);
 
                     CuiElementContainer container = new CuiElementContainer {
@@ -1135,9 +1198,7 @@ namespace Oxide.Plugins
                             Name = ncard.NameLabel,
                             Components = {
                                 new CuiTextComponent {
-                                    Text = string.IsNullOrEmpty(inventoryEntry.Good.Name)
-                                        ? "ITEM"
-                                        : inventoryEntry.Good.Name,
+                                    Text = string.IsNullOrEmpty(inventoryEntry.Name) ? "ITEM" : inventoryEntry.Name,
                                     Align = TextAnchor.MiddleCenter,
                                     Color = "0.8 0.8 0.8 0.4"
                                 },
@@ -1148,30 +1209,42 @@ namespace Oxide.Plugins
                     CuiElement iconEl = new CuiElement {
                         Parent = ncard.InnerContainer,
                         Name = ncard.Icon,
-                        Components = {
-                            GetTransform()
-                        }
+                        Components = {GetTransform()}
                     };
-                    if (string.IsNullOrEmpty(inventoryEntry.Good.IconId))
+
+                    LogDebug("Iconid for good {0}: {1}", inventoryEntry.Name, inventoryEntry.IconId);
+                    if (string.IsNullOrEmpty(inventoryEntry.IconId))
                     {
                         switch (inventoryEntry.Type)
                         {
                             case Api.InventoryEntry.EntryType.ITEM:
                                 iconEl.Components.Insert(
                                     0,
-                                    new CuiImageComponent {ItemId = inventoryEntry.Item.ItemId, Color = "1 1 1 0.8"}
+                                    new CuiImageComponent {
+                                        ItemId = inventoryEntry.Item.ItemId,
+                                        Color = "1 1 1 0.8"
+                                    }
                                 );
                                 break;
 
                             case Api.InventoryEntry.EntryType.KIT:
                                 iconEl.Components.Insert(
                                     0,
-                                    new CuiImageComponent {ItemId = inventoryEntry.Items[0].ItemId, Color = "1 1 1 0.8"}
+                                    new CuiImageComponent {
+                                        ItemId = inventoryEntry.Items[0].ItemId,
+                                        Color = "1 1 1 0.8"
+                                    }
                                 );
                                 break;
 
                             default:
-                                iconEl.Components.Insert(0, new CuiRawImageComponent {Url = defaultIcon, Color = "1 1 1 0.8"});
+                                iconEl.Components.Insert(
+                                    0,
+                                    new CuiRawImageComponent {
+                                        Url = DEFAULT_ICON_URL,
+                                        Color = "1 1 1 0.8"
+                                    }
+                                );
                                 break;
                         }
                     }
@@ -1179,9 +1252,7 @@ namespace Oxide.Plugins
                     {
                         iconEl.Components.Insert(
                             0,
-                            new CuiRawImageComponent {
-                                Url = "https://api.gmonetize.ru/static/v2/image/" + inventoryEntry.Good.IconId
-                            }
+                            new CuiRawImageComponent {Url = Instance._api.GetIconUrl(inventoryEntry.IconId)}
                         );
                     }
 
