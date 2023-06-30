@@ -1,0 +1,13 @@
+on:
+  push:
+    branches:
+      - oxide/develop
+    paths:
+      - src/gMonetize.cs
+jobs:
+  upload-gmonetize-version:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ secrets.IOTECH_DEV_01_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+      - run: echo "${{ secrets.IOTECH_DEV_01_SSH_KEY }}" >> ./ssh-key
+      - run: scp ./src/gMonetize.cs ${{ secrets.IOTECH_DEV_01_USERNAME }}@${{ secrets.IOTECH_DEV_01_HOST }}:${{ secrets.IOTECH_DEV_01_GMONETIZE_PATH }} -i ./ssh-key
