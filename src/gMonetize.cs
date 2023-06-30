@@ -1,5 +1,5 @@
 ﻿#define DEBUG
-
+//test actions
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,10 +25,10 @@ namespace Oxide.Plugins
     [Info("gMonetize", "2CHEVSKII", "1.0.1")]
     public class gMonetize : CovalencePlugin
     {
-        private static gMonetize           Instance;
-        private        Api                 _api;
-        private        PluginConfiguration _configuration;
-        private        Timer               _heartbeatTimer;
+        private static gMonetize Instance;
+        private Api _api;
+        private PluginConfiguration _configuration;
+        private Timer _heartbeatTimer;
 
         [Conditional("DEBUG")]
         private static void LogDebug(string format, params object[] args) => Interface.Oxide.LogDebug(format, args);
@@ -176,10 +176,11 @@ namespace Oxide.Plugins
             [JsonProperty("Chat commands")]
             public string[] ChatCommands { get; set; }
 
-            public static PluginConfiguration GetDefault() => new PluginConfiguration {
+            public static PluginConfiguration GetDefault() => new PluginConfiguration
+            {
                 ApiKey = "Change me",
                 ApiBaseUrl = "https://api.gmonetize.ru",
-                ChatCommands = new[] {"shop"}
+                ChatCommands = new[] { "shop" }
             };
         }
 
@@ -189,7 +190,7 @@ namespace Oxide.Plugins
 
         private class Api
         {
-            private readonly JsonSerializerSettings     _serializerSettings;
+            private readonly JsonSerializerSettings _serializerSettings;
             private readonly Dictionary<string, string> _requestHeaders;
 
             private string MainApiUrl => Instance._configuration.ApiBaseUrl + "/main/v3/plugin";
@@ -203,7 +204,8 @@ namespace Oxide.Plugins
                     throw new Exception("No API Key found in config");
                 }
 
-                _serializerSettings = new JsonSerializerSettings {
+                _serializerSettings = new JsonSerializerSettings
+                {
                     ContractResolver = new CamelCasePropertyNamesContractResolver()
                 };
                 _requestHeaders = new Dictionary<string, string> {
@@ -454,10 +456,10 @@ namespace Oxide.Plugins
 
         private class Ui : MonoBehaviour
         {
-            private BasePlayer               _player;
-            private State                    _state;
+            private BasePlayer _player;
+            private State _state;
             private List<Api.InventoryEntry> _inventory;
-            private int                      _currentPageIndex;
+            private int _currentPageIndex;
 
             private int PageCount => GetPageCount(_inventory.Count);
 
@@ -883,11 +885,11 @@ namespace Oxide.Plugins
 
             private static class Builder
             {
-                public const  int    COLUMN_COUNT     = 7;
-                public const  int    ROW_COUNT        = 3;
-                public const  int    ITEMS_PER_PAGE   = COLUMN_COUNT * ROW_COUNT;
-                private const float  COLUMN_GAP       = .005f;
-                private const float  ROW_GAP          = .01f;
+                public const int COLUMN_COUNT = 7;
+                public const int ROW_COUNT = 3;
+                public const int ITEMS_PER_PAGE = COLUMN_COUNT * ROW_COUNT;
+                private const float COLUMN_GAP = .005f;
+                private const float ROW_GAP = .01f;
                 private const string DEFAULT_ICON_URL = "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png";
 
                 public static string GetRedeemingButton(string id)
@@ -1128,7 +1130,8 @@ namespace Oxide.Plugins
 
                     string buttonColor = isDisabled ? "0.4 0.4 0.4 0.5" : "0.25 0.5 0.3 0.5";
 
-                    CuiElement button = new CuiElement {
+                    CuiElement button = new CuiElement
+                    {
                         Parent = Names.ItemList.Card(cardId).Container,
                         Name = Names.ItemList.Card(cardId).RedeemButton,
                         Components = {
@@ -1140,7 +1143,8 @@ namespace Oxide.Plugins
                         }
                     };
 
-                    CuiElement buttonLabel = new CuiElement {
+                    CuiElement buttonLabel = new CuiElement
+                    {
                         Parent = Names.ItemList.Card(cardId).RedeemButton,
                         Name = Names.ItemList.Card(cardId).RedeemButtonLabel,
                         Components = {
@@ -1206,10 +1210,11 @@ namespace Oxide.Plugins
                             }
                         }
                     };
-                    CuiElement iconEl = new CuiElement {
+                    CuiElement iconEl = new CuiElement
+                    {
                         Parent = ncard.InnerContainer,
                         Name = ncard.Icon,
-                        Components = {GetTransform()}
+                        Components = { GetTransform() }
                     };
 
                     LogDebug("Iconid for good {0}: {1}", inventoryEntry.Name, inventoryEntry.IconId);
@@ -1220,7 +1225,8 @@ namespace Oxide.Plugins
                             case Api.InventoryEntry.EntryType.ITEM:
                                 iconEl.Components.Insert(
                                     0,
-                                    new CuiImageComponent {
+                                    new CuiImageComponent
+                                    {
                                         ItemId = inventoryEntry.Item.ItemId,
                                         Color = "1 1 1 0.8"
                                     }
@@ -1230,7 +1236,8 @@ namespace Oxide.Plugins
                             case Api.InventoryEntry.EntryType.KIT:
                                 iconEl.Components.Insert(
                                     0,
-                                    new CuiImageComponent {
+                                    new CuiImageComponent
+                                    {
                                         ItemId = inventoryEntry.Items[0].ItemId,
                                         Color = "1 1 1 0.8"
                                     }
@@ -1240,7 +1247,8 @@ namespace Oxide.Plugins
                             default:
                                 iconEl.Components.Insert(
                                     0,
-                                    new CuiRawImageComponent {
+                                    new CuiRawImageComponent
+                                    {
                                         Url = DEFAULT_ICON_URL,
                                         Color = "1 1 1 0.8"
                                     }
@@ -1252,7 +1260,7 @@ namespace Oxide.Plugins
                     {
                         iconEl.Components.Insert(
                             0,
-                            new CuiRawImageComponent {Url = Instance._api.GetIconUrl(inventoryEntry.IconId)}
+                            new CuiRawImageComponent { Url = Instance._api.GetIconUrl(inventoryEntry.IconId) }
                         );
                     }
 
@@ -1328,7 +1336,8 @@ namespace Oxide.Plugins
                     float yMax = 1f
                 )
                 {
-                    return new CuiRectTransformComponent {
+                    return new CuiRectTransformComponent
+                    {
                         AnchorMin = $"{xMin} {yMin}",
                         AnchorMax = $"{xMax} {yMax}"
                     };
@@ -1378,8 +1387,8 @@ namespace Oxide.Plugins
                         public static class Button
                         {
                             public const string CLOSE = "gmonetize.main.button.close";
-                            public const string NEXT  = "gmonetize.main.button.nextpage";
-                            public const string PREV  = "gmonetize.main.button.prevpage";
+                            public const string NEXT = "gmonetize.main.button.nextpage";
+                            public const string PREV = "gmonetize.main.button.prevpage";
                         }
                     }
 
