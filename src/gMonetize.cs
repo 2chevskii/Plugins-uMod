@@ -13,6 +13,7 @@ using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
+using Steamworks;
 using UnityEngine;
 
 // ReSharper disable StringLiteralTypo
@@ -76,6 +77,18 @@ namespace Oxide.Plugins
             {
                 OnUserConnected(player);
             }
+
+            if ( !Server.tags.Contains("gmonetize") )
+            {
+                Server.tags = string.Join(
+                    ",",
+                    Server.tags.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries)
+                          .Concat(new[] { "gmonetize" })
+                );
+
+                LogMessage("Added gmonetize tag to server tags");
+                LogMessage("Server tags are now: {0}", Server.tags);
+            }
         }
 
         private void Unload()
@@ -84,6 +97,18 @@ namespace Oxide.Plugins
             foreach ( IPlayer player in players.Connected )
             {
                 OnUserDisconnected(player);
+            }
+
+            if ( Server.tags.Contains("gmonetize") )
+            {
+                Server.tags = string.Join(
+                    ",",
+                    Server.tags.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                          .Except(new[] { "gmonetize" })
+                );
+
+                LogMessage("Removed gmonetize tags from server tags");
+                LogMessage("Server tags are now: {0}", Server.tags);
             }
         }
 
