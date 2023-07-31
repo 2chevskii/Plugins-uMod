@@ -142,25 +142,25 @@ namespace Oxide.Plugins
 
             switch (command)
             {
-                case "gmonetize.close":
+                case CMD_CLOSE:
                     basePlayer.SendMessage("gMonetize_Close", SendMessageOptions.RequireReceiver);
                     break;
 
-                case "gmonetize.nextpage":
+                case CMD_NEXTP:
                     basePlayer.SendMessage(
                         "gMonetize_NextPage",
                         SendMessageOptions.RequireReceiver
                     );
                     break;
 
-                case "gmonetize.prevpage":
+                case CMD_PREVP:
                     basePlayer.SendMessage(
                         "gMonetize_PrevPage",
                         SendMessageOptions.RequireReceiver
                     );
                     break;
 
-                case "gmonetize.redeemitem":
+                case CMD_REDEEM:
                     basePlayer.SendMessage(
                         "gMonetize_RedeemItem",
                         args[0],
@@ -169,7 +169,7 @@ namespace Oxide.Plugins
                     break;
 
                 default:
-                    if ( command == "gmonetize.open" ||
+                    if ( command == CMD_OPEN ||
                          _configuration.ChatCommands.Contains(command) )
                     {
                         basePlayer.SendMessage(
