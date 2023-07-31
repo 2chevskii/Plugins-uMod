@@ -130,6 +130,12 @@ namespace Oxide.Plugins
 
         private bool HandleCommand(IPlayer player, string command, string[] args)
         {
+            if ( player.IsServer )
+            {
+                player.Message("This command cannot be executed in server console");
+                return true;
+            }
+
             BasePlayer basePlayer = (BasePlayer) player.Object;
 
             LogMessage(
@@ -169,8 +175,7 @@ namespace Oxide.Plugins
                     break;
 
                 default:
-                    if ( command == CMD_OPEN ||
-                         _configuration.ChatCommands.Contains(command) )
+                    if ( command == CMD_OPEN || _configuration.ChatCommands.Contains(command) )
                     {
                         basePlayer.SendMessage(
                             "gMonetize_Open",
@@ -441,9 +446,6 @@ namespace Oxide.Plugins
                 public EntryType Type { get; set; }
                 public string Name { get; set; }
                 public string IconId { get; set; }
-                public TimeSpan? WipeBlockDuration { get; set; }
-                public bool IsRefundable { get; set; }
-                public string GoodId { get; set; }
                 public RustItem Item { get; set; }
 
                 [SuppressMessage("ReSharper", "CollectionNeverUpdated.Local")]
@@ -478,6 +480,15 @@ namespace Oxide.Plugins
 
                 public Item ToItem()
                 {
+                    var itemDefinition = GetItemDefinition();
+
+                    if ( itemDefinition == null )
+                    {
+                        throw new Exception(
+                            $"ItemDefinition not found for item {ItemId} (good.item.id={Id})"
+                        );
+                    }
+
                     var item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
                     if ( item.hasCondition )
                     {
