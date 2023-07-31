@@ -25,6 +25,14 @@ namespace Oxide.Plugins
     [Info("gMonetize", "2CHEVSKII", "1.0.2")]
     public class gMonetize : CovalencePlugin
     {
+        private const string PERM_USE = "gmonetize.use";
+
+        private const string CMD_OPEN   = "gmonetize.open";
+        private const string CMD_CLOSE  = "gmonetize.close";
+        private const string CMD_NEXTP  = "gmonetize.nextpage";
+        private const string CMD_PREVP  = "gmonetize.prevpage";
+        private const string CMD_REDEEM = "gmonetize.redeemitem";
+
         private static gMonetize           Instance;
         private        Api                 _api;
         private        PluginConfiguration _configuration;
@@ -52,13 +60,13 @@ namespace Oxide.Plugins
         {
             Instance = this;
             // TODO
-            permission.RegisterPermission("gmonetize.use", this);
+            permission.RegisterPermission(PERM_USE, this);
 
-            covalence.RegisterCommand("gmonetize.open", this, HandleCommand);
-            covalence.RegisterCommand("gmonetize.close", this, HandleCommand);
-            covalence.RegisterCommand("gmonetize.nextpage", this, HandleCommand);
-            covalence.RegisterCommand("gmonetize.prevpage", this, HandleCommand);
-            covalence.RegisterCommand("gmonetize.redeemitem", this, HandleCommand);
+            covalence.RegisterCommand(CMD_OPEN, this, HandleCommand);
+            covalence.RegisterCommand(CMD_CLOSE, this, HandleCommand);
+            covalence.RegisterCommand(CMD_NEXTP, this, HandleCommand);
+            covalence.RegisterCommand(CMD_PREVP, this, HandleCommand);
+            covalence.RegisterCommand(CMD_REDEEM, this, HandleCommand);
 
             foreach ( string chatCommand in _configuration.ChatCommands )
             {
@@ -562,10 +570,12 @@ namespace Oxide.Plugins
 
         private static class PlayerMessages
         {
-            public const string CHAT_PREFIX         = "m.chatprefix";
-            public const string NO_PERMISSION       = "m.nopermission";
-            public const string INV_EMPTY           = "m.inv.empty";
-            public const string ERROR_LOADING_ITEMS = "m.error.itemload";
+            public const string CHAT_PREFIX          = "m.chatprefix";
+            public const string NO_PERMISSION        = "m.nopermission";
+            public const string INV_EMPTY            = "m.inv.empty";
+            public const string ERROR_LOADING_ITEMS  = "m.error.itemload";
+            public const string ERROR_RECEIVING_ITEM = "m.error.receiveitem";
+            public const string ITEM_RECEIVED        = "m.itemreceived";
         }
 
         private class Ui : MonoBehaviour
@@ -1035,7 +1045,7 @@ namespace Oxide.Plugins
                 private const float ROW_GAP        = .01f;
 
                 private const string DEFAULT_ICON_URL =
-                "https://cdn.icon-icons.com/icons2/1381/PNG/512/rust_94773.png";
+                "https://api.gmonetize.ru/static/v2/image/plugin/icons/rust_94773.png";
 
                 public static string GetRedeemingButton(string id)
                 {
