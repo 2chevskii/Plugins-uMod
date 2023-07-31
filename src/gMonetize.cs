@@ -1,5 +1,4 @@
 ﻿// #define DEBUG
-//test actions2
 
 using System;
 using System.Collections.Generic;
@@ -13,7 +12,6 @@ using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
-using Steamworks;
 using UnityEngine;
 
 // ReSharper disable StringLiteralTypo
@@ -24,7 +22,7 @@ using UnityEngine;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.0.1")]
+    [Info("gMonetize", "2CHEVSKII", "1.0.2")]
     public class gMonetize : CovalencePlugin
     {
         private static gMonetize           Instance;
@@ -178,6 +176,16 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private bool CheckPermission(IPlayer player)
+        {
+            if ( !player.HasPermission("gmonetize.use") )
+            {
+                return false;
+            }
+
+            return true;
+        }
+
 #endregion
 
 #region Configuration handling
@@ -227,6 +235,21 @@ namespace Oxide.Plugins
         }
 
 #endregion
+
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(
+                new Dictionary<string, string> {
+                    [PlayerMessages.CHAT_PREFIX]   = "[gMonetize] ",
+                    [PlayerMessages.NO_PERMISSION] = "You are not allowed to use this command",
+                    [PlayerMessages.INV_EMPTY]     = "Your inventory is empty",
+                    [PlayerMessages.ERROR_LOADING_ITEMS] =
+                    "Error occured while loading your inventory\n(code: {0})"
+                },
+                this
+            );
+            lang.RegisterMessages(new Dictionary<string, string> { }, this, "ru");
+        }
 
 #region Configuration class
 
@@ -536,6 +559,14 @@ namespace Oxide.Plugins
         }
 
 #endregion
+
+        private static class PlayerMessages
+        {
+            public const string CHAT_PREFIX         = "m.chatprefix";
+            public const string NO_PERMISSION       = "m.nopermission";
+            public const string INV_EMPTY           = "m.inv.empty";
+            public const string ERROR_LOADING_ITEMS = "m.error.itemload";
+        }
 
         private class Ui : MonoBehaviour
         {
