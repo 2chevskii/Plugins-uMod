@@ -16,6 +16,7 @@ using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
 using UnityEngine;
+using UnityEngineInternal;
 
 // ReSharper disable StringLiteralTypo
 
@@ -217,7 +218,7 @@ namespace Oxide.Plugins
                 );
             }
 
-            var player =
+            BasePlayer player =
             BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == result.UserId);
 
             if ( !player )
@@ -539,7 +540,7 @@ namespace Oxide.Plugins
 
                 public Item ToItem()
                 {
-                    var itemDefinition = GetItemDefinition();
+                    ItemDefinition itemDefinition = GetItemDefinition();
 
                     if ( itemDefinition == null )
                     {
@@ -548,7 +549,7 @@ namespace Oxide.Plugins
                         );
                     }
 
-                    var item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
+                    Item item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
                     if ( item.hasCondition )
                     {
                         item.conditionNormalized = Mathf.Max(0.1f, Meta.Condition);
@@ -872,7 +873,7 @@ namespace Oxide.Plugins
 
             private void RedeemRustItem(Api.RustItem rustItem)
             {
-                var item = rustItem.ToItem();
+                Item item = rustItem.ToItem();
 
                 if ( item == null )
                 {
@@ -1596,34 +1597,6 @@ namespace Oxide.Plugins
                     };
                 }
 
-                private static CuiRectTransformComponent GetGridTransform(int itemIndex)
-                {
-                    const float totalColumnGap = COLUMN_GAP * (COLUMN_COUNT - 1);
-                    const float totalRowGap    = ROW_GAP * (ROW_COUNT - 1);
-
-                    const float cardWidth  = (0.999f - totalColumnGap) / COLUMN_COUNT;
-                    const float cardHeight = (0.998f - totalRowGap) / ROW_COUNT;
-
-                    int rowIndex    = itemIndex / COLUMN_COUNT;
-                    int columnIndex = itemIndex % COLUMN_COUNT;
-
-                    float columnGapSum = COLUMN_GAP * columnIndex;
-                    float cardWidthSum = cardWidth * columnIndex;
-                    float xPosition    = columnGapSum + cardWidthSum;
-
-                    float rowGapSum     = ROW_GAP * rowIndex;
-                    float cardHeightSum = cardHeight * (rowIndex + 1);
-
-                    float yPosition = 0.998f - (rowGapSum + cardHeightSum);
-
-                    return GetTransform(
-                        xPosition,
-                        yPosition,
-                        xPosition + cardWidth,
-                        yPosition + cardHeight
-                    );
-                }
-
                 public static class Names
                 {
                     public static class MainContainer
@@ -1796,6 +1769,8 @@ namespace Oxide.Plugins
                 {
                     /*x00 -> x99 goes from darkest to lightest*/
 
+                    public static readonly RustColor White   = new RustColor(1f);
+                    public static readonly RustColor Black   = new RustColor(0f);
                     public static readonly RustColor Transp  = new RustColor(0, 0f);
                     public static readonly RustColor Bg00    = new RustColor(0.3f);
                     public static readonly RustColor Bg01    = new RustColor(0.4f);
@@ -1941,35 +1916,6 @@ namespace Oxide.Plugins
                     s_RectTransformCache =
                     new Dictionary<ValueTuple<float, float, float, float>,
                         CuiRectTransformComponent>();
-
-                    private static CuiRectTransformComponent GetTransform(
-                        float xMin = 0f,
-                        float xMax = 1f,
-                        float yMin = 0f,
-                        float yMax = 1f
-                    )
-                    {
-                        ValueTuple<float, float, float, float> key = ValueTuple.Create(
-                            xMin,
-                            yMin,
-                            xMax,
-                            yMax
-                        );
-
-                        CuiRectTransformComponent transform;
-
-                        if ( !s_RectTransformCache.TryGetValue(key, out transform) )
-                        {
-                            transform = new CuiRectTransformComponent {
-                                AnchorMin = $"{xMin} {yMin}",
-                                AnchorMax = $"{xMax} {yMax}"
-                            };
-
-                            s_RectTransformCache[key] = transform;
-                        }
-
-                        return transform;
-                    }
 
                     /// <summary>
                     /// Builds main container along with it's header and close button
@@ -2215,6 +2161,339 @@ namespace Oxide.Plugins
                             }
                         };
                     }
+
+                    public static List<CuiElement> ItemCard(
+                        string id,
+                        CuiRectTransformComponent transform,
+                        InventoryEntryResponse inventoryEntry
+                    )
+                    {
+                        Names.MainContainer.ItemListContainer.ItemCard nCard =
+                        new Names.MainContainer.ItemListContainer.ItemCard(id);
+
+                        List<CuiElement> componentList = Facepunch.Pool.GetList<CuiElement>();
+
+                        /*root*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = Names.MainContainer.ItemListContainer.SELF,
+                                Name   = nCard.Self,
+                                Components = {
+                                    new CuiImageComponent {
+                                        Color = RustColor.ComponentColors.PanelBase,
+                                    },
+                                    transform
+                                }
+                            }
+                        );
+                        /*header container*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent     = nCard.Self,
+                                Name       = nCard.Header.Self,
+                                Components = { }
+                            }
+                        );
+                        /*listing name*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent     = nCard.Header.Self,
+                                Name       = nCard.Header.ItemName,
+                                Components = { }
+                            }
+                        );
+
+#if F_UI_LISTINGTYPE
+                        /*listing type*/
+                        componentList.Add(new CuiElement {
+                            Parent = nCard.Header.Self,
+                            Name = nCard.Header.ItemType,
+                            Components = {  }
+                        })
+#endif
+                        /*center container*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent     = nCard.Self,
+                                Name       = nCard.Center.Self,
+                                Components = { }
+                            }
+                        );
+                        /*item image*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = nCard.Center.Self,
+                                Name   = nCard.Center.Image,
+                            }
+                        );
+                        /*item amount*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = nCard.Center.Image,
+                                Name   = nCard.Center.Amount
+                            }
+                        );
+                        /*conditionBar*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent     = nCard.Center.Image,
+                                Name       = nCard.Center.ConditionBar,
+                                Components = { }
+                            }
+                        );
+                        /*footer container*/
+                        componentList.Add(
+                            new CuiElement {
+                                Parent     = nCard.Self,
+                                Name       = nCard.Footer.Self,
+                                Components = { }
+                            }
+                        );
+
+                        AddRedeemButton(
+                            ref nCard,
+                            componentList,
+                            inventoryEntry.Id,
+                            true // FIXME
+                        );
+#if F_UI_CONDITIONBAR
+                        AddConditionBar(ref nCard, componentList, 1f );
+#endif
+
+                        return componentList;
+                    }
+
+                    private static void AddConditionBar(
+                        ref Names.MainContainer.ItemListContainer.ItemCard nCard,
+                        List<CuiElement> componentList,
+                        float condition
+                    )
+                    {
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = nCard.Center.Image,
+                                Name   = nCard.Center.ConditionBar,
+                                Components = {
+                                    new CuiImageComponent {
+                                        Color = RustColor.Error.WithAlpha(0.1f)
+                                    },
+                                    GetTransform(yMax: Mathf.Clamp01(condition))
+                                }
+                            }
+                        );
+                    }
+
+                    private static void AddRedeemButton(
+                        ref Names.MainContainer.ItemListContainer.ItemCard nCard,
+                        List<CuiElement> componentList,
+                        string id,
+                        bool isRedeemAvailable
+                    )
+                    {
+                        RustColor btnColor;
+                        string    btnText;
+
+                        if ( isRedeemAvailable )
+                        {
+                            btnColor = RustColor.Success.WithAlpha(0.4f);
+                            btnText  = "REDEEM";
+                        }
+                        else
+                        {
+                            btnColor = RustColor.ComponentColors.ButtonDisabled;
+                            btnText  = "CANNOT REDEEM";
+                        }
+
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = nCard.Footer.Self,
+                                Name   = nCard.Footer.Button.Self,
+                                Components = {
+                                    new CuiButtonComponent {
+                                        Color   = btnColor,
+                                        Command = CMD_REDEEM + ' ' + id
+                                    },
+                                    GetTransform()
+                                }
+                            }
+                        );
+
+                        componentList.Add(
+                            /*new CuiElement {
+                                Parent = nCard.Footer.Button.Self,
+                                Name   = nCard.Footer.Button.Text,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color = RustColor.ComponentColors.TextWhite,
+                                        Text  = btnText
+                                    },
+                                    GetTransform()
+                                }
+                            }*/
+                            LabelBuilder.Create(nCard.Footer.Button.Self, nCard.Footer.Button.Text)
+                                        .WithColor(RustColor.ComponentColors.TextWhite)
+                                        .WithText(btnText)
+                                        .FullSize()
+                                        .ToCuiElement()
+                        );
+                    }
+
+                    private static CuiRectTransformComponent GetGridTransform(
+                        int cols,
+                        int rows,
+                        float colGap,
+                        float rowGap,
+                        int itemIndex
+                    )
+                    {
+                        float totalColumnGap = colGap * (cols - 1);
+                        float totalRowGap    = rowGap * (rows - 1);
+
+                        float cardWidth  = (0.999f - totalColumnGap) / cols;
+                        float cardHeight = (0.998f - totalRowGap) / rows;
+
+                        int rowIndex    = itemIndex / cols;
+                        int columnIndex = itemIndex % cols;
+
+                        float columnGapSum = colGap * columnIndex;
+                        float cardWidthSum = cardWidth * columnIndex;
+                        float xPosition    = columnGapSum + cardWidthSum;
+
+                        float rowGapSum     = rowGap * rowIndex;
+                        float cardHeightSum = cardHeight * (rowIndex + 1);
+
+                        float yPosition = 0.998f - (rowGapSum + cardHeightSum);
+
+                        return GetTransform(
+                            xPosition,
+                            yPosition,
+                            xPosition + cardWidth,
+                            yPosition + cardHeight
+                        );
+                    }
+
+                    private static CuiRectTransformComponent GetTransform(
+                        float xMin = 0f,
+                        float xMax = 1f,
+                        float yMin = 0f,
+                        float yMax = 1f
+                    )
+                    {
+                        ValueTuple<float, float, float, float> key = ValueTuple.Create(
+                            xMin,
+                            yMin,
+                            xMax,
+                            yMax
+                        );
+
+                        CuiRectTransformComponent transform;
+
+                        if ( !s_RectTransformCache.TryGetValue(key, out transform) )
+                        {
+                            transform = new CuiRectTransformComponent {
+                                AnchorMin = $"{xMin} {yMin}",
+                                AnchorMax = $"{xMax} {yMax}"
+                            };
+
+                            s_RectTransformCache[key] = transform;
+                        }
+
+                        return transform;
+                    }
+
+                    private struct LabelBuilder
+                    {
+                        public  string                    Parent;
+                        public  string                    Name;
+                        public  string                    Text;
+                        public  RustColor                 TextColor;
+                        public  TextAnchor                Align;
+                        public  int                       FontSize;
+                        private CuiRectTransformComponent Transform;
+
+                        public LabelBuilder(
+                            string parent,
+                            string name,
+                            string text,
+                            RustColor textColor,
+                            TextAnchor align,
+                            int fontSize,
+                            CuiRectTransformComponent transform
+                        )
+                        {
+                            Name      = name;
+                            Parent    = parent;
+                            Text      = text;
+                            TextColor = textColor;
+                            Align     = align;
+                            FontSize  = fontSize;
+                            Transform = transform;
+                        }
+
+                        public static LabelBuilder Create(string parent, string name) =>
+                        new LabelBuilder(
+                            parent,
+                            name,
+                            string.Empty,
+                            RustColor.White,
+                            TextAnchor.MiddleCenter,
+                            15,
+                            GetTransform()
+                        );
+
+                        public LabelBuilder WithText(string text)
+                        {
+                            Text = text;
+                            return this;
+                        }
+
+                        public LabelBuilder WithColor(RustColor color)
+                        {
+                            TextColor = color;
+                            return this;
+                        }
+
+                        public LabelBuilder WithAlign(TextAnchor align)
+                        {
+                            Align = align;
+                            return this;
+                        }
+
+                        public LabelBuilder Centered() => WithAlign(TextAnchor.MiddleCenter);
+                        public LabelBuilder FromLeft() => WithAlign(TextAnchor.MiddleLeft);
+                        public LabelBuilder FromRight() => WithAlign(TextAnchor.MiddleRight);
+
+                        public LabelBuilder WithFontSize(int size)
+                        {
+                            FontSize = size;
+                            return this;
+                        }
+
+                        public LabelBuilder WithTransform(CuiRectTransformComponent transform)
+                        {
+                            Transform = transform;
+                            return this;
+                        }
+
+                        public LabelBuilder FullSize() => WithTransform(GetTransform());
+
+                        public CuiElement ToCuiElement()
+                        {
+                            return new CuiElement {
+                                Parent = Parent,
+                                Name   = Name,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color    = TextColor,
+                                        Text     = Text,
+                                        Align    = Align,
+                                        FontSize = FontSize
+                                    },
+                                    Transform
+                                }
+                            };
+                        }
+                    }
                 }
             }
         }
@@ -2448,15 +2727,58 @@ namespace Oxide.Plugins
         private class InventoryEntryResponse
         {
             public string Id { get; set; }
+            public InventoryEntryType Type { get; set; }
             public string Name { get; set; }
+            public string IconId { get; set; }
+            public TimeSpan? WipeBlockDuration { get; set; }
+
+            public RustItemResponse Item { get; set; }
+            public List<RustItemResponse> Items { get; set; }
+            public PermissionResponse Permission { get; set; }
+            public GroupResponse Group { get; set; }
+            public List<RoulettePrizeResponse> Prizes { get; set; }
         }
+
+        private class RustItemResponse
+        {
+            public string ItemId { get; set; }
+            public uint Amount { get; set; }
+            public RustItemMetaResponse Meta { get; set; }
+
+            public class RustItemMetaResponse
+            {
+                public ulong? SkinId { get; set; }
+                public float Condition { get; set; }
+            }
+        }
+
+        private class PermissionResponse
+        {
+            public string Value { get; set; }
+            public TimeSpan Duration { get; set; }
+        }
+
+        private class GroupResponse
+        {
+            public string GroupName { get; set; }
+            public TimeSpan Duration { get; set; }
+        }
+
+        private class RoulettePrizeResponse { }
 
         private enum InventoryEntryType
         {
             ITEM,
             KIT,
+            PERMISSION,
             RANK,
-            RESEARCH
+            RESEARCH,
+            ROULETTE
+        }
+
+        private enum GoodObjectType
+        {
+            ITEM, RANK, COMMAND, RESEARCH, PERMISSION
         }
     }
 }
