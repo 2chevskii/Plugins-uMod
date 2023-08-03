@@ -1,6 +1,7 @@
 ﻿// #define DEBUG
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -40,7 +41,7 @@ namespace Oxide.Plugins
 
         [Conditional("DEBUG")]
         private static void LogDebug(string format, params object[] args) =>
-        Interface.Oxide.LogDebug(format, args);
+            Interface.Oxide.LogDebug(format, args);
 
         private static void LogMessage(string format, params object[] args)
         {
@@ -54,7 +55,7 @@ namespace Oxide.Plugins
             );
         }
 
-#region Oxide hook handlers
+        #region Oxide hook handlers
 
         private void Init()
         {
@@ -68,7 +69,7 @@ namespace Oxide.Plugins
             covalence.RegisterCommand(CMD_PREVP, this, HandleCommand);
             covalence.RegisterCommand(CMD_REDEEM, this, HandleCommand);
 
-            foreach ( string chatCommand in _configuration.ChatCommands )
+            foreach (string chatCommand in _configuration.ChatCommands)
             {
                 covalence.RegisterCommand(chatCommand, this, HandleCommand);
             }
@@ -78,18 +79,81 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
-            _heartbeatTimer = timer.Every(60f, _api.SendHeartbeat);
-            foreach ( IPlayer player in players.Connected )
+            SetupServerTags();
+            gAPI.Init(this);
+            SetupAPICallbacks();
+            StartSendingHeartbeats();
+
+            foreach (IPlayer player in players.Connected)
             {
                 OnUserConnected(player);
             }
+        }
 
-            if ( !Server.tags.Contains("gmonetize") )
+        private void Unload()
+        {
+            CleanupServerTags();
+            StopSendingHeartbeats();
+            CleanupAPICallbacks();
+
+            foreach (IPlayer player in players.Connected)
+            {
+                OnUserDisconnected(player);
+            }
+        }
+
+        private void OnUserConnected(IPlayer player) =>
+            ((BasePlayer)player.Object).gameObject.AddComponent<Ui>();
+
+        private void OnUserDisconnected(IPlayer player) =>
+            UnityEngine.Object.Destroy(((BasePlayer)player.Object).GetComponent<Ui>());
+
+        #endregion
+
+        private void SetupAPICallbacks()
+        {
+            gAPI.OnHeartbeat += HandleOnHeartbeat;
+        }
+
+        private void CleanupAPICallbacks()
+        {
+            gAPI.OnHeartbeat -= HandleOnHeartbeat;
+        }
+
+        private void StartSendingHeartbeats()
+        {
+            _heartbeatTimer = timer.Every(60, SendHeartbeat);
+            SendHeartbeat();
+        }
+
+        private void StopSendingHeartbeats()
+        {
+            _heartbeatTimer.Destroy();
+        }
+
+        private void SendHeartbeat()
+        {
+            ServerHeartbeatRequest request = new ServerHeartbeatRequest(
+                Server.description,
+                new ServerHeartbeatRequest.ServerMapRequest(
+                    Server.level,
+                    World.Size,
+                    World.Seed,
+                    SaveRestore.SaveCreatedTime
+                ),
+                new ServerHeartbeatRequest.ServerPlayersRequest(BasePlayer.activePlayerList.Count, Server.maxplayers)
+            );
+
+            gAPI.SendHeartbeat(request);
+        }
+
+        private void SetupServerTags()
+        {
+            if (!Server.tags.Contains("gmonetize"))
             {
                 Server.tags = string.Join(
                     ",",
-                    Server.tags.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries)
-                          .Concat(new[] { "gmonetize" })
+                    Server.tags.Split(new[] {","}, StringSplitOptions.RemoveEmptyEntries).Concat(new[] {"gmonetize"})
                 );
 
                 LogMessage("Added gmonetize tag to server tags");
@@ -97,20 +161,13 @@ namespace Oxide.Plugins
             }
         }
 
-        private void Unload()
+        private void CleanupServerTags()
         {
-            _heartbeatTimer.Destroy();
-            foreach ( IPlayer player in players.Connected )
-            {
-                OnUserDisconnected(player);
-            }
-
-            if ( Server.tags.Contains("gmonetize") )
+            if (Server.tags.Contains("gmonetize"))
             {
                 Server.tags = string.Join(
                     ",",
-                    Server.tags.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                          .Except(new[] { "gmonetize" })
+                    Server.tags.Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries).Except(new[] {"gmonetize"})
                 );
 
                 LogMessage("Removed gmonetize tags from server tags");
@@ -118,25 +175,63 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnUserConnected(IPlayer player) =>
-        ((BasePlayer) player.Object).gameObject.AddComponent<Ui>();
+        private void HandleOnHeartbeat(HeartbeatApiResult result)
+        {
+            if (!result.IsSuccess)
+            {
+                LogMessage(
+                    "Server heartbeat request failed with code {0}\nHeartbeat payload was:\n{1}",
+                    result.StatusCode,
+                    JsonConvert.SerializeObject(result.Request, Formatting.Indented)
+                );
+            }
+            else
+            {
+                LogMessage("Server heartbeat was sent successfully");
+            }
+        }
 
-        private void OnUserDisconnected(IPlayer player) =>
-        UnityEngine.Object.Destroy(((BasePlayer) player.Object).GetComponent<Ui>());
+        private void HandleOnInventory(InventoryApiResult result)
+        {
+            if (!result.IsSuccess)
+            {
+                LogMessage(
+                    "Failed to receive inventory for player {0}, request failed with code {1}",
+                    result.UserId,
+                    result.StatusCode
+                );
+            }
+            else
+            {
+                LogMessage(
+                    "Received inventory for player {0}:\n{1}",
+                    result.UserId,
+                    JsonConvert.SerializeObject(result.Inventory, Formatting.Indented)
+                );
+            }
 
-#endregion
+            var player = BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == result.UserId);
 
-#region Command handler
+            if (!player)
+            {
+                LogMessage("OnInventory callback handler could not find the player with userId {0}", result.UserId);
+                return;
+            }
+
+            player.SendMessage("gMonetize_InventoryReceived", SendMessageOptions.RequireReceiver);
+        }
+
+        #region Command handler
 
         private bool HandleCommand(IPlayer player, string command, string[] args)
         {
-            if ( player.IsServer )
+            if (player.IsServer)
             {
                 player.Message("This command cannot be executed in server console");
                 return true;
             }
 
-            BasePlayer basePlayer = (BasePlayer) player.Object;
+            BasePlayer basePlayer = (BasePlayer)player.Object;
 
             LogMessage(
                 "HandleCommand({0}:{1}, {2}, {3})",
@@ -153,34 +248,21 @@ namespace Oxide.Plugins
                     break;
 
                 case CMD_NEXTP:
-                    basePlayer.SendMessage(
-                        "gMonetize_NextPage",
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_NextPage", SendMessageOptions.RequireReceiver);
                     break;
 
                 case CMD_PREVP:
-                    basePlayer.SendMessage(
-                        "gMonetize_PrevPage",
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_PrevPage", SendMessageOptions.RequireReceiver);
                     break;
 
                 case CMD_REDEEM:
-                    basePlayer.SendMessage(
-                        "gMonetize_RedeemItem",
-                        args[0],
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_RedeemItem", args[0], SendMessageOptions.RequireReceiver);
                     break;
 
                 default:
-                    if ( command == CMD_OPEN || _configuration.ChatCommands.Contains(command) )
+                    if (command == CMD_OPEN || _configuration.ChatCommands.Contains(command))
                     {
-                        basePlayer.SendMessage(
-                            "gMonetize_Open",
-                            SendMessageOptions.RequireReceiver
-                        );
+                        basePlayer.SendMessage("gMonetize_Open", SendMessageOptions.RequireReceiver);
                     }
 
                     break;
@@ -189,19 +271,11 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool CheckPermission(IPlayer player)
-        {
-            if ( !player.HasPermission("gmonetize.use") )
-            {
-                return false;
-            }
+        private bool CheckPermission(IPlayer player) => player.HasPermission("gmonetize.use");
 
-            return true;
-        }
+        #endregion
 
-#endregion
-
-#region Configuration handling
+        #region Configuration handling
 
         protected override void LoadDefaultConfig()
         {
@@ -217,15 +291,12 @@ namespace Oxide.Plugins
             {
                 _configuration = Config.ReadObject<PluginConfiguration>();
 
-                if ( _configuration == null )
+                if (_configuration == null)
                 {
-                    throw new Exception(
-                        "Failed to load configuration: configuration object is null"
-                    );
+                    throw new Exception("Failed to load configuration: configuration object is null");
                 }
 
-                if ( _configuration.ChatCommands == null ||
-                     _configuration.ChatCommands.Length == 0 )
+                if (_configuration.ChatCommands == null || _configuration.ChatCommands.Length == 0)
                 {
                     LogWarning("No chat commands were specified in configuration");
                     _configuration.ChatCommands = Array.Empty<string>();
@@ -247,43 +318,45 @@ namespace Oxide.Plugins
             Config.WriteObject(_configuration);
         }
 
-#endregion
+        #endregion
 
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(
                 new Dictionary<string, string> {
-                    [PlayerMessages.CHAT_PREFIX]   = "[gMonetize] ",
+                    [PlayerMessages.CHAT_PREFIX] = "[gMonetize] ",
                     [PlayerMessages.NO_PERMISSION] = "You are not allowed to use this command",
-                    [PlayerMessages.INV_EMPTY]     = "Your inventory is empty",
-                    [PlayerMessages.ERROR_LOADING_ITEMS] =
-                    "Error occured while loading your inventory\n(code: {0})"
+                    [PlayerMessages.INV_EMPTY] = "Your inventory is empty",
+                    [PlayerMessages.ERROR_LOADING_ITEMS] = "Error occured while loading your inventory\n(code: {0})"
                 },
                 this
             );
             lang.RegisterMessages(new Dictionary<string, string> { }, this, "ru");
         }
 
-#region Configuration class
+        #region Configuration class
 
         private class PluginConfiguration
         {
-            [JsonProperty("API key")] public string ApiKey { get; set; }
+            [JsonProperty("API key")]
+            public string ApiKey { get; set; }
 
-            [JsonProperty("Api base URL")] public string ApiBaseUrl { get; set; }
+            [JsonProperty("Api base URL")]
+            public string ApiBaseUrl { get; set; }
 
-            [JsonProperty("Chat commands")] public string[] ChatCommands { get; set; }
+            [JsonProperty("Chat commands")]
+            public string[] ChatCommands { get; set; }
 
             public static PluginConfiguration GetDefault() => new PluginConfiguration {
-                ApiKey       = "Change me",
-                ApiBaseUrl   = "https://api.gmonetize.ru",
-                ChatCommands = new[] { "shop" }
+                ApiKey = "Change me",
+                ApiBaseUrl = "https://api.gmonetize.ru",
+                ChatCommands = new[] {"shop"}
             };
         }
 
-#endregion
+        #endregion
 
-#region Api class
+        #region Api class
 
         private class Api
         {
@@ -297,7 +370,7 @@ namespace Oxide.Plugins
             public Api()
             {
                 LogMessage("Initializing API...");
-                if ( string.IsNullOrEmpty(Instance._configuration.ApiKey) )
+                if (string.IsNullOrEmpty(Instance._configuration.ApiKey))
                 {
                     LogMessage("Failed to initialize API: API key is missing");
                     throw new Exception("No API Key found in config");
@@ -307,21 +380,18 @@ namespace Oxide.Plugins
                     ContractResolver = new CamelCasePropertyNamesContractResolver()
                 };
                 _requestHeaders = new Dictionary<string, string> {
-                    { "Authorization", "ApiKey " + Instance._configuration.ApiKey },
-                    { "Content-Type", "application/json" }
+                    {"Authorization", "ApiKey " + Instance._configuration.ApiKey},
+                    {"Content-Type", "application/json"}
                 };
             }
 
-            public void GetInventory(
-                string userId,
-                Action<List<InventoryEntry>> onSuccess,
-                Action<int> onError
-            )
+            public void GetInventory(string userId, Action<List<InventoryEntry>> onSuccess, Action<int> onError)
             {
                 Instance.webrequest.Enqueue(
                     GetInventoryUrl(userId),
                     string.Empty,
-                    (code, body) => {
+                    (code, body) =>
+                    {
                         LogDebug("GetInventory result: {0}:{1}", code, body);
                         LogMessage(
                             "GetInventory({0}) = {1}:{2}",
@@ -330,18 +400,12 @@ namespace Oxide.Plugins
                             body
                         );
 
-                        if ( code == 200 )
+                        if (code == 200)
                         {
                             List<InventoryEntry> items =
-                            JsonConvert.DeserializeObject<List<InventoryEntry>>(
-                                body,
-                                _serializerSettings
-                            );
+                                JsonConvert.DeserializeObject<List<InventoryEntry>>(body, _serializerSettings);
 
-                            LogDebug(
-                                "Inventory:\n{0}",
-                                JsonConvert.SerializeObject(items, Formatting.Indented)
-                            );
+                            LogDebug("Inventory:\n{0}", JsonConvert.SerializeObject(items, Formatting.Indented));
                             onSuccess(items);
                             return;
                         }
@@ -363,7 +427,8 @@ namespace Oxide.Plugins
                 Instance.webrequest.Enqueue(
                     GetRedeemUrl(userId, entryId),
                     string.Empty,
-                    (code, body) => {
+                    (code, body) =>
+                    {
                         LogDebug("Item redeem result: {0}:{1}", code, body);
 
                         LogMessage(
@@ -374,7 +439,7 @@ namespace Oxide.Plugins
                             body
                         );
 
-                        if ( code == 204 )
+                        if (code == 204)
                         {
                             onSuccess();
                             return;
@@ -385,45 +450,6 @@ namespace Oxide.Plugins
                     Instance,
                     headers: _requestHeaders,
                     method: RequestMethod.POST
-                );
-            }
-
-            public void SendHeartbeat()
-            {
-                ServerHeartbeat heartbeat = new ServerHeartbeat(
-                    Server.description,
-                    new ServerHeartbeat.ServerMap(
-                        Server.level,
-                        World.Size,
-                        World.Seed,
-                        SaveRestore.SaveCreatedTime
-                    ),
-                    new ServerHeartbeat.ServerPlayers(
-                        BasePlayer.activePlayerList.Count,
-                        Server.maxplayers
-                    )
-                );
-
-                var payload = JsonConvert.SerializeObject(heartbeat);
-
-                LogMessage("Server heartbeat: {0}", payload);
-
-                Instance.webrequest.Enqueue(
-                    HeartbeatRequestUrl,
-                    payload,
-                    (code, body) => {
-                        if ( code != 204 )
-                        {
-                            Instance.LogWarning("Failed to send heartbeat ({0}:{1})", code, body);
-                            LogMessage("Heartbeat failed: {0}:{1}", code, body);
-                            return;
-                        }
-
-                        LogDebug("Heartbeat sent: {0}", code);
-                    },
-                    Instance,
-                    RequestMethod.POST,
-                    headers: _requestHeaders
                 );
             }
 
@@ -482,15 +508,13 @@ namespace Oxide.Plugins
                 {
                     var itemDefinition = GetItemDefinition();
 
-                    if ( itemDefinition == null )
+                    if (itemDefinition == null)
                     {
-                        throw new Exception(
-                            $"ItemDefinition not found for item {ItemId} (good.item.id={Id})"
-                        );
+                        throw new Exception($"ItemDefinition not found for item {ItemId} (good.item.id={Id})");
                     }
 
                     var item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
-                    if ( item.hasCondition )
+                    if (item.hasCondition)
                     {
                         item.conditionNormalized = Mathf.Max(0.1f, Meta.Condition);
                     }
@@ -523,30 +547,38 @@ namespace Oxide.Plugins
             /// </summary>
             private struct ServerHeartbeat
             {
-                [JsonProperty("motd")] public string Description { get; }
+                [JsonProperty("motd")]
+                public string Description { get; }
 
-                [JsonProperty("map")] public ServerMap Map { get; }
+                [JsonProperty("map")]
+                public ServerMap Map { get; }
 
-                [JsonProperty("players")] public ServerPlayers Players { get; }
+                [JsonProperty("players")]
+                public ServerPlayers Players { get; }
 
                 public ServerHeartbeat(string description, ServerMap map, ServerPlayers players)
                 {
                     Description = description;
-                    Map         = map;
-                    Players     = players;
+                    Map = map;
+                    Players = players;
                 }
 
                 public struct ServerMap
                 {
-                    [JsonProperty("name")] public string Name { get; }
+                    [JsonProperty("name")]
+                    public string Name { get; }
 
-                    [JsonProperty("width")] public uint Width { get; }
+                    [JsonProperty("width")]
+                    public uint Width { get; }
 
-                    [JsonProperty("height")] public uint Height { get; }
+                    [JsonProperty("height")]
+                    public uint Height { get; }
 
-                    [JsonProperty("seed")] public uint Seed { get; }
+                    [JsonProperty("seed")]
+                    public uint Seed { get; }
 
-                    [JsonProperty("lastWipe")] public string LastWipe { get; }
+                    [JsonProperty("lastWipe")]
+                    public string LastWipe { get; }
 
                     public ServerMap(
                         string name,
@@ -555,29 +587,55 @@ namespace Oxide.Plugins
                         DateTime lastWipeDate
                     )
                     {
-                        Name     = name;
-                        Width    = Height = size;
-                        Seed     = seed;
+                        Name = name;
+                        Width = Height = size;
+                        Seed = seed;
                         LastWipe = lastWipeDate.ToString("O").TrimEnd('Z');
                     }
                 }
 
                 public struct ServerPlayers
                 {
-                    [JsonProperty("online")] public int Online { get; }
+                    [JsonProperty("online")]
+                    public int Online { get; }
 
-                    [JsonProperty("max")] public int Max { get; }
+                    [JsonProperty("max")]
+                    public int Max { get; }
 
                     public ServerPlayers(int online, int max)
                     {
                         Online = online;
-                        Max    = max;
+                        Max = max;
                     }
                 }
             }
         }
 
-#endregion
+        #endregion
+
+        private bool CanReceiveItem(BasePlayer player, Api.InventoryEntry inventoryEntry)
+        {
+            if (inventoryEntry.Type == Api.InventoryEntry.EntryType.RANK ||
+                inventoryEntry.Type == Api.InventoryEntry.EntryType.RESEARCH ||
+                inventoryEntry.Type == Api.InventoryEntry.EntryType.CUSTOM)
+            {
+                return true;
+            }
+
+            int availableSpace =
+                (player.inventory.containerMain.capacity - player.inventory.containerMain.itemList.Count) +
+                (player.inventory.containerBelt.capacity - player.inventory.containerBelt.itemList.Count);
+
+            switch (inventoryEntry.Type)
+            {
+                case Api.InventoryEntry.EntryType.ITEM:
+                    return availableSpace > 0;
+                case Api.InventoryEntry.EntryType.KIT:
+                    return availableSpace >= inventoryEntry.Items.Count;
+                default:
+                    return false;
+            }
+        }
 
         private static class PlayerMessages
         {
@@ -600,23 +658,22 @@ namespace Oxide.Plugins
 
             private static int GetPageCount(int itemCount)
             {
-                return itemCount / Builder.ITEMS_PER_PAGE +
-                       (itemCount % Builder.ITEMS_PER_PAGE == 0 ? 0 : 1);
+                return itemCount / Builder.ITEMS_PER_PAGE + (itemCount % Builder.ITEMS_PER_PAGE == 0 ? 0 : 1);
             }
 
-#region Unity event functions
+            #region Unity event functions
 
             private void Start()
             {
                 _inventory = new List<Api.InventoryEntry>();
-                _player    = GetComponent<BasePlayer>();
+                _player = GetComponent<BasePlayer>();
             }
 
             private void OnDestroy() => gMonetize_Close();
 
-#endregion
+            #endregion
 
-#region Command message handlers
+            #region Command message handlers
 
             private void gMonetize_Open()
             {
@@ -624,11 +681,12 @@ namespace Oxide.Plugins
 
                 Instance._api.GetInventory(
                     _player.UserIDString,
-                    items => {
+                    items =>
+                    {
                         _inventory.Clear();
                         _inventory.AddRange(items);
 
-                        if ( _inventory.IsEmpty() )
+                        if (_inventory.IsEmpty())
                         {
                             State_NoItems();
                         }
@@ -639,7 +697,8 @@ namespace Oxide.Plugins
                             DisplayCurrentItemPage();
                         }
                     },
-                    errorCode => {
+                    errorCode =>
+                    {
                         Instance.LogError(
                             "Error while receiving inventory for player {0}: {1}",
                             _player.displayName,
@@ -653,7 +712,7 @@ namespace Oxide.Plugins
 
             private void gMonetize_Close()
             {
-                if ( _state == State.Closed )
+                if (_state == State.Closed)
                 {
                     return;
                 }
@@ -664,14 +723,14 @@ namespace Oxide.Plugins
 
             private void gMonetize_NextPage()
             {
-                if ( _state == State.Closed )
+                if (_state == State.Closed)
                 {
                     Instance.LogWarning(nameof(gMonetize_NextPage) + " called while UI was closed");
                 }
 
                 bool hasNextPage = _currentPageIndex < PageCount - 1;
 
-                if ( !hasNextPage )
+                if (!hasNextPage)
                     return;
 
                 State_ItemPageDisplay();
@@ -682,14 +741,14 @@ namespace Oxide.Plugins
 
             private void gMonetize_PrevPage()
             {
-                if ( _state == State.Closed )
+                if (_state == State.Closed)
                 {
                     Instance.LogWarning(nameof(gMonetize_PrevPage) + " called while UI was closed");
                 }
 
                 bool hasPrevPage = _currentPageIndex > 0;
 
-                if ( !hasPrevPage )
+                if (!hasPrevPage)
                     return;
 
                 State_ItemPageDisplay();
@@ -702,7 +761,7 @@ namespace Oxide.Plugins
             {
                 int entryIndex = _inventory.FindIndex(x => x.Id == id);
 
-                if ( entryIndex == -1 )
+                if (entryIndex == -1)
                 {
                     Instance.LogError(
                         "Player {0} is trying to receive item not from his inventory: {1}",
@@ -720,21 +779,22 @@ namespace Oxide.Plugins
                 Instance._api.RedeemItem(
                     _player.UserIDString,
                     id,
-                    () => {
+                    () =>
+                    {
                         Api.InventoryEntry entry = _inventory[entryIndex];
                         GiveRedeemedItems(entry);
                         RemoveCurrentPageItems();
 
                         _inventory.RemoveAt(entryIndex);
 
-                        if ( _inventory.Count == 0 )
+                        if (_inventory.Count == 0)
                         {
                             _currentPageIndex = 0;
                             State_NoItems();
                         }
                         else
                         {
-                            if ( _currentPageIndex >= PageCount )
+                            if (_currentPageIndex >= PageCount)
                             {
                                 _currentPageIndex = PageCount - 1;
                             }
@@ -751,7 +811,7 @@ namespace Oxide.Plugins
                 );
             }
 
-#endregion
+            #endregion
 
             void GiveRedeemedItems(Api.InventoryEntry entry)
             {
@@ -766,14 +826,7 @@ namespace Oxide.Plugins
                         _player.GiveItem(item);
                         break;
                     case Api.InventoryEntry.EntryType.KIT:
-                        entry.Items
-                             .Select(
-                                 i => ItemManager.CreateByItemID(
-                                     i.ItemId,
-                                     i.Amount,
-                                     i.Meta.SkinId ?? 0
-                                 )
-                             )
+                        entry.Items.Select(i => ItemManager.CreateByItemID(i.ItemId, i.Amount, i.Meta.SkinId ?? 0))
                              .ToList()
                              .ForEach(i => _player.GiveItem(i));
                         break;
@@ -789,7 +842,7 @@ namespace Oxide.Plugins
             {
                 var item = rustItem.ToItem();
 
-                if ( item == null )
+                if (item == null)
                 {
                     Instance.LogError(
                         "Failed to create Item object from Api.RustItem[{0}:{1}]",
@@ -804,7 +857,7 @@ namespace Oxide.Plugins
 
             private void RedeemResearchItem(Api.Research research)
             {
-                int            itemId         = research.ResearchId;
+                int itemId = research.ResearchId;
                 ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
                 _player.blueprints.Unlock(itemDefinition);
             }
@@ -830,10 +883,7 @@ namespace Oxide.Plugins
 
                 CuiHelper.AddUi(
                     _player,
-                    Builder.GetMainContainerNotification(
-                        $"Failed to load items: {errorCode}",
-                        "1 0 0 1"
-                    )
+                    Builder.GetMainContainerNotification($"Failed to load items: {errorCode}", "1 0 0 1")
                 );
                 _state = State.ItemsLoadError;
             }
@@ -857,10 +907,7 @@ namespace Oxide.Plugins
                         break;
                 }
 
-                CuiHelper.AddUi(
-                    _player,
-                    Builder.GetMainContainerNotification("Loading items...", "1 1 1 1")
-                );
+                CuiHelper.AddUi(_player, Builder.GetMainContainerNotification("Loading items...", "1 1 1 1"));
                 _state = State.LoadingItems;
             }
 
@@ -883,10 +930,7 @@ namespace Oxide.Plugins
                         break;
                 }
 
-                CuiHelper.AddUi(
-                    _player,
-                    Builder.GetMainContainerNotification("Inventory is empty =(", "1 1 1 1")
-                );
+                CuiHelper.AddUi(_player, Builder.GetMainContainerNotification("Inventory is empty =(", "1 1 1 1"));
                 _state = State.NoItems;
             }
 
@@ -911,7 +955,7 @@ namespace Oxide.Plugins
 
             private void DisplayCurrentItemPage()
             {
-                if ( _state == State.ItemPageDisplay )
+                if (_state == State.ItemPageDisplay)
                 {
                     CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.PREV);
                     CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.NEXT);
@@ -923,21 +967,21 @@ namespace Oxide.Plugins
                 CuiHelper.AddUi(_player, Builder.GetItemListButtons(hasPrevPage, hasNextPage));
 
                 IEnumerable<Api.InventoryEntry> currentPageItems = _inventory
-                .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
-                .Take(Builder.ITEMS_PER_PAGE);
+                                                                   .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
+                                                                   .Take(Builder.ITEMS_PER_PAGE);
 
                 CuiHelper.AddUi(
                     _player,
                     currentPageItems.Select(
-                                        (item, index) => {
+                                        (item, index) =>
+                                        {
                                             int indexOnPage = index % Builder.ITEMS_PER_PAGE;
 
-                                            bool canReceive = CanReceiveItem(item);
-                                            string text =
-                                            !canReceive ? "CANNOT REDEEM" : "REDEEM";
+                                            bool canReceive = /*CanReceiveItem(item)*/
+                                                Instance.CanReceiveItem(_player, item);
+                                            string text = !canReceive ? "CANNOT REDEEM" : "REDEEM";
 
-                                            IEnumerable<CuiElement> card =
-                                            Builder.GetCard(indexOnPage, item);
+                                            IEnumerable<CuiElement> card = Builder.GetCard(indexOnPage, item);
                                             IEnumerable<CuiElement> button = Builder.GetCardButton(
                                                 item.Id,
                                                 !canReceive,
@@ -954,7 +998,7 @@ namespace Oxide.Plugins
 
             private void EnsureMainContainerIsDisplayed()
             {
-                if ( _state == State.Closed )
+                if (_state == State.Closed)
                 {
                     CuiHelper.AddUi(_player, Builder.GetMainContainer());
                 }
@@ -963,23 +1007,17 @@ namespace Oxide.Plugins
             private void RemoveCurrentPageItems()
             {
                 IEnumerable<Api.InventoryEntry> currentPageItems = _inventory
-                .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
-                .Take(Builder.ITEMS_PER_PAGE);
+                                                                   .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
+                                                                   .Take(Builder.ITEMS_PER_PAGE);
 
                 currentPageItems.Select(item => item.Id)
                                 .ToList()
-                                .ForEach(
-                                    id => CuiHelper.DestroyUi(
-                                        _player,
-                                        Builder.Names.ItemList.Card(id).Container
-                                    )
-                                );
+                                .ForEach(id => CuiHelper.DestroyUi(_player, Builder.Names.ItemList.Card(id).Container));
             }
 
             private int GetAvailableSlots()
             {
-                int totalSlots = _player.inventory.containerMain.capacity +
-                                 _player.inventory.containerBelt.capacity;
+                int totalSlots = _player.inventory.containerMain.capacity + _player.inventory.containerBelt.capacity;
                 int claimedSlots = _player.inventory.containerMain.itemList.Count +
                                    _player.inventory.containerBelt.itemList.Count;
 
@@ -992,12 +1030,9 @@ namespace Oxide.Plugins
 
                 ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
 
-                if ( itemDefinition == null )
+                if (itemDefinition == null)
                 {
-                    Instance.LogWarning(
-                        "Not found ItemDefinition for itemid {0} in IsAvailableForResearch",
-                        itemId
-                    );
+                    Instance.LogWarning("Not found ItemDefinition for itemid {0} in IsAvailableForResearch", itemId);
                     return false;
                 }
 
@@ -1056,7 +1091,7 @@ namespace Oxide.Plugins
                 private const float ROW_GAP        = .01f;
 
                 private const string DEFAULT_ICON_URL =
-                "https://api.gmonetize.ru/static/v2/image/plugin/icons/rust_94773.png";
+                    "https://api.gmonetize.ru/static/v2/image/plugin/icons/rust_94773.png";
 
                 public static string GetRedeemingButton(string id)
                 {
@@ -1066,9 +1101,9 @@ namespace Oxide.Plugins
                         new List<CuiElement> {
                             new CuiElement {
                                 Parent = ncard.Container,
-                                Name   = ncard.RedeemButton,
+                                Name = ncard.RedeemButton,
                                 Components = {
-                                    new CuiButtonComponent { Color = "0.4 0.4 0.4 0.5" },
+                                    new CuiButtonComponent {Color = "0.4 0.4 0.4 0.5"},
                                     GetTransform(
                                         .05f,
                                         .02f,
@@ -1079,14 +1114,12 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = ncard.RedeemButton,
-                                Name   = ncard.RedeemButtonLabel,
+                                Name = ncard.RedeemButtonLabel,
                                 Components = {
                                     new CuiTextComponent {
                                         Text = "REDEEMING...",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color =
-                                        "0.6 0.6 0.6 0.8"
+                                        Align = TextAnchor.MiddleCenter,
+                                        Color = "0.6 0.6 0.6 0.8"
                                     }
                                 }
                             }
@@ -1100,7 +1133,7 @@ namespace Oxide.Plugins
                         new List<CuiElement> {
                             new CuiElement {
                                 Parent = "Hud",
-                                Name   = Names.Main.CONTAINER,
+                                Name = Names.Main.CONTAINER,
                                 Components = {
                                     new CuiImageComponent {
                                         Color = Colors.Build(
@@ -1121,7 +1154,7 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.CLOSE,
+                                Name = Names.Main.Button.CLOSE,
                                 Components = {
                                     new CuiButtonComponent {
                                         Color = Colors.Build(
@@ -1142,7 +1175,7 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = Names.Main.Button.CLOSE,
-                                Name   = Names.Main.Label.CLOSE_TEXT,
+                                Name = Names.Main.Label.CLOSE_TEXT,
                                 Components = {
                                     new CuiTextComponent {
                                         Color = Colors.Build(
@@ -1151,17 +1184,17 @@ namespace Oxide.Plugins
                                             0.8f,
                                             0.5f
                                         ),
-                                        Align    = TextAnchor.MiddleCenter,
-                                        Text     = "CLOSE",
+                                        Align = TextAnchor.MiddleCenter,
+                                        Text = "CLOSE",
                                         FontSize = 15
                                     },
                                     GetTransform()
                                 }
                             },
                             new CuiElement {
-                                Parent     = Names.Main.CONTAINER,
-                                Name       = Names.Main.CONTAINER + ":needscursor",
-                                Components = { new CuiNeedsCursorComponent() }
+                                Parent = Names.Main.CONTAINER,
+                                Name = Names.Main.CONTAINER + ":needscursor",
+                                Components = {new CuiNeedsCursorComponent()}
                             }
                         }
                     );
@@ -1173,14 +1206,13 @@ namespace Oxide.Plugins
                         new List<CuiElement> {
                             new CuiElement {
                                 Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Label.NOTIFICATION_TEXT,
+                                Name = Names.Main.Label.NOTIFICATION_TEXT,
                                 Components = {
                                     new CuiTextComponent {
                                         Color = color,
-                                        Align =
-                                        TextAnchor.MiddleCenter,
+                                        Align = TextAnchor.MiddleCenter,
                                         FontSize = 18,
-                                        Text     = message
+                                        Text = message
                                     },
                                     GetTransform(yMax: 0.95f)
                                 }
@@ -1192,8 +1224,8 @@ namespace Oxide.Plugins
                 public static string GetItemListButtons(bool hasPrevPage, bool hasNextPage)
                 {
                     const string COLOR_DISABLED = "0.4 0.4 0.4 0.5";
-                    const string COLOR_ENABLED  = "0.7 0.7 0.7 0.35";
-                    const string COLOR_TEXT     = "0.8 0.8 0.8 0.4";
+                    const string COLOR_ENABLED = "0.7 0.7 0.7 0.35";
+                    const string COLOR_TEXT = "0.8 0.8 0.8 0.4";
 
                     string prevButtonColor = hasPrevPage ? COLOR_ENABLED : COLOR_DISABLED;
                     string nextButtonColor = hasNextPage ? COLOR_ENABLED : COLOR_DISABLED;
@@ -1202,10 +1234,10 @@ namespace Oxide.Plugins
                         new List<CuiElement> {
                             new CuiElement {
                                 Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.PREV,
+                                Name = Names.Main.Button.PREV,
                                 Components = {
                                     new CuiButtonComponent {
-                                        Color   = prevButtonColor,
+                                        Color = prevButtonColor,
                                         Command = hasPrevPage ? "gmonetize.prevpage" : string.Empty
                                     },
                                     GetTransform(
@@ -1218,13 +1250,12 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = Names.Main.Button.PREV,
-                                Name   = Names.Main.Button.PREV + ":text",
+                                Name = Names.Main.Button.PREV + ":text",
                                 Components = {
                                     new CuiTextComponent {
                                         Text = "PREVIOUS",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color    = COLOR_TEXT,
+                                        Align = TextAnchor.MiddleCenter,
+                                        Color = COLOR_TEXT,
                                         FontSize = 12
                                     },
                                     GetTransform()
@@ -1232,10 +1263,10 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.NEXT,
+                                Name = Names.Main.Button.NEXT,
                                 Components = {
                                     new CuiButtonComponent {
-                                        Color   = nextButtonColor,
+                                        Color = nextButtonColor,
                                         Command = hasNextPage ? "gmonetize.nextpage" : string.Empty
                                     },
                                     GetTransform(
@@ -1248,13 +1279,12 @@ namespace Oxide.Plugins
                             },
                             new CuiElement {
                                 Parent = Names.Main.Button.NEXT,
-                                Name   = Names.Main.Button.NEXT + ":text",
+                                Name = Names.Main.Button.NEXT + ":text",
                                 Components = {
                                     new CuiTextComponent {
                                         Text = "NEXT",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color    = COLOR_TEXT,
+                                        Align = TextAnchor.MiddleCenter,
+                                        Color = COLOR_TEXT,
                                         FontSize = 12
                                     },
                                     GetTransform()
@@ -1270,10 +1300,9 @@ namespace Oxide.Plugins
                         new List<CuiElement> {
                             new CuiElement {
                                 Parent = Names.Main.CONTAINER,
-                                Name =
-                                Names.ItemList.CONTAINER,
+                                Name = Names.ItemList.CONTAINER,
                                 Components = {
-                                    new CuiImageComponent { Color = "0.4 0.4 0.4 0.5" },
+                                    new CuiImageComponent {Color = "0.4 0.4 0.4 0.5"},
                                     GetTransform(
                                         0.005f,
                                         0.01f,
@@ -1304,11 +1333,11 @@ namespace Oxide.Plugins
 
                     CuiElement button = new CuiElement {
                         Parent = Names.ItemList.Card(cardId).Container,
-                        Name   = Names.ItemList.Card(cardId).RedeemButton,
+                        Name = Names.ItemList.Card(cardId).RedeemButton,
                         Components = {
                             new CuiButtonComponent {
                                 Command = isDisabled ? null : command,
-                                Color   = buttonColor
+                                Color = buttonColor
                             },
                             buttonTransform
                         }
@@ -1316,10 +1345,10 @@ namespace Oxide.Plugins
 
                     CuiElement buttonLabel = new CuiElement {
                         Parent = Names.ItemList.Card(cardId).RedeemButton,
-                        Name   = Names.ItemList.Card(cardId).RedeemButtonLabel,
+                        Name = Names.ItemList.Card(cardId).RedeemButtonLabel,
                         Components = {
                             new CuiTextComponent {
-                                Text  = text,
+                                Text = text,
                                 Color = "0.6 0.6 0.6 0.8",
                                 Align = TextAnchor.MiddleCenter
                             },
@@ -1333,27 +1362,24 @@ namespace Oxide.Plugins
                     };
                 }
 
-                public static IEnumerable<CuiElement> GetCard(
-                    int indexOnPage,
-                    Api.InventoryEntry inventoryEntry
-                )
+                public static IEnumerable<CuiElement> GetCard(int indexOnPage, Api.InventoryEntry inventoryEntry)
                 {
                     Names.ItemList.ItemListCard ncard = Names.ItemList.Card(inventoryEntry.Id);
 
                     CuiElementContainer container = new CuiElementContainer {
                         new CuiElement {
                             Parent = Names.ItemList.CONTAINER,
-                            Name   = ncard.Container,
+                            Name = ncard.Container,
                             Components = {
-                                new CuiImageComponent { Color = "0.4 0.4 0.4 0.6" },
+                                new CuiImageComponent {Color = "0.4 0.4 0.4 0.6"},
                                 GetGridTransform(indexOnPage)
                             }
                         },
                         new CuiElement {
                             Parent = ncard.Container,
-                            Name   = ncard.InnerContainer,
+                            Name = ncard.InnerContainer,
                             Components = {
-                                new CuiImageComponent { Color = "0 0 0 0" },
+                                new CuiImageComponent {Color = "0 0 0 0"},
                                 GetTransform(
                                     .03f,
                                     .2f,
@@ -1364,20 +1390,18 @@ namespace Oxide.Plugins
                         },
                         new CuiElement {
                             Parent = ncard.Container,
-                            Name   = ncard.NameLabel + ":container",
+                            Name = ncard.NameLabel + ":container",
                             Components = {
-                                new CuiImageComponent { Color = "0.7 0.7 0.7 0.25" },
+                                new CuiImageComponent {Color = "0.7 0.7 0.7 0.25"},
                                 GetTransform(yMin: 0.91f, yMax: 1f)
                             }
                         },
                         new CuiElement {
                             Parent = ncard.NameLabel + ":container",
-                            Name   = ncard.NameLabel,
+                            Name = ncard.NameLabel,
                             Components = {
                                 new CuiTextComponent {
-                                    Text = string.IsNullOrEmpty(inventoryEntry.Name)
-                                           ? "ITEM"
-                                           : inventoryEntry.Name,
+                                    Text = string.IsNullOrEmpty(inventoryEntry.Name) ? "ITEM" : inventoryEntry.Name,
                                     Align = TextAnchor.MiddleCenter,
                                     Color = "0.8 0.8 0.8 0.4"
                                 },
@@ -1386,17 +1410,13 @@ namespace Oxide.Plugins
                         }
                     };
                     CuiElement iconEl = new CuiElement {
-                        Parent     = ncard.InnerContainer,
-                        Name       = ncard.Icon,
-                        Components = { GetTransform() }
+                        Parent = ncard.InnerContainer,
+                        Name = ncard.Icon,
+                        Components = {GetTransform()}
                     };
 
-                    LogDebug(
-                        "Iconid for good {0}: {1}",
-                        inventoryEntry.Name,
-                        inventoryEntry.IconId
-                    );
-                    if ( string.IsNullOrEmpty(inventoryEntry.IconId) )
+                    LogDebug("Iconid for good {0}: {1}", inventoryEntry.Name, inventoryEntry.IconId);
+                    if (string.IsNullOrEmpty(inventoryEntry.IconId))
                     {
                         switch (inventoryEntry.Type)
                         {
@@ -1405,7 +1425,7 @@ namespace Oxide.Plugins
                                     0,
                                     new CuiImageComponent {
                                         ItemId = inventoryEntry.Item.ItemId,
-                                        Color  = "1 1 1 0.8"
+                                        Color = "1 1 1 0.8"
                                     }
                                 );
                                 break;
@@ -1415,7 +1435,7 @@ namespace Oxide.Plugins
                                     0,
                                     new CuiImageComponent {
                                         ItemId = inventoryEntry.Items[0].ItemId,
-                                        Color  = "1 1 1 0.8"
+                                        Color = "1 1 1 0.8"
                                     }
                                 );
                                 break;
@@ -1424,7 +1444,7 @@ namespace Oxide.Plugins
                                 iconEl.Components.Insert(
                                     0,
                                     new CuiRawImageComponent {
-                                        Url   = DEFAULT_ICON_URL,
+                                        Url = DEFAULT_ICON_URL,
                                         Color = "1 1 1 0.8"
                                     }
                                 );
@@ -1435,9 +1455,7 @@ namespace Oxide.Plugins
                     {
                         iconEl.Components.Insert(
                             0,
-                            new CuiRawImageComponent {
-                                Url = Instance._api.GetIconUrl(inventoryEntry.IconId)
-                            }
+                            new CuiRawImageComponent {Url = Instance._api.GetIconUrl(inventoryEntry.IconId)}
                         );
                     }
 
@@ -1446,16 +1464,12 @@ namespace Oxide.Plugins
                     return container;
                 }
 
-                public static IEnumerable<CuiElement> GetNotificationWindow(
-                    string text,
-                    string color
-                )
+                public static IEnumerable<CuiElement> GetNotificationWindow(string text, string color)
                 {
                     return new[] {
                         new CuiElement {
                             Parent = Names.Main.CONTAINER,
-                            Name =
-                            "gm_main_notification_container",
+                            Name = "gm_main_notification_container",
                             Components = {
                                 new CuiImageComponent {
                                     Color = "0.6 0.6 0.6 0.7",
@@ -1468,7 +1482,7 @@ namespace Oxide.Plugins
                         },
                         new CuiElement {
                             Parent = "gm_main_notification_container",
-                            Name   = "gm_main_notification_header",
+                            Name = "gm_main_notification_header",
                             Components = {
                                 new CuiImageComponent {
                                     Color = "0.6 0.6 0.6 0.9",
@@ -1481,12 +1495,11 @@ namespace Oxide.Plugins
                         },
                         new CuiElement {
                             Parent = "gm_main_notification_header",
-                            Name   = "gm_main_notification_header:text",
+                            Name = "gm_main_notification_header:text",
                             Components = {
                                 new CuiTextComponent {
                                     Text = "Notification",
-                                    Align =
-                                    TextAnchor.MiddleCenter
+                                    Align = TextAnchor.MiddleCenter
                                 },
                                 new CuiRectTransformComponent {
                                     AnchorMin = "0 0",
@@ -1496,10 +1509,10 @@ namespace Oxide.Plugins
                         },
                         new CuiElement {
                             Parent = "gm_main_notification_container",
-                            Name   = "gm_main_notification_container:text",
+                            Name = "gm_main_notification_container:text",
                             Components = {
                                 new CuiTextComponent {
-                                    Text  = text,
+                                    Text = text,
                                     Color = color
                                 },
                                 new CuiRectTransformComponent {
@@ -1527,19 +1540,19 @@ namespace Oxide.Plugins
                 private static CuiRectTransformComponent GetGridTransform(int itemIndex)
                 {
                     const float totalColumnGap = COLUMN_GAP * (COLUMN_COUNT - 1);
-                    const float totalRowGap    = ROW_GAP * (ROW_COUNT - 1);
+                    const float totalRowGap = ROW_GAP * (ROW_COUNT - 1);
 
-                    const float cardWidth  = (0.999f - totalColumnGap) / COLUMN_COUNT;
+                    const float cardWidth = (0.999f - totalColumnGap) / COLUMN_COUNT;
                     const float cardHeight = (0.998f - totalRowGap) / ROW_COUNT;
 
-                    int rowIndex    = itemIndex / COLUMN_COUNT;
+                    int rowIndex = itemIndex / COLUMN_COUNT;
                     int columnIndex = itemIndex % COLUMN_COUNT;
 
                     float columnGapSum = COLUMN_GAP * columnIndex;
                     float cardWidthSum = cardWidth * columnIndex;
-                    float xPosition    = columnGapSum + cardWidthSum;
+                    float xPosition = columnGapSum + cardWidthSum;
 
-                    float rowGapSum     = ROW_GAP * rowIndex;
+                    float rowGapSum = ROW_GAP * rowIndex;
                     float cardHeightSum = cardHeight * (rowIndex + 1);
 
                     float yPosition = 0.998f - (rowGapSum + cardHeightSum);
@@ -1554,57 +1567,156 @@ namespace Oxide.Plugins
 
                 public static class Names
                 {
-                    public static class Main
+                    public static class MainContainer
                     {
-                        public const string CONTAINER = "gmonetize.main.container";
+                        public const string SELF = "gmonetize.mainContainer";
 
-                        public static class Label
+                        public static class HeaderContainer
                         {
-                            public const string CLOSE_TEXT = "gmonetize.main.label.close";
+                            public const string SELF = MainContainer.SELF + ".headerContainer";
 
-                            public const string NOTIFICATION_TEXT =
-                            "gmonetize.main.label.notification";
-                        }
-
-                        public static class Button
-                        {
-                            public const string CLOSE = "gmonetize.main.button.close";
-                            public const string NEXT  = "gmonetize.main.button.nextpage";
-                            public const string PREV  = "gmonetize.main.button.prevpage";
-                        }
-                    }
-
-                    public static class ItemList
-                    {
-                        public const string CONTAINER = "gmonetize.itemlist.container";
-
-                        public static ItemListCard Card(string id)
-                        {
-                            return new ItemListCard(id);
-                        }
-
-                        public struct ItemListCard
-                        {
-                            private readonly string _id;
-
-                            public string Container => Base + "container";
-                            public string InnerContainer => Base + "inner-container";
-                            public string Icon => InnerContainer + "icon";
-                            public string AmountLabel => InnerContainer + "amount-label";
-                            public string ConditionBar => InnerContainer + "condition-bar";
-                            public string RedeemButton => Container + "redeem-button";
-                            public string RedeemButtonLabel => Container + "redeem-button-label";
-                            public string RedeemStatusText => InnerContainer + "redeem-status-text";
-
-                            private string Base => $"gmonetize.itemlist.card.{_id}.";
-                            public string NameLabel => Base + "label.name";
-
-                            public ItemListCard(string id)
+                            public static class CloseButton
                             {
-                                _id = id;
+                                public const string SELF = HeaderContainer.SELF + ".closeButton";
+                                public const string TEXT = SELF + ":text";
+                            }
+
+                            public static class PaginationButtonsContainer
+                            {
+                                public const string SELF = HeaderContainer.SELF + ".paginationButtonsContainer";
+
+                                public static class Prev
+                                {
+                                    public const string SELF = PaginationButtonsContainer.SELF + ".prev";
+                                    public const string TEXT = SELF + ":text";
+                                }
+
+                                public static class Next
+                                {
+                                    public const string SELF = PaginationButtonsContainer.SELF + ".next";
+                                    public const string TEXT = SELF + ":text";
+                                }
+                            }
+                        }
+
+                        public static class ItemListContainer
+                        {
+                            public const string SELF = MainContainer.SELF + ".itemListContainer";
+
+                            /*
+                             * Note on this implementation:
+                             * I considered caching of ItemCards in an ID=>ItemCard map,
+                             * but this would require use of some (probably sophisticated) cleaning algorithm,
+                             * since card id's are all UUIDS, which are practically unique,
+                             * which would overcomplexify the code. So structs it is.
+                             */
+
+                            public static ItemCard Card(string id) => new ItemCard(id);
+
+                            public struct ItemCard
+                            {
+                                public string Self { get; }
+                                public ItemCardHeaderContainer Header { get; }
+                                public ItemCardCenterContainer Center { get; }
+                                public ItemCardFooterContainer Footer { get; }
+
+                                public ItemCard(string id)
+                                {
+                                    // ReSharper disable once ArrangeStaticMemberQualifier // for clarity
+                                    Self = ItemListContainer.SELF + $".itemCard[{id}]";
+                                    Header = default(ItemCardHeaderContainer);
+                                    Center = default(ItemCardCenterContainer);
+                                    Footer = default(ItemCardFooterContainer);
+
+                                    Header = new ItemCardHeaderContainer(this);
+                                    Center = new ItemCardCenterContainer(this);
+                                    Footer = new ItemCardFooterContainer(this);
+                                }
+
+                                public struct ItemCardHeaderContainer
+                                {
+                                    public string Self { get; }
+
+                                    public string ItemType { get; }
+                                    public string ItemName { get; }
+
+                                    public ItemCardHeaderContainer(ItemCard card)
+                                    {
+                                        Self = card.Self + ".headerContainer";
+                                        ItemType = Self + ".itemType";
+                                        ItemName = Self + ".itemName";
+                                    }
+                                }
+
+                                public struct ItemCardCenterContainer
+                                {
+                                    public string Self { get; }
+                                    public string Image { get; }
+                                    public string ConditionBar { get; }
+                                    public string Amount { get; }
+
+                                    public ItemCardCenterContainer(ItemCard card)
+                                    {
+                                        Self = card.Self + ".centerContainer";
+                                        Image = Self + ".image";
+                                        ConditionBar = Self + ".conditionBar";
+                                        Amount = Self + ".amount";
+                                    }
+                                }
+
+                                public struct ItemCardFooterContainer
+                                {
+                                    public string Self { get; }
+                                    public ItemCardButton Button { get; }
+
+                                    public ItemCardFooterContainer(ItemCard card)
+                                    {
+                                        Self = card.Self + ".bottomContainer";
+                                        Button = default(ItemCardButton);
+                                        Button = new ItemCardButton(this);
+                                    }
+
+                                    public struct ItemCardButton
+                                    {
+                                        public string Self { get; }
+                                        public string Text { get; }
+
+                                        public ItemCardButton(ItemCardFooterContainer footerContainer)
+                                        {
+                                            Self = footerContainer.Self + ".button";
+                                            Text = Self + ":text";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        public static class NotificationContainer
+                        {
+                            public const string SELF = MainContainer.SELF + ".notificationContainer";
+
+                            public static class HeaderContainer
+                            {
+                                public const string SELF  = NotificationContainer.SELF + ".headerContainer";
+                                public const string TITLE = SELF + ".title";
+                            }
+
+                            public static class MessageContainer
+                            {
+                                public const string SELF = NotificationContainer.SELF + ".messageContainer";
+
+                                public const string MESSAGE = SELF + ".message";
+
+                                public static class Button
+                                {
+                                    public const string SELF = MessageContainer.SELF + ".button";
+                                    public const string TEXT = SELF + ":text";
+                                }
                             }
                         }
                     }
+
+
                 }
 
                 private static class Materials
@@ -1624,7 +1736,289 @@ namespace Oxide.Plugins
                         return $"{red} {green} {blue} {alpha}";
                     }
                 }
+
+                public static class ComponentBuilder
+                {
+                    /// <summary>
+                    /// Builds main container along with it's header and close button
+                    /// </summary>
+                    /// <returns></returns>
+                    public static IEnumerable<CuiElement> MainContainer()
+                    {
+                        return new[] {
+                            new CuiElement {
+                                Parent = "Hud",
+                                Name = Names.MainContainer.SELF,
+                                Components = {
+
+                                }
+                            },
+                            new CuiElement {
+                                Parent = Names.MainContainer.SELF,
+                                Name = Names.MainContainer.HeaderContainer.SELF,
+                                Components = {
+                                    new CuiImageComponent(),
+                                    GetTransform(yMin: 0.9f)
+                                }
+                            },
+                            new CuiElement {
+                                Parent = Names.MainContainer.HeaderContainer.SELF,
+                                Name = Names.MainContainer.HeaderContainer.CloseButton.SELF,
+                                Components = {
+                                    new CuiButtonComponent {},
+                                    GetTransform()
+                                }
+                            },
+                            new CuiElement {
+                                Parent = Names.MainContainer.HeaderContainer.CloseButton.SELF,
+                                Name = Names.MainContainer.HeaderContainer.CloseButton.TEXT,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Text = "CLOSE"
+                                    },
+                                    GetTransform()
+                                }
+                            }
+                        }
+                    }
+
+                    public static CuiElement PaginationButtons(bool hasPrev, bool hasNext)
+                    {
+
+                    }
+                }
             }
+        }
+
+        private static class gAPI
+        {
+            private const string MAIN_API_PATH   = "/main/v3/plugin";
+            private const string STATIC_API_PATH = "/static/v2";
+
+            private static readonly JsonSerializerSettings s_SerializerSettings = new JsonSerializerSettings {
+                ContractResolver = new CamelCasePropertyNamesContractResolver()
+            };
+
+            private static gMonetize                  s_PluginInstance;
+            private static Dictionary<string, string> s_RequestHeaders;
+
+            public static bool IsReady => s_PluginInstance &&
+                                          !string.IsNullOrEmpty(s_PluginInstance._configuration.ApiKey) &&
+                                          s_PluginInstance._configuration.ApiKey !=
+                                          PluginConfiguration.GetDefault().ApiKey &&
+                                          !string.IsNullOrEmpty(ApiBaseUrl) &&
+                                          s_RequestHeaders != null;
+
+            private static string ApiBaseUrl => Instance._configuration.ApiBaseUrl;
+            private static WebRequests WebRequests => s_PluginInstance.webrequest;
+            private static Dictionary<string, string> RequestHeaders => s_RequestHeaders;
+
+            public static event Action<HeartbeatApiResult> OnHeartbeat;
+            public static event Action<RedeemItemApiResult> OnRedeemItem;
+            public static event Action<InventoryApiResult> OnReceiveInventory;
+
+            public static void Init(gMonetize pluginInstance)
+            {
+                s_PluginInstance = pluginInstance;
+                s_RequestHeaders = new Dictionary<string, string> {
+                    {"Content-Type", "application/json"},
+                    {"Authorization", "ApiKey " + s_PluginInstance._configuration.ApiKey}
+                };
+            }
+
+            public static void SendHeartbeat(ServerHeartbeatRequest request)
+            {
+                string payloadJson = JsonConvert.SerializeObject(request);
+
+                string url = GetHeartbeatUrl();
+
+                WebRequests.Enqueue(
+                    url,
+                    payloadJson,
+                    (code, body) =>
+                    {
+                        HeartbeatApiResult result = new HeartbeatApiResult(code, request);
+
+                        if (OnHeartbeat != null)
+                        {
+                            OnHeartbeat(result);
+                        }
+                    },
+                    Instance,
+                    RequestMethod.POST
+                );
+            }
+
+            public static void GetInventory(
+                string userId,
+                ref IList inventory,
+                Action handleSuccess = null,
+                Action<int> handleFail = null
+            ) { }
+
+            public static void RedeemItem(
+                string userId,
+                string inventoryEntryId,
+                Action handleSuccess,
+                Action<int> handleFail
+            ) { }
+
+            private static string GetInventoryUrl(string userId)
+            {
+                return string.Concat(ApiBaseUrl, MAIN_API_PATH, $"/customer/STEAM/{userId}/inventory");
+            }
+
+            private static string GetRedeemUrl(string userId, string inventoryEntryId)
+            {
+                return string.Concat(
+                    ApiBaseUrl,
+                    MAIN_API_PATH,
+                    $"/customer/STEAM/{userId}/inventory/{inventoryEntryId}/redeem"
+                );
+            }
+
+            private static string GetHeartbeatUrl()
+            {
+                const string hbPath = "/server/ping";
+                return string.Concat(ApiBaseUrl, MAIN_API_PATH, hbPath);
+            }
+
+            private static string GetIconUrl(string iconId)
+            {
+                const string imagePath = "/image/";
+                return string.Concat(
+                    ApiBaseUrl,
+                    STATIC_API_PATH,
+                    imagePath,
+                    iconId
+                );
+            }
+
+            private static bool IsSuccessStatusCode(int statusCode) => statusCode >= 200 && statusCode < 300;
+        }
+
+        public abstract class ApiResult
+        {
+            public int StatusCode { get; }
+            public bool IsSuccess => StatusCode >= 200 && StatusCode < 300;
+
+            public ApiResult(int statusCode)
+            {
+                StatusCode = statusCode;
+            }
+        }
+
+        private class HeartbeatApiResult : ApiResult
+        {
+            public ServerHeartbeatRequest Request { get; }
+
+            public HeartbeatApiResult(int statusCode, ServerHeartbeatRequest request) : base(statusCode)
+            {
+                Request = request;
+            }
+        }
+
+        private class RedeemItemApiResult : ApiResult
+        {
+            public string UserId { get; }
+            public string InventoryEntryId { get; }
+
+            public RedeemItemApiResult(int statusCode, string userId, string inventoryEntryId) : base(statusCode)
+            {
+                UserId = userId;
+                InventoryEntryId = inventoryEntryId;
+            }
+        }
+
+        private class InventoryApiResult : ApiResult
+        {
+            public string UserId { get; }
+            public List<object> Inventory { get; }
+
+            public InventoryApiResult(int statusCode, string userId, List<object> inventory) : base(statusCode)
+            {
+                UserId = userId;
+                Inventory = inventory;
+            }
+        }
+
+        private class ServerHeartbeatRequest
+        {
+            [JsonProperty("motd")]
+            public string Description { get; }
+
+            [JsonProperty("map")]
+            public ServerMapRequest Map { get; }
+
+            [JsonProperty("players")]
+            public ServerPlayersRequest Players { get; }
+
+            public ServerHeartbeatRequest(string description, ServerMapRequest map, ServerPlayersRequest players)
+            {
+                Description = description;
+                Map = map;
+                Players = players;
+            }
+
+            public class ServerMapRequest
+            {
+                [JsonProperty("name")]
+                public string Name { get; }
+
+                [JsonProperty("width")]
+                public uint Width { get; }
+
+                [JsonProperty("height")]
+                public uint Height { get; }
+
+                [JsonProperty("seed")]
+                public uint Seed { get; }
+
+                [JsonProperty("lastWipe")]
+                public string LastWipe { get; }
+
+                public ServerMapRequest(
+                    string name,
+                    uint size,
+                    uint seed,
+                    DateTime lastWipeDate
+                )
+                {
+                    Name = name;
+                    Width = Height = size;
+                    Seed = seed;
+                    LastWipe = lastWipeDate.ToString("O").TrimEnd('Z');
+                }
+            }
+
+            public class ServerPlayersRequest
+            {
+                [JsonProperty("online")]
+                public int Online { get; }
+
+                [JsonProperty("max")]
+                public int Max { get; }
+
+                public ServerPlayersRequest(int online, int max)
+                {
+                    Online = online;
+                    Max = max;
+                }
+            }
+        }
+
+        private class InventoryEntryResponse
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        private enum InventoryEntryType
+        {
+            ITEM,
+            KIT,
+            RANK,
+            RESEARCH
         }
     }
 }
