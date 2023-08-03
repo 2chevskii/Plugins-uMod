@@ -7,8 +7,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Contracts;
 using System.Linq;
-using System.Reflection;
-using ConVar;
+using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using Oxide.Core;
@@ -16,7 +15,8 @@ using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
 using UnityEngine;
-using UnityEngineInternal;
+using Pool = Facepunch.Pool;
+using Server = ConVar.Server;
 
 // ReSharper disable StringLiteralTypo
 
@@ -678,6 +678,7 @@ namespace Oxide.Plugins
         private class Ui : MonoBehaviour
         {
             private BasePlayer               _player;
+            private SendInfo                 _playerSendInfo;
             private State                    _state;
             private List<Api.InventoryEntry> _inventory;
             private int                      _currentPageIndex;
@@ -696,6 +697,10 @@ namespace Oxide.Plugins
             {
                 _inventory = new List<Api.InventoryEntry>();
                 _player    = GetComponent<BasePlayer>();
+
+                // Save CPU cycles in exchange for memory? Hell yeah
+                // No one will notice the difference anyway, lol
+                _playerSendInfo = new SendInfo(_player.Connection);
             }
 
             private void OnDestroy() => gMonetize_Close();
@@ -1125,12 +1130,190 @@ namespace Oxide.Plugins
                 ItemsLoadError,
             }
 
-            private struct DisplayedInventoryEntry
+            private static void DiffNotificationWindowState(
+                ref NotificationWindowState oldState,
+                ref NotificationWindowState newState,
+                out List<CuiElement> elementsToAdd,
+                out List<string> elementsToRemove
+            )
             {
-                public int AbsoluteIndex { get; set; }
-                public int IndexOnPage { get; set; }
-                public Api.InventoryEntry Entry { get; set; }
-                public bool IsIconLoaded { get; set; }
+                elementsToAdd    = Pool.GetList<CuiElement>();
+                elementsToRemove = Pool.GetList<string>();
+
+                if ( !newState.IsOpen )
+                {
+                    if ( oldState.IsOpen )
+                    {
+                        elementsToRemove.Add(
+                            Builder.Names.MainContainer.NotificationContainer.SELF
+                        );
+                    }
+
+                    return;
+                }
+
+                if ( !oldState.IsOpen )
+                {
+                    elementsToAdd.AddRange(Builder.GetNotificationWindow(newState.Text, newState.Color));
+                    return;
+                }
+
+                if ( oldState.Text != newState.Text )
+                {
+                    elementsToRemove.Add(
+                        Builder.Names.MainContainer.NotificationContainer.MessageContainer.MESSAGE
+                    );
+                }
+            }
+
+            private void SendRedeemButtonDelete(int cardIndex)
+            {
+                SendDestroyUI(
+                    Builder.Names.MainContainer.ItemListContainer.Card(cardIndex).Footer.Button.Self
+                );
+            }
+
+            private const string RPC_DESTROYUI = "DestroyUI";
+            private const string RPC_ADDUI     = "AddUI";
+
+            private void SendAddUI(string uiJson)
+            {
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_ADDUI,
+                    uiJson
+                );
+            }
+
+            private void SendDestroyUI(string elementName)
+            {
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    elementName
+                );
+            }
+
+            private void SendDestroyUI(string en0, string en1)
+            {
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    en0
+                );
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    en1
+                );
+            }
+
+            private void SendDestroyUI(string en0, string en1, string en2)
+            {
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    en0
+                );
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    en1
+                );
+                _player.ClientRPCEx(
+                    _playerSendInfo,
+                    null,
+                    RPC_DESTROYUI,
+                    en2
+                );
+            }
+
+            private void SendDestroyUI(List<string> elementNames)
+            {
+                // ReSharper disable once ForCanBeConvertedToForeach
+                for ( var i = 0; i < elementNames.Count; i++ )
+                {
+                    SendDestroyUI(elementNames[i]);
+                }
+            }
+
+            private enum NotificationType
+            {
+                ItemListNoItems,
+                ItemListLoading,
+                ItemListLoadError,
+                ItemReceiveError
+            }
+
+            private struct NotificationWindowState
+            {
+                public bool              IsOpen;
+                public NotificationType  Type;
+                public string            Text;
+                public Builder.RustColor Color;
+
+                public bool              HasButton;
+                public string            ButtonText;
+                public Builder.RustColor ButtonColor;
+            }
+
+            private struct MainWindowState
+            {
+                public bool IsOpen;
+                public bool IsPrevBtnAvailable;
+                public bool IsNextBtnAvailable;
+            }
+
+            private struct ItemListState
+            {
+                public bool IsVisible;
+            }
+
+            private struct ItemListEntryState
+            {
+                public int    Index;
+                public string Name;
+
+                public InventoryEntryType EntryType;
+
+                // IconId and ItemId are interchangeable
+                // in the way that if IconId is used if present,
+                // ItemId is used if IconId is absent and the good only represents one item,
+                // and default icon is used otherwise
+                public string IconId;
+                public int?   ItemId;
+                public float  ConditionBarPercentage;
+                public int    ItemAmount;
+
+                public RedeemButtonState RedeemButtonState;
+            }
+
+            private struct RedeemButtonState
+            {
+                public bool                  IsVisible;
+                public RedeemButtonStateType Type;
+                public Builder.RustColor     Color;
+
+                public string Text;
+
+                // EntryID corresponds to the argument of the receive item command,
+                // so it needs to be updated every time the item ItemListEntryState
+                // represents changes
+                public string EntryId;
+            }
+
+            private enum RedeemButtonStateType
+            {
+                Unavailable,
+                Available,
+                InProgress,
+                Error
             }
 
             private static class Builder
@@ -1648,7 +1831,7 @@ namespace Oxide.Plugins
                              * which would overcomplexify the code. So structs it is.
                              */
 
-                            public static ItemCard Card(string id) => new ItemCard(id);
+                            public static ItemCard Card(int index) => new ItemCard(index);
 
                             public struct ItemCard
                             {
@@ -1657,10 +1840,11 @@ namespace Oxide.Plugins
                                 public ItemCardCenterContainer Center { get; }
                                 public ItemCardFooterContainer Footer { get; }
 
-                                public ItemCard(string id)
+                                public ItemCard(int index)
                                 {
                                     // ReSharper disable once ArrangeStaticMemberQualifier // for clarity
-                                    Self   = ItemListContainer.SELF + $".itemCard[{id}]";
+                                    Self = ItemListContainer.SELF + $".itemCard[{index}]";
+
                                     Header = default(ItemCardHeaderContainer);
                                     Center = default(ItemCardCenterContainer);
                                     Footer = default(ItemCardFooterContainer);
@@ -2062,10 +2246,14 @@ namespace Oxide.Plugins
                         };
                     }
 
-                    public static IEnumerable<CuiElement> Notification(string text)
+                    public static IEnumerable<CuiElement> Notification(
+                        ref NotificationWindowState windowState
+                    )
                     {
-                        return new[] {
-                            /*notification container*/
+                        List<CuiElement> componentList = Pool.GetList<CuiElement>();
+
+                        /*notification container*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent = Names.MainContainer.SELF,
                                 Name   = Names.MainContainer.NotificationContainer.SELF,
@@ -2080,8 +2268,11 @@ namespace Oxide.Plugins
                                         yMax: 0.7f
                                     )
                                 }
-                            },
-                            /*notification header container*/
+                            }
+                        );
+
+                        /*notification header container*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent = Names.MainContainer.NotificationContainer.SELF,
                                 Name = Names.MainContainer.NotificationContainer.HeaderContainer
@@ -2090,8 +2281,11 @@ namespace Oxide.Plugins
                                     new CuiImageComponent { Color = RustColor.Transp },
                                     GetTransform(yMin: 0.9f)
                                 }
-                            },
-                            /*notification title*/
+                            }
+                        );
+
+                        /*notification title*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent = Names.MainContainer.NotificationContainer.HeaderContainer
                                               .SELF,
@@ -2101,8 +2295,11 @@ namespace Oxide.Plugins
                                     new CuiTextComponent { Text = "NOTIFICATION" },
                                     GetTransform()
                                 }
-                            },
-                            /*notification message container*/
+                            }
+                        );
+
+                        /*notification message container*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent = Names.MainContainer.NotificationContainer.SELF,
                                 Name = Names.MainContainer.NotificationContainer.MessageContainer
@@ -2113,8 +2310,11 @@ namespace Oxide.Plugins
                                     },
                                     GetTransform(yMax: 0.9f)
                                 }
-                            },
-                            /*notification message text*/
+                            }
+                        );
+
+                        /*notification message text*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent =
                                 Names.MainContainer.NotificationContainer.MessageContainer.SELF,
@@ -2123,12 +2323,26 @@ namespace Oxide.Plugins
                                 Components = {
                                     new CuiTextComponent {
                                         Color = RustColor.ComponentColors.TextWhite,
-                                        Text  = text
+                                        Text  = windowState.Text
                                     },
                                     GetTransform(yMin: 0.3f)
                                 }
-                            },
-                            /*notification message dismiss btn*/
+                            }
+                        );
+
+                        if ( windowState.HasButton )
+                            AddNotificationButton(ref windowState, componentList);
+
+                        return componentList;
+                    }
+
+                    private static void AddNotificationButton(
+                        ref NotificationWindowState windowState,
+                        List<CuiElement> componentList
+                    )
+                    {
+                        /*notification message dismiss btn*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent =
                                 Names.MainContainer.NotificationContainer.MessageContainer.SELF,
@@ -2142,8 +2356,11 @@ namespace Oxide.Plugins
                                     },
                                     GetTransform(yMax: 0.3f)
                                 }
-                            },
-                            /*notification message dismiss btn text*/
+                            }
+                        );
+
+                        /*notification message dismiss btn text*/
+                        componentList.Add(
                             new CuiElement {
                                 Parent =
                                 Names.MainContainer.NotificationContainer.MessageContainer.Button
@@ -2159,7 +2376,7 @@ namespace Oxide.Plugins
                                     GetTransform()
                                 }
                             }
-                        };
+                        );
                     }
 
                     public static List<CuiElement> ItemCard(
@@ -2778,7 +2995,11 @@ namespace Oxide.Plugins
 
         private enum GoodObjectType
         {
-            ITEM, RANK, COMMAND, RESEARCH, PERMISSION
+            ITEM,
+            RANK,
+            COMMAND,
+            RESEARCH,
+            PERMISSION
         }
     }
 }
