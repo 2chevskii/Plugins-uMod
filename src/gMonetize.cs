@@ -1596,19 +1596,6 @@ namespace Oxide.Plugins
                     };
                 }
 
-                private static CuiRectTransformComponent GetTransform(
-                    float xMin = 0f,
-                    float yMin = 0f,
-                    float xMax = 1f,
-                    float yMax = 1f
-                )
-                {
-                    return new CuiRectTransformComponent {
-                        AnchorMin = $"{xMin} {yMin}",
-                        AnchorMax = $"{xMax} {yMax}"
-                    };
-                }
-
                 private static CuiRectTransformComponent GetGridTransform(int itemIndex)
                 {
                     const float totalColumnGap = COLUMN_GAP * (COLUMN_COUNT - 1);
@@ -1807,14 +1794,20 @@ namespace Oxide.Plugins
 
                 public struct RustColor
                 {
-                    public static readonly RustColor Transp   = new RustColor(0, 0f);
-                    public static readonly RustColor Bg01   = new RustColor(0.6f);
-                    public static readonly RustColor Bg02 = new RustColor(0.4f);
-                    public static readonly RustColor Fg01   = new RustColor(0.8f);
-                    public static readonly RustColor Success  = new RustColor(0.2f, 0.8f, 0.3f);
-                    public static readonly RustColor Warn     = new RustColor(0.7f, 0.6f, 0.2f);
-                    public static readonly RustColor Error    = new RustColor(0.8f, 0.3f, 0.2f);
+                    /*x00 -> x99 goes from darkest to lightest*/
 
+                    public static readonly RustColor Transp  = new RustColor(0, 0f);
+                    public static readonly RustColor Bg00    = new RustColor(0.3f);
+                    public static readonly RustColor Bg01    = new RustColor(0.4f);
+                    public static readonly RustColor Bg02    = new RustColor(0.5f);
+                    public static readonly RustColor Bg03    = new RustColor(0.6f);
+                    public static readonly RustColor Fg00    = new RustColor(0.7f);
+                    public static readonly RustColor Fg01    = new RustColor(0.8f);
+                    public static readonly RustColor Fg02    = new RustColor(0.85f);
+                    public static readonly RustColor Fg03    = new RustColor(0.9f);
+                    public static readonly RustColor Success = new RustColor(0.2f, 0.8f, 0.3f);
+                    public static readonly RustColor Warn    = new RustColor(0.7f, 0.6f, 0.2f);
+                    public static readonly RustColor Error   = new RustColor(0.8f, 0.3f, 0.2f);
 
                     public readonly float Red,
                                           Green,
@@ -1929,18 +1922,55 @@ namespace Oxide.Plugins
 
                     public static class ComponentColors
                     {
-
                         public static readonly RustColor PanelBase = Bg01.WithAlpha(0.4f);
                         public static readonly RustColor PanelDark = Bg02.WithAlpha(0.4f);
 
                         public static readonly RustColor ButtonError = Error.WithAlpha(0.3f);
 
                         public static readonly RustColor TextWhite = Fg01.WithAlpha(0.8f);
+
+                        public static readonly RustColor ButtonDefault  = Bg02;
+                        public static readonly RustColor ButtonDisabled = Bg00;
                     }
                 }
 
                 public static class ComponentBuilder
                 {
+                    private static readonly
+                    Dictionary<ValueTuple<float, float, float, float>, CuiRectTransformComponent>
+                    s_RectTransformCache =
+                    new Dictionary<ValueTuple<float, float, float, float>,
+                        CuiRectTransformComponent>();
+
+                    private static CuiRectTransformComponent GetTransform(
+                        float xMin = 0f,
+                        float xMax = 1f,
+                        float yMin = 0f,
+                        float yMax = 1f
+                    )
+                    {
+                        ValueTuple<float, float, float, float> key = ValueTuple.Create(
+                            xMin,
+                            yMin,
+                            xMax,
+                            yMax
+                        );
+
+                        CuiRectTransformComponent transform;
+
+                        if ( !s_RectTransformCache.TryGetValue(key, out transform) )
+                        {
+                            transform = new CuiRectTransformComponent {
+                                AnchorMin = $"{xMin} {yMin}",
+                                AnchorMax = $"{xMax} {yMax}"
+                            };
+
+                            s_RectTransformCache[key] = transform;
+                        }
+
+                        return transform;
+                    }
+
                     /// <summary>
                     /// Builds main container along with it's header and close button
                     /// </summary>
@@ -1948,6 +1978,7 @@ namespace Oxide.Plugins
                     public static IEnumerable<CuiElement> MainContainer()
                     {
                         return new[] {
+                            /*main container*/
                             new CuiElement {
                                 Parent = "Hud",
                                 Name   = Names.MainContainer.SELF,
@@ -1959,6 +1990,7 @@ namespace Oxide.Plugins
                                     GetTransform()
                                 }
                             },
+                            /*header container*/
                             new CuiElement {
                                 Parent = Names.MainContainer.SELF,
                                 Name   = Names.MainContainer.HeaderContainer.SELF,
@@ -1967,6 +1999,7 @@ namespace Oxide.Plugins
                                     GetTransform(yMin: 0.9f)
                                 }
                             },
+                            /*close button*/
                             new CuiElement {
                                 Parent = Names.MainContainer.HeaderContainer.SELF,
                                 Name   = Names.MainContainer.HeaderContainer.CloseButton.SELF,
@@ -1978,13 +2011,104 @@ namespace Oxide.Plugins
                                     GetTransform()
                                 }
                             },
+                            /*close button text*/
                             new CuiElement {
                                 Parent = Names.MainContainer.HeaderContainer.CloseButton.SELF,
                                 Name   = Names.MainContainer.HeaderContainer.CloseButton.TEXT,
                                 Components = {
                                     new CuiTextComponent {
                                         Text  = "CLOSE",
-                                        Color = RustColor.ComponentColors.TextWhite;
+                                        Color = RustColor.ComponentColors.TextWhite
+                                    },
+                                    GetTransform()
+                                }
+                            },
+                            /*pagination buttons container*/
+                            new CuiElement {
+                                Parent = Names.MainContainer.HeaderContainer.SELF,
+                                Name = Names.MainContainer.HeaderContainer
+                                            .PaginationButtonsContainer
+                                            .SELF,
+                                Components = { }
+                            }
+                        };
+                    }
+
+                    public static IEnumerable<CuiElement> PaginationButtons(
+                        bool hasPrev,
+                        bool hasNext
+                    )
+                    {
+                        RustColor prevBtnColor =
+                                  hasPrev
+                                  ? RustColor.ComponentColors.ButtonDefault
+                                  : RustColor.ComponentColors.ButtonDisabled,
+                                  nextBtnColor =
+                                  hasNext
+                                  ? RustColor.ComponentColors.ButtonDefault
+                                  : RustColor.ComponentColors.ButtonDisabled;
+
+                        return new[] {
+                            /*prev pagination btn*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
+                                Name = Names.MainContainer.HeaderContainer
+                                            .PaginationButtonsContainer.Prev.SELF,
+                                Components = {
+                                    new CuiButtonComponent {
+                                        Color   = prevBtnColor,
+                                        Command = CMD_PREVP
+                                    },
+                                    GetTransform(xMax: 0.48f)
+                                }
+                            },
+                            /*prev pagination btn text*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev
+                                     .SELF,
+                                Name =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev
+                                     .TEXT,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color    = RustColor.ComponentColors.TextWhite,
+                                        Text     = "PREVIOUS",
+                                        Align    = TextAnchor.MiddleCenter,
+                                        FontSize = 16
+                                    },
+                                    GetTransform()
+                                }
+                            },
+                            /*next pagination btn*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
+                                Name = Names.MainContainer.HeaderContainer
+                                            .PaginationButtonsContainer.Next.SELF,
+                                Components = {
+                                    new CuiButtonComponent {
+                                        Color   = nextBtnColor,
+                                        Command = CMD_NEXTP
+                                    },
+                                    GetTransform(xMin: 0.52f)
+                                }
+                            },
+                            /*next pagination btn text*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next
+                                     .SELF,
+                                Name =
+                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next
+                                     .TEXT,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color    = RustColor.ComponentColors.TextWhite,
+                                        Text     = "NEXT",
+                                        Align    = TextAnchor.MiddleCenter,
+                                        FontSize = 18
                                     },
                                     GetTransform()
                                 }
@@ -1992,7 +2116,105 @@ namespace Oxide.Plugins
                         };
                     }
 
-                    public static CuiElement PaginationButtons(bool hasPrev, bool hasNext) { }
+                    public static IEnumerable<CuiElement> Notification(string text)
+                    {
+                        return new[] {
+                            /*notification container*/
+                            new CuiElement {
+                                Parent = Names.MainContainer.SELF,
+                                Name   = Names.MainContainer.NotificationContainer.SELF,
+                                Components = {
+                                    new CuiImageComponent {
+                                        Color = RustColor.ComponentColors.PanelBase,
+                                    },
+                                    GetTransform(
+                                        xMin: 0.2f,
+                                        xMax: 0.8f,
+                                        yMin: 0.3f,
+                                        yMax: 0.7f
+                                    )
+                                }
+                            },
+                            /*notification header container*/
+                            new CuiElement {
+                                Parent = Names.MainContainer.NotificationContainer.SELF,
+                                Name = Names.MainContainer.NotificationContainer.HeaderContainer
+                                            .SELF,
+                                Components = {
+                                    new CuiImageComponent { Color = RustColor.Transp },
+                                    GetTransform(yMin: 0.9f)
+                                }
+                            },
+                            /*notification title*/
+                            new CuiElement {
+                                Parent = Names.MainContainer.NotificationContainer.HeaderContainer
+                                              .SELF,
+                                Name = Names.MainContainer.NotificationContainer.HeaderContainer
+                                            .TITLE,
+                                Components = {
+                                    new CuiTextComponent { Text = "NOTIFICATION" },
+                                    GetTransform()
+                                }
+                            },
+                            /*notification message container*/
+                            new CuiElement {
+                                Parent = Names.MainContainer.NotificationContainer.SELF,
+                                Name = Names.MainContainer.NotificationContainer.MessageContainer
+                                            .SELF,
+                                Components = {
+                                    new CuiImageComponent {
+                                        Color = RustColor.ComponentColors.PanelDark
+                                    },
+                                    GetTransform(yMax: 0.9f)
+                                }
+                            },
+                            /*notification message text*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.NotificationContainer.MessageContainer.SELF,
+                                Name =
+                                Names.MainContainer.NotificationContainer.MessageContainer.MESSAGE,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color = RustColor.ComponentColors.TextWhite,
+                                        Text  = text
+                                    },
+                                    GetTransform(yMin: 0.3f)
+                                }
+                            },
+                            /*notification message dismiss btn*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.NotificationContainer.MessageContainer.SELF,
+                                Name =
+                                Names.MainContainer.NotificationContainer.MessageContainer.Button
+                                     .SELF,
+                                Components = {
+                                    new CuiButtonComponent {
+                                        Color   = RustColor.ComponentColors.ButtonError,
+                                        Command = "gmonetize.dismiss_notification"
+                                    },
+                                    GetTransform(yMax: 0.3f)
+                                }
+                            },
+                            /*notification message dismiss btn text*/
+                            new CuiElement {
+                                Parent =
+                                Names.MainContainer.NotificationContainer.MessageContainer.Button
+                                     .SELF,
+                                Name =
+                                Names.MainContainer.NotificationContainer.MessageContainer.Button
+                                     .TEXT,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Color = RustColor.ComponentColors.TextWhite,
+                                        Text  = "DISMISS"
+                                    },
+                                    GetTransform()
+                                }
+                            }
+                        };
+                    }
                 }
             }
         }
