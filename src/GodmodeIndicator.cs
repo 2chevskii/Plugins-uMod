@@ -17,7 +17,7 @@ using static Oxide.Game.Rust.Cui.CuiHelper;
 
 namespace Oxide.Plugins
 {
-    [Info("Godmode Indicator", "2CHEVSKII", "2.1.2")]
+    [Info("Godmode Indicator", "2CHEVSKII", "2.1.3")]
     [Description("Displays an indicator on screen if a player is in godmode")]
     class GodmodeIndicator : CovalencePlugin
     {
@@ -148,7 +148,9 @@ namespace Oxide.Plugins
         {
             Debug.Assert(idToComponent.ContainsKey(playerId));
 
-            idToComponent[playerId].GodmodePluginStatus = enabled;
+            GodmodeUi component;
+            if(idToComponent.TryGetValue(playerId, out component))
+                component.GodmodePluginStatus = enabled;
         }
 
         #endregion
