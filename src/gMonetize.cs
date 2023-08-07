@@ -1,121 +1,149 @@
-﻿// #define DEBUG
+﻿#define UNITY_ASSERTIONS
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Contracts;
 using System.Linq;
+using System.Reflection;
+using System.Xml;
 using Network;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
 using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 using Pool = Facepunch.Pool;
 using Server = ConVar.Server;
 
 // ReSharper disable StringLiteralTypo
-
 // ReSharper disable InconsistentNaming
 // ReSharper disable UnusedMember.Local
 
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.0.2")]
+    [Info("gMonetize", "2CHEVSKII", "1.1.0")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
 
-        private const string CMD_OPEN   = "gmonetize.open";
-        private const string CMD_CLOSE  = "gmonetize.close";
-        private const string CMD_NEXTP  = "gmonetize.nextpage";
-        private const string CMD_PREVP  = "gmonetize.prevpage";
-        private const string CMD_REDEEM = "gmonetize.redeemitem";
+        private const string CMD_OPEN         = "gmonetize.open";
+        private const string CMD_CLOSE        = "gmonetize.close";
+        private const string CMD_NEXTP        = "gmonetize.nextpage";
+        private const string CMD_PREVP        = "gmonetize.prevpage";
+        private const string CMD_RETRY_LOAD   = "gmonetize.retry_load";
+        private const string CMD_REDEEM       = "gmonetize.redeemitem";
+        private const string CMD_RETRY_REDEEM = "gmonetize.retry_redeem";
 
-        private static gMonetize           Instance;
-        private        Api                 _api;
-        private        PluginConfiguration _configuration;
-        private        Timer               _heartbeatTimer;
+        private static gMonetize                           Instance;
+        private        PluginConfiguration                 _configuration;
+        private        Timer                               _heartbeatTimer;
+        private        Timer                               _checkTimedRanksTimer;
+        private        Dictionary<string, List<TimedRank>> _timedRanks;
+
+        #region Log helpers
 
         [Conditional("DEBUG")]
-        private static void LogDebug(string format, params object[] args) =>
-        Interface.Oxide.LogDebug(format, args);
+        private static void LogDebug(string message) => Interface.Oxide.LogDebug(message);
 
         private static void LogMessage(string format, params object[] args)
         {
-            string text = string.Format(format, args);
-            Instance.LogToFile(
+            string message = string.Format(format, args);
+
+            LogDebug(message);
+            Instance?.LogToFile(
                 "log",
-                text,
+                message,
                 Instance,
                 true,
                 true
             );
         }
 
-#region Oxide hook handlers
+        #endregion
+
+        #region Oxide hook handlers
 
         private void Init()
         {
             Instance = this;
-            // TODO
             permission.RegisterPermission(PERM_USE, this);
+            SetupCommands();
 
-            covalence.RegisterCommand(CMD_OPEN, this, HandleCommand);
-            covalence.RegisterCommand(CMD_CLOSE, this, HandleCommand);
-            covalence.RegisterCommand(CMD_NEXTP, this, HandleCommand);
-            covalence.RegisterCommand(CMD_PREVP, this, HandleCommand);
-            covalence.RegisterCommand(CMD_REDEEM, this, HandleCommand);
-
-            foreach ( string chatCommand in _configuration.ChatCommands )
-            {
+            foreach (string chatCommand in _configuration.ChatCommands)
                 covalence.RegisterCommand(chatCommand, this, HandleCommand);
-            }
-
-            _api = new Api();
         }
 
         private void OnServerInitialized()
         {
             SetupServerTags();
+
             gAPI.Init(this);
             SetupAPICallbacks();
             StartSendingHeartbeats();
 
-            foreach ( IPlayer player in players.Connected )
-            {
+            LoadTimedRanks();
+            StartCheckingTimedRanks();
+
+            foreach (IPlayer player in players.Connected)
                 OnUserConnected(player);
-            }
         }
 
         private void Unload()
         {
-            CleanupServerTags();
+            StopCheckingTimedRanks();
+            SaveTimedRanks();
+
             StopSendingHeartbeats();
             CleanupAPICallbacks();
+            CleanupServerTags();
 
-            foreach ( IPlayer player in players.Connected )
-            {
+            foreach (IPlayer player in players.Connected)
                 OnUserDisconnected(player);
-            }
         }
 
         private void OnUserConnected(IPlayer player) =>
-        ((BasePlayer) player.Object).gameObject.AddComponent<Ui>();
+            ((BasePlayer)player.Object).gameObject.AddComponent<Ui>();
 
         private void OnUserDisconnected(IPlayer player) =>
-        UnityEngine.Object.Destroy(((BasePlayer) player.Object).GetComponent<Ui>());
+            UnityEngine.Object.Destroy(((BasePlayer)player.Object).GetComponent<Ui>());
 
-#endregion
+        #endregion
+
+        #region Setup/Teardown
+
+        private void SetupCommands()
+        {
+            foreach (string commandName in from field in typeof(gMonetize).GetFields(
+                                               BindingFlags.Static | BindingFlags.NonPublic
+                                           )
+                                           where field.Name.StartsWith("CMD_")
+                                           select field.GetRawConstantValue() as string)
+            {
+                covalence.RegisterCommand(commandName, this, HandleCommand);
+            }
+        }
+
+        private void StartCheckingTimedRanks()
+        {
+            _checkTimedRanksTimer = timer.Every(10, CheckExpiredTimedRanks);
+        }
+
+        private void StopCheckingTimedRanks()
+        {
+            _checkTimedRanksTimer.Destroy();
+        }
 
         private void SetupAPICallbacks()
         {
             gAPI.OnHeartbeat += HandleOnHeartbeat;
+            gAPI.OnReceiveInventory += HandleOnReceiveInventory;
+            gAPI.OnRedeemItem += HandleOnRedeemItem;
         }
 
         private void CleanupAPICallbacks()
@@ -123,44 +151,40 @@ namespace Oxide.Plugins
             gAPI.OnHeartbeat -= HandleOnHeartbeat;
         }
 
-        private void StartSendingHeartbeats()
-        {
-            _heartbeatTimer = timer.Every(60, SendHeartbeat);
-            SendHeartbeat();
-        }
+        private void StartSendingHeartbeats() => (_heartbeatTimer = timer.Every(
+            60f,
+            () =>
+            {
+                ServerHeartbeatRequest request = new ServerHeartbeatRequest(
+                    Server.description,
+                    new ServerHeartbeatRequest.ServerMapRequest(
+                        Server.level,
+                        World.Size,
+                        World.Seed,
+                        SaveRestore.SaveCreatedTime
+                    ),
+                    new ServerHeartbeatRequest.ServerPlayersRequest(
+                        BasePlayer.activePlayerList.Count,
+                        Server.maxplayers
+                    )
+                );
 
-        private void StopSendingHeartbeats()
-        {
-            _heartbeatTimer.Destroy();
-        }
+                gAPI.SendHeartbeat(request);
+            }
+        )).Callback();
 
-        private void SendHeartbeat()
-        {
-            ServerHeartbeatRequest request = new ServerHeartbeatRequest(
-                Server.description,
-                new ServerHeartbeatRequest.ServerMapRequest(
-                    Server.level,
-                    World.Size,
-                    World.Seed,
-                    SaveRestore.SaveCreatedTime
-                ),
-                new ServerHeartbeatRequest.ServerPlayersRequest(
-                    BasePlayer.activePlayerList.Count,
-                    Server.maxplayers
-                )
-            );
+        private void StopSendingHeartbeats() => _heartbeatTimer.Destroy();
 
-            gAPI.SendHeartbeat(request);
-        }
+
+        #region Server tags
 
         private void SetupServerTags()
         {
-            if ( !Server.tags.Contains("gmonetize") )
+            if (!Server.tags.Contains("gmonetize"))
             {
                 Server.tags = string.Join(
                     ",",
-                    Server.tags.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries)
-                          .Concat(new[] { "gmonetize" })
+                    Server.tags.Split(new[] {","}, StringSplitOptions.RemoveEmptyEntries).Concat(new[] {"gmonetize"})
                 );
 
                 LogMessage("Added gmonetize tag to server tags");
@@ -170,12 +194,11 @@ namespace Oxide.Plugins
 
         private void CleanupServerTags()
         {
-            if ( Server.tags.Contains("gmonetize") )
+            if (Server.tags.Contains("gmonetize"))
             {
                 Server.tags = string.Join(
                     ",",
-                    Server.tags.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                          .Except(new[] { "gmonetize" })
+                    Server.tags.Split(new[] {','}, StringSplitOptions.RemoveEmptyEntries).Except(new[] {"gmonetize"})
                 );
 
                 LogMessage("Removed gmonetize tags from server tags");
@@ -183,67 +206,101 @@ namespace Oxide.Plugins
             }
         }
 
+        #endregion
+
+        #endregion
+
+        #region API callback handlers
+
         private void HandleOnHeartbeat(HeartbeatApiResult result)
         {
-            if ( !result.IsSuccess )
-            {
-                LogMessage(
-                    "Server heartbeat request failed with code {0}\nHeartbeat payload was:\n{1}",
-                    result.StatusCode,
-                    JsonConvert.SerializeObject(result.Request, Formatting.Indented)
-                );
-            }
-            else
-            {
-                LogMessage("Server heartbeat was sent successfully");
-            }
+            if (!result.IsSuccess)
+                LogMessage("HandleOnHeartbeat: Server heartbeat request failed with code {0}", result.StatusCode);
+            else LogMessage("HandleOnHeartbeat: Server heartbeat was sent successfully");
         }
 
-        private void HandleOnInventory(InventoryApiResult result)
+        private void HandleOnReceiveInventory(InventoryApiResult result)
         {
-            if ( !result.IsSuccess )
+            if (!result.IsSuccess)
             {
                 LogMessage(
-                    "Failed to receive inventory for player {0}, request failed with code {1}",
+                    "HandleOnReceiveInventory: Failed to receive inventory for player {0}, request failed with code {1}",
                     result.UserId,
                     result.StatusCode
-                );
-            }
-            else
-            {
-                LogMessage(
-                    "Received inventory for player {0}:\n{1}",
-                    result.UserId,
-                    JsonConvert.SerializeObject(result.Inventory, Formatting.Indented)
-                );
-            }
-
-            BasePlayer player =
-            BasePlayer.activePlayerList.FirstOrDefault(x => x.UserIDString == result.UserId);
-
-            if ( !player )
-            {
-                LogMessage(
-                    "OnInventory callback handler could not find the player with userId {0}",
-                    result.UserId
                 );
                 return;
             }
 
-            player.SendMessage("gMonetize_InventoryReceived", SendMessageOptions.RequireReceiver);
+            LogMessage("HandleOnReceiveInventory: Inventory received for player {0}", result.UserId);
+
+            IPlayer player = players.FindPlayerById(result.UserId);
+
+            if (player == null)
+            {
+                LogMessage("HandleOnReceiveInventory: Failed to find player with id {0}", result.UserId);
+                return;
+            }
+
+            if (!player.IsConnected)
+            {
+                LogMessage("HandleOnReceiveInventory: Player with id {0} is no longer connected", result.UserId);
+                return;
+            }
+
+            BasePlayer basePlayer = (BasePlayer)player.Object;
+            basePlayer.SendMessage("gMonetize_InventoryLoaded", result.Inventory, SendMessageOptions.RequireReceiver);
         }
 
-#region Command handler
+        private void HandleOnRedeemItem(RedeemItemApiResult result)
+        {
+            IPlayer player = players.FindPlayerById(result.UserId);
+
+            if (player == null)
+            {
+                LogMessage("HandleOnRedeemItem: Failed to find player with userID {0}", result.UserId);
+                return;
+            }
+
+            if (!player.IsConnected)
+            {
+                LogMessage("HandleOnRedeemItem: Player {0} is no longer connected to the server", player.Id);
+            }
+
+            BasePlayer basePlayer = (BasePlayer)player.Object;
+
+            if (!result.IsSuccess)
+            {
+                LogMessage(
+                    "HandleOnRedeemItem: RedeemItem({0}, {1}) failed: {2}",
+                    result.InventoryEntryId,
+                    result.UserId,
+                    result.StatusCode
+                );
+                basePlayer.SendMessage("gMonetize_RedeemItemFailed", result.InventoryEntryId);
+                return;
+            }
+
+            LogMessage(
+                "HandleOnRedeemItem: RedeemItem({0}, {1}) is successful",
+                result.InventoryEntryId,
+                result.UserId
+            );
+            basePlayer.SendMessage("gMonetize_RedeemItemOk", result.InventoryEntryId);
+        }
+
+        #endregion
+
+        #region Command handler
 
         private bool HandleCommand(IPlayer player, string command, string[] args)
         {
-            if ( player.IsServer )
+            if (player.IsServer)
             {
                 player.Message("This command cannot be executed in server console");
                 return true;
             }
 
-            BasePlayer basePlayer = (BasePlayer) player.Object;
+            BasePlayer basePlayer = (BasePlayer)player.Object;
 
             LogMessage(
                 "HandleCommand({0}:{1}, {2}, {3})",
@@ -256,38 +313,32 @@ namespace Oxide.Plugins
             switch (command)
             {
                 case CMD_CLOSE:
-                    basePlayer.SendMessage("gMonetize_Close", SendMessageOptions.RequireReceiver);
+                    basePlayer.SendMessage("gMonetize_Close");
                     break;
-
                 case CMD_NEXTP:
-                    basePlayer.SendMessage(
-                        "gMonetize_NextPage",
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_NextPage");
                     break;
-
                 case CMD_PREVP:
-                    basePlayer.SendMessage(
-                        "gMonetize_PrevPage",
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_PrevPage");
                     break;
-
                 case CMD_REDEEM:
-                    basePlayer.SendMessage(
-                        "gMonetize_RedeemItem",
-                        args[0],
-                        SendMessageOptions.RequireReceiver
-                    );
+                    basePlayer.SendMessage("gMonetize_RedeemingItem", int.Parse(args[1]));
+                    gAPI.RedeemItem(player.Id, args[0]);
                     break;
-
+                case CMD_RETRY_LOAD:
+                    basePlayer.SendMessage("gMonetize_InventoryLoading");
+                    gAPI.GetInventory(player.Id);
+                    break;
+                case CMD_RETRY_REDEEM:
+                    basePlayer.SendMessage("gMonetize_RedeemingItem", args[1]);
+                    gAPI.RedeemItem(player.Id, args[0]);
+                    break;
                 default:
-                    if ( command == CMD_OPEN || _configuration.ChatCommands.Contains(command) )
+                    if (command == CMD_OPEN || _configuration.ChatCommands.Contains(command))
                     {
-                        basePlayer.SendMessage(
-                            "gMonetize_Open",
-                            SendMessageOptions.RequireReceiver
-                        );
+                        basePlayer.SendMessage("gMonetize_Open");
+                        basePlayer.SendMessage("gMonetize_InventoryLoading");
+                        gAPI.GetInventory(player.Id);
                     }
 
                     break;
@@ -296,11 +347,11 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool CheckPermission(IPlayer player) => player.HasPermission("gmonetize.use");
+        private bool CheckPermission(IPlayer player) => player.HasPermission(PERM_USE);
 
-#endregion
+        #endregion
 
-#region Configuration handling
+        #region Configuration handling
 
         protected override void LoadDefaultConfig()
         {
@@ -316,23 +367,20 @@ namespace Oxide.Plugins
             {
                 _configuration = Config.ReadObject<PluginConfiguration>();
 
-                if ( _configuration == null )
+                if (_configuration == null)
                 {
-                    throw new Exception(
-                        "Failed to load configuration: configuration object is null"
-                    );
+                    throw new Exception("Failed to load configuration: configuration object is null");
                 }
 
-                if ( _configuration.ChatCommands == null ||
-                     _configuration.ChatCommands.Length == 0 )
+                if (_configuration.ChatCommands == null || _configuration.ChatCommands.Length == 0)
                 {
                     LogWarning("No chat commands were specified in configuration");
                     _configuration.ChatCommands = Array.Empty<string>();
                     SaveConfig();
                 }
 
-                LogDebug("ApiKey: {0}", _configuration.ApiKey);
-                LogDebug("Chat commands: {0}", string.Join(", ", _configuration.ChatCommands));
+                LogMessage("ApiKey: {0}", _configuration.ApiKey);
+                LogMessage("Chat commands: {0}", string.Join(", ", _configuration.ChatCommands));
             }
             catch (Exception e)
             {
@@ -346,839 +394,668 @@ namespace Oxide.Plugins
             Config.WriteObject(_configuration);
         }
 
-#endregion
+        #endregion
 
-        protected override void LoadDefaultMessages()
+        #region Timed ranks
+
+        private void LoadTimedRanks()
         {
-            lang.RegisterMessages(
-                new Dictionary<string, string> {
-                    [PlayerMessages.CHAT_PREFIX]   = "[gMonetize] ",
-                    [PlayerMessages.NO_PERMISSION] = "You are not allowed to use this command",
-                    [PlayerMessages.INV_EMPTY]     = "Your inventory is empty",
-                    [PlayerMessages.ERROR_LOADING_ITEMS] =
-                    "Error occured while loading your inventory\n(code: {0})"
-                },
-                this
-            );
-            lang.RegisterMessages(new Dictionary<string, string> { }, this, "ru");
+            _timedRanks =
+                Interface.Oxide.DataFileSystem
+                         .ReadObject<Dictionary<string, List<TimedRank>>>("gmonetize.timedranks") ??
+                new Dictionary<string, List<TimedRank>>();
         }
 
-#region Configuration class
-
-        private class PluginConfiguration
+        private void SaveTimedRanks()
         {
-            [JsonProperty("API key")] public string ApiKey { get; set; }
-
-            [JsonProperty("Api base URL")] public string ApiBaseUrl { get; set; }
-
-            [JsonProperty("Chat commands")] public string[] ChatCommands { get; set; }
-
-            public static PluginConfiguration GetDefault() => new PluginConfiguration {
-                ApiKey       = "Change me",
-                ApiBaseUrl   = "https://api.gmonetize.ru",
-                ChatCommands = new[] { "shop" }
-            };
+            Interface.Oxide.DataFileSystem.WriteObject("gmonetize.timedranks", _timedRanks);
         }
 
-#endregion
-
-#region Api class
-
-        private class Api
+        private void CheckExpiredTimedRanks()
         {
-            private readonly JsonSerializerSettings     _serializerSettings;
-            private readonly Dictionary<string, string> _requestHeaders;
-
-            private string MainApiUrl => Instance._configuration.ApiBaseUrl + "/main/v3/plugin";
-            private string StaticApiUrl => Instance._configuration.ApiBaseUrl + "/static/v2/image";
-            private string HeartbeatRequestUrl => MainApiUrl + "/server/ping";
-
-            public Api()
+            foreach (KeyValuePair<string, List<TimedRank>> kv in _timedRanks.ToArray())
             {
-                LogMessage("Initializing API...");
-                if ( string.IsNullOrEmpty(Instance._configuration.ApiKey) )
+                string userId = kv.Key;
+                List<TimedRank> list = kv.Value;
+
+                IPlayer player = players.FindPlayerById(userId);
+
+                if (player == null)
                 {
-                    LogMessage("Failed to initialize API: API key is missing");
-                    throw new Exception("No API Key found in config");
+                    LogMessage("CheckExpiredTimedRanks(): Could not find player {0}", userId);
+                    continue;
                 }
 
-                _serializerSettings = new JsonSerializerSettings {
-                    ContractResolver = new CamelCasePropertyNamesContractResolver()
-                };
-                _requestHeaders = new Dictionary<string, string> {
-                    { "Authorization", "ApiKey " + Instance._configuration.ApiKey },
-                    { "Content-Type", "application/json" }
-                };
-            }
-
-            public void GetInventory(
-                string userId,
-                Action<List<InventoryEntry>> onSuccess,
-                Action<int> onError
-            )
-            {
-                Instance.webrequest.Enqueue(
-                    GetInventoryUrl(userId),
-                    string.Empty,
-                    (code, body) => {
-                        LogDebug("GetInventory result: {0}:{1}", code, body);
-                        LogMessage(
-                            "GetInventory({0}) = {1}:{2}",
-                            userId,
-                            code,
-                            body
-                        );
-
-                        if ( code == 200 )
-                        {
-                            List<InventoryEntry> items =
-                            JsonConvert.DeserializeObject<List<InventoryEntry>>(
-                                body,
-                                _serializerSettings
-                            );
-
-                            LogDebug(
-                                "Inventory:\n{0}",
-                                JsonConvert.SerializeObject(items, Formatting.Indented)
-                            );
-                            onSuccess(items);
-                            return;
-                        }
-
-                        onError(code);
-                    },
-                    Instance,
-                    headers: _requestHeaders
-                );
-            }
-
-            public void RedeemItem(
-                string userId,
-                string entryId,
-                Action onSuccess,
-                Action<int> onError
-            )
-            {
-                Instance.webrequest.Enqueue(
-                    GetRedeemUrl(userId, entryId),
-                    string.Empty,
-                    (code, body) => {
-                        LogDebug("Item redeem result: {0}:{1}", code, body);
-
-                        LogMessage(
-                            "RedeemItem({0}, {1}) = {2}:{3}",
-                            userId,
-                            entryId,
-                            code,
-                            body
-                        );
-
-                        if ( code == 204 )
-                        {
-                            onSuccess();
-                            return;
-                        }
-
-                        onError(code);
-                    },
-                    Instance,
-                    headers: _requestHeaders,
-                    method: RequestMethod.POST
-                );
-            }
-
-            public string GetIconUrl(string iconId) => $"{StaticApiUrl}/{iconId}";
-
-            private string GetInventoryUrl(string userId)
-            {
-                return $"{MainApiUrl}/customer/STEAM/{userId}/inventory";
-            }
-
-            private string GetRedeemUrl(string userId, string entryId)
-            {
-                return $"{MainApiUrl}/customer/STEAM/{userId}/inventory/{entryId}/redeem";
-            }
-
-            [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
-            public class InventoryEntry
-            {
-                public string Id { get; set; }
-                public EntryType Type { get; set; }
-                public string Name { get; set; }
-                public string IconId { get; set; }
-                public RustItem Item { get; set; }
-
-                [SuppressMessage("ReSharper", "CollectionNeverUpdated.Local")]
-                public List<RustItem> Items { get; set; }
-
-                public Rank Rank { get; set; }
-                public Research Research { get; set; }
-
-                public enum EntryType
+                for (int i = list.Count - 1; i >= 0; i--)
                 {
-                    ITEM,
-                    KIT,
-                    RANK,
-                    RESEARCH,
-                    CUSTOM
-                }
-            }
+                    TimedRank rank = list[i];
 
-            [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Local")]
-            public class RustItem
-            {
-                public string Id { get; set; }
-                public int ItemId { get; set; }
-                public int Amount { get; set; }
-                public RustItemMeta Meta { get; set; }
-                public string IconId { get; set; }
+                    bool hasExpired = rank.TimeLeft() <= TimeSpan.Zero;
 
-                public ItemDefinition GetItemDefinition()
-                {
-                    return ItemManager.FindItemDefinition(ItemId);
-                }
-
-                public Item ToItem()
-                {
-                    ItemDefinition itemDefinition = GetItemDefinition();
-
-                    if ( itemDefinition == null )
+                    if (!hasExpired)
                     {
-                        throw new Exception(
-                            $"ItemDefinition not found for item {ItemId} (good.item.id={Id})"
-                        );
+                        continue;
                     }
 
-                    Item item = ItemManager.Create(GetItemDefinition(), Amount, Meta.SkinId ?? 0ul);
-                    if ( item.hasCondition )
+                    if (rank.Type == TimedRank.RankType.Permission)
                     {
-                        item.conditionNormalized = Mathf.Max(0.1f, Meta.Condition);
+                        LogMessage("TimedRank expired: Removing permission {0} from player {1}", rank.Name, player.Id);
+                        rank.Unset(player);
+                    }
+                    else
+                    {
+                        LogMessage("TimedRank expired: Removing player {0} from group {1}", player.Id, rank.Name);
+                        rank.Unset(player);
                     }
 
-                    return item;
+                    list.RemoveAt(i);
                 }
 
-                public class RustItemMeta
+                if (list.Count == 0)
                 {
-                    public ulong? SkinId { get; set; }
-                    public float Condition { get; set; }
-                }
-            }
-
-            public class Rank
-            {
-                public string Id { get; set; }
-                public string GroupName { get; set; }
-                public TimeSpan? Duration { get; set; }
-            }
-
-            public class Research
-            {
-                public string Id { get; set; }
-                public int ResearchId { get; set; }
-            }
-
-            /// <summary>
-            /// DTO to update server's state in the store
-            /// </summary>
-            private struct ServerHeartbeat
-            {
-                [JsonProperty("motd")] public string Description { get; }
-
-                [JsonProperty("map")] public ServerMap Map { get; }
-
-                [JsonProperty("players")] public ServerPlayers Players { get; }
-
-                public ServerHeartbeat(string description, ServerMap map, ServerPlayers players)
-                {
-                    Description = description;
-                    Map         = map;
-                    Players     = players;
-                }
-
-                public struct ServerMap
-                {
-                    [JsonProperty("name")] public string Name { get; }
-
-                    [JsonProperty("width")] public uint Width { get; }
-
-                    [JsonProperty("height")] public uint Height { get; }
-
-                    [JsonProperty("seed")] public uint Seed { get; }
-
-                    [JsonProperty("lastWipe")] public string LastWipe { get; }
-
-                    public ServerMap(
-                        string name,
-                        uint size,
-                        uint seed,
-                        DateTime lastWipeDate
-                    )
-                    {
-                        Name     = name;
-                        Width    = Height = size;
-                        Seed     = seed;
-                        LastWipe = lastWipeDate.ToString("O").TrimEnd('Z');
-                    }
-                }
-
-                public struct ServerPlayers
-                {
-                    [JsonProperty("online")] public int Online { get; }
-
-                    [JsonProperty("max")] public int Max { get; }
-
-                    public ServerPlayers(int online, int max)
-                    {
-                        Online = online;
-                        Max    = max;
-                    }
+                    _timedRanks.Remove(kv.Key);
                 }
             }
         }
 
-#endregion
+        #endregion
 
-        private bool CanReceiveItem(BasePlayer player, Api.InventoryEntry inventoryEntry)
+        #region CanReceiveItem helpers
+
+        private bool CanRedeemItem(
+            BasePlayer player,
+            gAPI.InventoryEntry inventoryEntry,
+            CannotRedeemItemReason? reason
+        )
         {
-            if ( inventoryEntry.Type == Api.InventoryEntry.EntryType.RANK ||
-                 inventoryEntry.Type == Api.InventoryEntry.EntryType.RESEARCH ||
-                 inventoryEntry.Type == Api.InventoryEntry.EntryType.CUSTOM )
-            {
-                return true;
-            }
-
-            int availableSpace =
-            (player.inventory.containerMain.capacity -
-             player.inventory.containerMain.itemList.Count) +
-            (player.inventory.containerBelt.capacity -
-             player.inventory.containerBelt.itemList.Count);
-
+            reason = null;
             switch (inventoryEntry.Type)
             {
-                case Api.InventoryEntry.EntryType.ITEM:
-                    return availableSpace > 0;
-                case Api.InventoryEntry.EntryType.KIT:
-                    return availableSpace >= inventoryEntry.Items.Count;
+                case gAPI.InventoryEntry.InventoryEntryType.ITEM:
+                    ItemDefinition itemDef = inventoryEntry.Item.FindItemDefinition();
+                    if (!itemDef)
+                    {
+                        reason = CannotRedeemItemReason.NoItemDefinition;
+                        return false;
+                    }
+
+                    int availableSlots = GetAvailableInventorySlots(player);
+
+                    int requiredSlots = Mathf.CeilToInt(inventoryEntry.Item.Amount / (float)itemDef.stackable);
+
+                    return requiredSlots <= availableSlots;
+                    break;
+                case gAPI.InventoryEntry.InventoryEntryType.KIT:
+                    break;
+            }
+
+            return true; // FIXME
+        }
+
+        private int GetAvailableInventorySlots(BasePlayer player)
+        {
+            return GetAvailableItemContainerSlots(player.inventory.containerMain) +
+                   GetAvailableItemContainerSlots(player.inventory.containerBelt);
+        }
+
+        private int GetAvailableItemContainerSlots(ItemContainer container)
+        {
+            return container.capacity - container.itemList.Count;
+        }
+
+        private enum CannotRedeemItemReason
+        {
+            NoItemDefinition,
+            InventoryFull,
+            ResearchComplete
+        }
+
+        private enum RedeemButtonState
+        {
+            InvalidItem,
+            Redeeming,
+            InventoryFull,
+            ResearchComplete,
+            Error,
+            Available
+        }
+
+        #endregion
+
+        private void RedeemInventoryEntry(BasePlayer player, gAPI.InventoryEntry entry)
+        {
+            switch (entry.Type)
+            {
+                case gAPI.InventoryEntry.InventoryEntryType.ITEM:
+                    RedeemItem(player, entry.Id, entry.Item);
+                    break;
+                case gAPI.InventoryEntry.InventoryEntryType.KIT:
+                    RedeemKit(player, entry.Id, entry.Contents);
+                    break;
+                case gAPI.InventoryEntry.InventoryEntryType.RESEARCH:
+                    ItemDefinition itemDef = entry.Research.FindItemDefinition();
+
+                    if (!itemDef)
+                    {
+                        LogMessage("Failed to find item definition({0}) for research entry {1}", entry.Research.ResearchId, entry.Id);
+                        return;
+                    }
+
+                    player.blueprints.Unlock(itemDef);
+                    LogMessage("Unlocking item {0} on player {1}", itemDef.itemid, player.UserIDString);
+                    break;
+                case gAPI.InventoryEntry.InventoryEntryType.RANK:
+                case gAPI.InventoryEntry.InventoryEntryType.PERMISSION:
+                    List<TimedRank> ranksList;
+                    if (!_timedRanks.TryGetValue(player.UserIDString, out ranksList))
+                    {
+                        ranksList = new List<TimedRank>();
+                        _timedRanks.Add(player.UserIDString, ranksList);
+                    }
+
+                    TimedRank rank;
+
+                    if (entry.Type == gAPI.InventoryEntry.InventoryEntryType.RANK)
+                    {
+                        rank = TimedRank.CreateFrom(entry.Rank);
+                    }
+                    else
+                    {
+                        rank = TimedRank.CreateFrom(entry.Permission);
+                    }
+
+                    var exRank = ranksList.Find(r => r.Name == rank.Name);
+
+                    if (exRank != null)
+                    {
+                        exRank.Add(rank);
+                    }
+                    else
+                    {
+                        ranksList.Add(rank);
+                        rank.Set(player.IPlayer);
+                    }
+
+                    break;
+                case gAPI.InventoryEntry.InventoryEntryType.CUSTOM:
+                    foreach (string command in entry.Commands.Select(
+                            c => c.Value.Replace("${userId}", player.UserIDString)
+                                  .Replace("${userName}", player.displayName)
+                        ))
+                    {
+                        LogMessage("Executing command {0} on player {1}", command, player.UserIDString);
+                        server.Command(command);
+                    }
+                    break;
                 default:
-                    return false;
+                    throw new ArgumentOutOfRangeException();
             }
         }
 
-        private static class PlayerMessages
+        private void RedeemItem(BasePlayer player, string entryId, gAPI.ItemGood good)
         {
-            public const string CHAT_PREFIX          = "m.chatprefix";
-            public const string NO_PERMISSION        = "m.nopermission";
-            public const string INV_EMPTY            = "m.inv.empty";
-            public const string ERROR_LOADING_ITEMS  = "m.error.itemload";
-            public const string ERROR_RECEIVING_ITEM = "m.error.receiveitem";
-            public const string ITEM_RECEIVED        = "m.itemreceived";
+            ItemDefinition itemDef = good.FindItemDefinition();
+
+            if (!itemDef)
+            {
+                LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
+                return;
+            }
+
+            Item item = ItemManager.Create(
+                itemDef,
+                good.Amount,
+                good.Meta.SkinId.HasValue ? good.Meta.SkinId.Value : 0ul
+            );
+
+            player.GiveItem(item);
+        }
+
+        private void RedeemKit(BasePlayer player, string entryId, List<gAPI.KitGood> goods)
+        {
+            for (int i = 0; i < goods.Count; i++)
+            {
+                gAPI.KitGood good = goods[i];
+                switch (good.Type)
+                {
+                    case gAPI.KitGood.KitGoodType.ITEM:
+                    {
+                        ItemDefinition itemDef = good.FindItemDefinition();
+                        if (!itemDef)
+                        {
+                            LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
+                            return;
+                        }
+
+                        Item item = ItemManager.Create(
+                            itemDef,
+                            good.Amount,
+                            good.Meta.SkinId.HasValue ? good.Meta.SkinId.Value : 0ul
+                        );
+
+                        player.GiveItem(item);
+                    }
+                        break;
+                    case gAPI.KitGood.KitGoodType.RESEARCH:
+                    {
+                        ItemDefinition itemDef = good.FindItemDefinition();
+                        if (!itemDef)
+                        {
+                            LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
+                            return;
+                        }
+
+                        player.blueprints.Unlock(itemDef);
+                    }
+                        break;
+
+                    case gAPI.KitGood.KitGoodType.RANK:
+                    case gAPI.KitGood.KitGoodType.PERMISSION:
+                    {
+                        List<TimedRank> ranksList;
+                        if (!_timedRanks.TryGetValue(player.UserIDString, out ranksList))
+                        {
+                            ranksList = new List<TimedRank>();
+                            _timedRanks.Add(player.UserIDString, ranksList);
+                        }
+
+                        var rank = TimedRank.CreateFrom(good);
+
+                        var exRank = ranksList.Find(r => r.Name == rank.Name);
+
+                        if (exRank != null)
+                        {
+                            exRank.Add(rank);
+                        }
+                        else
+                        {
+                            ranksList.Add(rank);
+                            rank.Set(player.IPlayer);
+                        }
+                    }
+                        break;
+                    case gAPI.KitGood.KitGoodType.COMMAND:
+                        string effectiveCmd = good.Value.Replace("${userId}", player.UserIDString)
+                                                  .Replace("${userName}", player.displayName);
+
+                        server.Command(effectiveCmd);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
         }
 
         private class Ui : MonoBehaviour
         {
-            private BasePlayer               _player;
-            private SendInfo                 _playerSendInfo;
-            private State                    _state;
-            private List<Api.InventoryEntry> _inventory;
-            private int                      _currentPageIndex;
+            private const string RPC_DESTROYUI  = "DestroyUI";
+            private const string RPC_ADDUI      = "AddUI";
+            private const int    COLUMN_COUNT   = 8;
+            private const int    ROW_COUNT      = 3;
+            private const int    CARDS_PER_PAGE = COLUMN_COUNT * ROW_COUNT;
+            private const float  COLUMN_GAP     = .005f;
+            private const float  ROW_GAP        = .01f;
 
-            private int PageCount => GetPageCount(_inventory.Count);
+            private BasePlayer                _player;
+            private SendInfo                  _playerSendInfo;
+            private List<gAPI.InventoryEntry> _inventory;
 
-            private static int GetPageCount(int itemCount)
+            private bool _mainWindowDrawn;
+
+            private bool _notificationDrawn;
+            private bool _itemListDrawn;
+
+            private int _pageIndex;
+            private int _renderedItemCards;
+
+            private gAPI.InventoryEntry[] _currentPageItems;
+            private bool                  _pageChanged;
+
+            private bool IsInventoryEmpty => _inventory.Count == 0;
+
+            private int PageCount => IsInventoryEmpty
+                ? 0
+                : _inventory.Count / CARDS_PER_PAGE + (_inventory.Count % CARDS_PER_PAGE == 0 ? 0 : 1);
+
+            private gAPI.InventoryEntry[] CurrentPageItems
             {
-                return itemCount / Builder.ITEMS_PER_PAGE +
-                       (itemCount % Builder.ITEMS_PER_PAGE == 0 ? 0 : 1);
+                get
+                {
+                    if (_pageChanged)
+                    {
+                        _currentPageItems = _inventory.Skip(_pageIndex * CARDS_PER_PAGE).Take(CARDS_PER_PAGE).ToArray();
+                        _pageChanged = false;
+                    }
+
+                    return _currentPageItems;
+                }
             }
 
-#region Unity event functions
+            #region Unity event functions
 
             private void Start()
             {
-                _inventory = new List<Api.InventoryEntry>();
-                _player    = GetComponent<BasePlayer>();
-
-                // Save CPU cycles in exchange for memory? Hell yeah
-                // No one will notice the difference anyway, lol
-                _playerSendInfo = new SendInfo(_player.Connection);
+                _player = GetComponent<BasePlayer>();
+                _playerSendInfo = new SendInfo(_player.Connection) {
+                    priority = Priority.Normal,
+                    method = SendMethod.Reliable,
+                    channel = 0
+                };
             }
 
             private void OnDestroy() => gMonetize_Close();
 
-#endregion
+            #endregion
 
-#region Command message handlers
+            #region Custom event handlers
 
             private void gMonetize_Open()
             {
-                State_LoadingItems();
+                if (_mainWindowDrawn)
+                {
+                    return;
+                }
 
-                Instance._api.GetInventory(
-                    _player.UserIDString,
-                    items => {
-                        _inventory.Clear();
-                        _inventory.AddRange(items);
+                IEnumerable<CuiElement> ui = ComponentBuilder.MainContainer();
 
-                        if ( _inventory.IsEmpty() )
-                        {
-                            State_NoItems();
-                        }
-                        else
-                        {
-                            State_ItemPageDisplay();
-                            _currentPageIndex = 0;
-                            DisplayCurrentItemPage();
-                        }
-                    },
-                    errorCode => {
-                        Instance.LogError(
-                            "Error while receiving inventory for player {0}: {1}",
-                            _player.displayName,
-                            errorCode
-                        );
+                SendAddUI(ui);
 
-                        State_ItemsLoadError(errorCode);
-                    }
-                );
+                _mainWindowDrawn = true;
             }
 
             private void gMonetize_Close()
             {
-                if ( _state == State.Closed )
+                if (!_mainWindowDrawn)
                 {
                     return;
                 }
 
-                CuiHelper.DestroyUi(_player, Builder.Names.Main.CONTAINER);
-                _state = State.Closed;
+                SendDestroyUI(Names.MainContainer.SELF);
+
+                _notificationDrawn = false;
+                _itemListDrawn = false;
+                _mainWindowDrawn = false;
+                _renderedItemCards = 0;
+            }
+
+            private void gMonetize_InventoryLoading()
+            {
+                HideItemList();
+                HideNotification();
+
+                List<CuiElement> componentList = Pool.GetList<CuiElement>();
+
+                ComponentBuilder.Notification(componentList, NotificationType.LoadingItems);
+                SendAddUI(componentList);
+                Pool.FreeList(ref componentList);
+
+                _notificationDrawn = true;
+            }
+
+            private void gMonetize_InventoryLoadError()
+            {
+                HideItemList();
+                HideNotification();
+
+                List<CuiElement> list = Pool.GetList<CuiElement>();
+                ComponentBuilder.Notification(list, NotificationType.ItemsLoadError);
+                SendAddUI(list);
+                Pool.FreeList(ref list);
+
+                _notificationDrawn = true;
+            }
+
+            private void gMonetize_InventoryLoaded(List<gAPI.InventoryEntry> items)
+            {
+                _inventory = items;
+
+                HideNotification();
+
+                _pageIndex = 0;
+
+                OnInventoryUpdated();
+                RenderItemListContainer();
+
+                if (_inventory.Count != 0)
+                {
+                    RenderItemPage();
+                }
+            }
+
+            private void gMonetize_RedeemingItem(int index)
+            {
+                Names.MainContainer.ItemListContainer.ItemCard
+                    nCard = Names.MainContainer.ItemListContainer.Card(index);
+                string button = nCard.Footer.Button.Self;
+
+                gAPI.InventoryEntry entry = CurrentPageItems[index];
+
+                SendDestroyUI(button);
+                List<CuiElement> list = Pool.GetList<CuiElement>();
+                ComponentBuilder.RedeemButton(
+                    nCard,
+                    index,
+                    entry.Id,
+                    RedeemButtonState.Redeeming,
+                    list
+                );
+                SendAddUI(list);
+                Pool.FreeList(ref list);
             }
 
             private void gMonetize_NextPage()
             {
-                if ( _state == State.Closed )
+                bool isLastPage = _pageIndex == PageCount - 1;
+
+                if (isLastPage)
                 {
-                    Instance.LogWarning(nameof(gMonetize_NextPage) + " called while UI was closed");
+                    return;
                 }
 
-                bool hasNextPage = _currentPageIndex < PageCount - 1;
+                _pageIndex++;
+                _pageChanged = true;
 
-                if ( !hasNextPage )
-                    return;
-
-                State_ItemPageDisplay();
-                RemoveCurrentPageItems();
-                _currentPageIndex++;
-                DisplayCurrentItemPage();
+                RenderPaginationButtons();
+                RenderItemPage();
             }
 
             private void gMonetize_PrevPage()
             {
-                if ( _state == State.Closed )
+                bool isFirstPage = _pageIndex == 0;
+
+                if (isFirstPage)
                 {
-                    Instance.LogWarning(nameof(gMonetize_PrevPage) + " called while UI was closed");
-                }
-
-                bool hasPrevPage = _currentPageIndex > 0;
-
-                if ( !hasPrevPage )
-                    return;
-
-                State_ItemPageDisplay();
-                RemoveCurrentPageItems();
-                _currentPageIndex--;
-                DisplayCurrentItemPage();
-            }
-
-            private void gMonetize_RedeemItem(string id)
-            {
-                int entryIndex = _inventory.FindIndex(x => x.Id == id);
-
-                if ( entryIndex == -1 )
-                {
-                    Instance.LogError(
-                        "Player {0} is trying to receive item not from his inventory: {1}",
-                        _player.UserIDString,
-                        id
-                    );
                     return;
                 }
 
-                Instance.Log("Redeeming item {0}", id);
+                _pageIndex--;
+                _pageChanged = true;
 
-                CuiHelper.DestroyUi(_player, Builder.Names.ItemList.Card(id).RedeemButton);
-                CuiHelper.AddUi(_player, Builder.GetRedeemingButton(id));
-
-                Instance._api.RedeemItem(
-                    _player.UserIDString,
-                    id,
-                    () => {
-                        Api.InventoryEntry entry = _inventory[entryIndex];
-                        GiveRedeemedItems(entry);
-                        RemoveCurrentPageItems();
-
-                        _inventory.RemoveAt(entryIndex);
-
-                        if ( _inventory.Count == 0 )
-                        {
-                            _currentPageIndex = 0;
-                            State_NoItems();
-                        }
-                        else
-                        {
-                            if ( _currentPageIndex >= PageCount )
-                            {
-                                _currentPageIndex = PageCount - 1;
-                            }
-
-                            DisplayCurrentItemPage();
-                        }
-                    },
-                    code => Instance.LogError(
-                        "Failed to redeem item {0} for player {1}: {2}",
-                        id,
-                        _player.UserIDString,
-                        code
-                    )
-                );
+                RenderPaginationButtons();
+                RenderItemPage();
             }
 
-#endregion
-
-            void GiveRedeemedItems(Api.InventoryEntry entry)
+            private void gMonetize_RedeemItemOk(string entryId)
             {
-                switch (entry.Type)
+                int entryIndex = _inventory.FindIndex(e => e.Id == entryId);
+
+                gAPI.InventoryEntry entry = _inventory[entryIndex];
+
+                Instance.RedeemInventoryEntry(_player, entry);
+
+                _inventory.RemoveAt(entryIndex);
+
+                OnInventoryUpdated();
+                RenderItemListContainer();
+
+                // TODO: This is counterintuitive, needs rework
+                if (_inventory.Count != 0)
                 {
-                    case Api.InventoryEntry.EntryType.ITEM:
-                        Item item = ItemManager.CreateByItemID(
-                            entry.Item.ItemId,
-                            entry.Item.Amount,
-                            entry.Item.Meta.SkinId ?? 0
-                        );
-                        _player.GiveItem(item);
-                        break;
-                    case Api.InventoryEntry.EntryType.KIT:
-                        entry.Items
-                             .Select(
-                                 i => ItemManager.CreateByItemID(
-                                     i.ItemId,
-                                     i.Amount,
-                                     i.Meta.SkinId ?? 0
-                                 )
-                             )
-                             .ToList()
-                             .ForEach(i => _player.GiveItem(i));
-                        break;
-                    case Api.InventoryEntry.EntryType.RANK:
-                        break;
-                    case Api.InventoryEntry.EntryType.RESEARCH:
-                        RedeemResearchItem(entry.Research);
-                        break;
+                    RenderItemPage();
                 }
             }
 
-            private void RedeemRustItem(Api.RustItem rustItem)
-            {
-                Item item = rustItem.ToItem();
+            #endregion
 
-                if ( item == null )
+            private void HideNotification()
+            {
+                if (!_notificationDrawn)
+                    return;
+
+                SendDestroyUI(Names.MainContainer.NotificationContainer.SELF);
+                _notificationDrawn = false;
+            }
+
+            private void HideItemList()
+            {
+                if (!_itemListDrawn)
+                    return;
+
+                SendDestroyUI(Names.MainContainer.ItemListContainer.SELF);
+                _itemListDrawn = false;
+            }
+
+            private void OnInventoryUpdated()
+            {
+                if (!_mainWindowDrawn)
+                    return;
+
+                if (_pageIndex >= PageCount)
+                    _pageIndex = PageCount - 1;
+
+                _pageChanged = true;
+
+                if (_inventory.Count == 0)
                 {
-                    Instance.LogError(
-                        "Failed to create Item object from Api.RustItem[{0}:{1}]",
-                        rustItem.Id,
-                        rustItem.ItemId
-                    );
+                    RenderNoItemsNotification();
+                }
+                else
+                {
+                    RenderPaginationButtons();
+                }
+            }
+
+            private void RenderPaginationButtons()
+            {
+                List<CuiElement> componentList = Pool.GetList<CuiElement>();
+
+                SendDestroyUI(Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev.SELF);
+                SendDestroyUI(Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next.SELF);
+
+                bool enablePrev = _pageIndex != 0;
+                bool enableNext = _pageIndex != PageCount - 1;
+
+                ComponentBuilder.PaginationButtons(enablePrev, enableNext, componentList);
+                SendAddUI(componentList);
+
+                Pool.FreeList(ref componentList);
+            }
+
+            private void RenderNoItemsNotification()
+            {
+                HideItemList();
+                HideNotification();
+
+                List<CuiElement> list = Pool.GetList<CuiElement>();
+                ComponentBuilder.Notification(list, NotificationType.InventoryEmpty);
+                SendAddUI(list);
+                Pool.FreeList(ref list);
+
+                _notificationDrawn = true;
+            }
+
+            private void RenderItemListContainer()
+            {
+                if (_itemListDrawn)
+                {
                     return;
                 }
 
-                _player.GiveItem(item);
+                SendAddUI(ComponentBuilder.ItemListContainer());
+                _itemListDrawn = true;
             }
 
-            private void RedeemResearchItem(Api.Research research)
+            private void HideItemCards()
             {
-                int            itemId         = research.ResearchId;
-                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
-                _player.blueprints.Unlock(itemDefinition);
-            }
+                List<string> destroyList = Pool.GetList<string>();
 
-            private void State_ItemsLoadError(int errorCode)
-            {
-                EnsureMainContainerIsDisplayed();
-
-                switch (_state)
+                for (int i = 0; i < _renderedItemCards; i++)
                 {
-                    case State.ItemsLoadError:
-                    case State.NoItems:
-                    case State.LoadingItems:
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Label.NOTIFICATION_TEXT);
-                        break;
-
-                    case State.ItemPageDisplay:
-                        CuiHelper.DestroyUi(_player, Builder.Names.ItemList.CONTAINER);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.PREV);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.NEXT);
-                        break;
+                    destroyList.Add(Names.MainContainer.ItemListContainer.Card(i).Self);
                 }
 
-                CuiHelper.AddUi(
-                    _player,
-                    Builder.GetMainContainerNotification(
-                        $"Failed to load items: {errorCode}",
-                        "1 0 0 1"
-                    )
-                );
-                _state = State.ItemsLoadError;
+                SendDestroyUI(destroyList);
+                Pool.FreeList(ref destroyList);
             }
 
-            private void State_LoadingItems()
+            private void RenderItemPage()
             {
-                EnsureMainContainerIsDisplayed();
+                Debug.Log("RenderItemPage()");
 
-                switch (_state)
+                // this method should not be called
+                // if inventory is empty
+                // RenderNoItemsNotification() should be used instead
+                Debug.Assert(_inventory.Count != 0);
+
+                HideItemCards();
+
+                List<CuiElement> componentList = Pool.GetList<CuiElement>();
+
+                gAPI.InventoryEntry[] items = CurrentPageItems;
+
+                for (int i = 0; i < items.Length; i++)
                 {
-                    case State.LoadingItems:
-                        return;
-                    case State.ItemPageDisplay:
-                        CuiHelper.DestroyUi(_player, Builder.Names.ItemList.CONTAINER);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.PREV);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.NEXT);
-                        break;
-                    case State.NoItems:
-                    case State.ItemsLoadError:
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Label.NOTIFICATION_TEXT);
-                        break;
-                }
-
-                CuiHelper.AddUi(
-                    _player,
-                    Builder.GetMainContainerNotification("Loading items...", "1 1 1 1")
-                );
-                _state = State.LoadingItems;
-            }
-
-            private void State_NoItems()
-            {
-                EnsureMainContainerIsDisplayed();
-
-                switch (_state)
-                {
-                    case State.NoItems:
-                        return;
-                    case State.ItemsLoadError:
-                    case State.LoadingItems:
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Label.NOTIFICATION_TEXT);
-                        break;
-                    case State.ItemPageDisplay:
-                        CuiHelper.DestroyUi(_player, Builder.Names.ItemList.CONTAINER);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.PREV);
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.NEXT);
-                        break;
-                }
-
-                CuiHelper.AddUi(
-                    _player,
-                    Builder.GetMainContainerNotification("Inventory is empty =(", "1 1 1 1")
-                );
-                _state = State.NoItems;
-            }
-
-            private void State_ItemPageDisplay()
-            {
-                EnsureMainContainerIsDisplayed();
-
-                switch (_state)
-                {
-                    case State.ItemPageDisplay:
-                        return;
-                    case State.LoadingItems:
-                    case State.NoItems:
-                    case State.ItemsLoadError:
-                        CuiHelper.DestroyUi(_player, Builder.Names.Main.Label.NOTIFICATION_TEXT);
-                        break;
-                }
-
-                CuiHelper.AddUi(_player, Builder.GetItemListContainer());
-                _state = State.ItemPageDisplay;
-            }
-
-            private void DisplayCurrentItemPage()
-            {
-                if ( _state == State.ItemPageDisplay )
-                {
-                    CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.PREV);
-                    CuiHelper.DestroyUi(_player, Builder.Names.Main.Button.NEXT);
-                }
-
-                bool hasPrevPage = _currentPageIndex > 0;
-                bool hasNextPage = _currentPageIndex < PageCount - 1;
-
-                CuiHelper.AddUi(_player, Builder.GetItemListButtons(hasPrevPage, hasNextPage));
-
-                IEnumerable<Api.InventoryEntry> currentPageItems = _inventory
-                .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
-                .Take(Builder.ITEMS_PER_PAGE);
-
-                CuiHelper.AddUi(
-                    _player,
-                    currentPageItems.Select(
-                                        (item, index) => {
-                                            int indexOnPage = index % Builder.ITEMS_PER_PAGE;
-
-                                            bool canReceive = /*CanReceiveItem(item)*/
-                                            Instance.CanReceiveItem(_player, item);
-                                            string text = !canReceive ? "CANNOT REDEEM" : "REDEEM";
-
-                                            IEnumerable<CuiElement> card =
-                                            Builder.GetCard(indexOnPage, item);
-                                            IEnumerable<CuiElement> button = Builder.GetCardButton(
-                                                item.Id,
-                                                !canReceive,
-                                                text,
-                                                "gmonetize.redeemitem " + item.Id
-                                            );
-                                            return card.Concat(button);
-                                        }
-                                    )
-                                    .SelectMany(x => x)
-                                    .ToList()
-                );
-            }
-
-            private void EnsureMainContainerIsDisplayed()
-            {
-                if ( _state == State.Closed )
-                {
-                    CuiHelper.AddUi(_player, Builder.GetMainContainer());
-                }
-            }
-
-            private void RemoveCurrentPageItems()
-            {
-                IEnumerable<Api.InventoryEntry> currentPageItems = _inventory
-                .Skip(Builder.ITEMS_PER_PAGE * _currentPageIndex)
-                .Take(Builder.ITEMS_PER_PAGE);
-
-                currentPageItems.Select(item => item.Id)
-                                .ToList()
-                                .ForEach(
-                                    id => CuiHelper.DestroyUi(
-                                        _player,
-                                        Builder.Names.ItemList.Card(id).Container
-                                    )
-                                );
-            }
-
-            private int GetAvailableSlots()
-            {
-                int totalSlots = _player.inventory.containerMain.capacity +
-                                 _player.inventory.containerBelt.capacity;
-                int claimedSlots = _player.inventory.containerMain.itemList.Count +
-                                   _player.inventory.containerBelt.itemList.Count;
-
-                return totalSlots - claimedSlots;
-            }
-
-            private bool IsAvailableForResearch(Api.Research research)
-            {
-                int itemId = research.ResearchId;
-
-                ItemDefinition itemDefinition = ItemManager.FindItemDefinition(itemId);
-
-                if ( itemDefinition == null )
-                {
-                    Instance.LogWarning(
-                        "Not found ItemDefinition for itemid {0} in IsAvailableForResearch",
-                        itemId
+                    ComponentBuilder.ItemCard(
+                        i,
+                        items[i],
+                        RedeemButtonState.Available,
+                        componentList
                     );
-                    return false;
                 }
 
-                bool isUnlocked = _player.blueprints.IsUnlocked(itemDefinition);
-                LogDebug(
-                    "Player {0} item {1} is unlocked: {2}",
-                    _player.displayName,
-                    itemDefinition.displayName.english,
-                    isUnlocked
-                );
+                _renderedItemCards = items.Length;
 
-                return !isUnlocked;
+                SendAddUI(componentList);
+
+                Pool.FreeList(ref componentList);
             }
 
-            private bool CanReceiveItem(Api.InventoryEntry item)
+            private enum NotificationType
             {
-                switch (item.Type)
-                {
-                    case Api.InventoryEntry.EntryType.ITEM:
-                        return GetAvailableSlots() > 0;
-                    case Api.InventoryEntry.EntryType.KIT:
-                        return GetAvailableSlots() >= item.Items.Count;
-                    case Api.InventoryEntry.EntryType.RANK:
-                        return false;
-                    case Api.InventoryEntry.EntryType.RESEARCH:
-                        return IsAvailableForResearch(item.Research);
-                    case Api.InventoryEntry.EntryType.CUSTOM:
-                        return false;
-                    default: return false;
-                }
-            }
-
-            private enum State
-            {
-                Closed,
                 LoadingItems,
-                ItemPageDisplay,
-                NoItems,
                 ItemsLoadError,
+                InventoryEmpty
             }
 
-            private static void DiffNotificationWindowState(
-                ref NotificationWindowState oldState,
-                ref NotificationWindowState newState,
-                out List<CuiElement> elementsToAdd,
-                out List<string> elementsToRemove
-            )
+            #region UI RPC helpers
+
+            private string SerializeUI(IEnumerable<CuiElement> elements)
             {
-                elementsToAdd    = Pool.GetList<CuiElement>();
-                elementsToRemove = Pool.GetList<string>();
+                /*FIXMEPLS*/
+                List<CuiElement> list = Pool.GetList<CuiElement>();
+                list.AddRange(elements);
 
-                if ( !newState.IsOpen )
-                {
-                    if ( oldState.IsOpen )
-                    {
-                        elementsToRemove.Add(
-                            Builder.Names.MainContainer.NotificationContainer.SELF
-                        );
-                    }
-
-                    return;
-                }
-
-                if ( !oldState.IsOpen )
-                {
-                    elementsToAdd.AddRange(Builder.GetNotificationWindow(newState.Text, newState.Color));
-                    return;
-                }
-
-                if ( oldState.Text != newState.Text )
-                {
-                    elementsToRemove.Add(
-                        Builder.Names.MainContainer.NotificationContainer.MessageContainer.MESSAGE
-                    );
-                }
+                string json = CuiHelper.ToJson(list);
+                Pool.FreeList(ref list);
+                return json;
             }
 
-            private void SendRedeemButtonDelete(int cardIndex)
+            private void SendAddUI(CuiElement element)
             {
-                SendDestroyUI(
-                    Builder.Names.MainContainer.ItemListContainer.Card(cardIndex).Footer.Button.Self
-                );
+                List<CuiElement> tempList = Pool.GetList<CuiElement>();
+                tempList.Add(element);
+                SendAddUI(tempList);
+                Pool.FreeList(ref tempList);
             }
 
-            private const string RPC_DESTROYUI = "DestroyUI";
-            private const string RPC_ADDUI     = "AddUI";
+            private void SendAddUI(IEnumerable<CuiElement> elements)
+            {
+                SendAddUI(SerializeUI(elements));
+            }
 
             private void SendAddUI(string uiJson)
             {
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_ADDUI,
@@ -1188,7 +1065,7 @@ namespace Oxide.Plugins
 
             private void SendDestroyUI(string elementName)
             {
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
@@ -1198,13 +1075,13 @@ namespace Oxide.Plugins
 
             private void SendDestroyUI(string en0, string en1)
             {
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
                     en0
                 );
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
@@ -1214,19 +1091,19 @@ namespace Oxide.Plugins
 
             private void SendDestroyUI(string en0, string en1, string en2)
             {
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
                     en0
                 );
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
                     en1
                 );
-                _player.ClientRPCEx(
+                CommunityEntity.ServerInstance.ClientRPCEx(
                     _playerSendInfo,
                     null,
                     RPC_DESTROYUI,
@@ -1237,1188 +1114,712 @@ namespace Oxide.Plugins
             private void SendDestroyUI(List<string> elementNames)
             {
                 // ReSharper disable once ForCanBeConvertedToForeach
-                for ( var i = 0; i < elementNames.Count; i++ )
+                for (int i = 0; i < elementNames.Count; i++)
                 {
                     SendDestroyUI(elementNames[i]);
                 }
             }
 
-            private enum NotificationType
+            #endregion
+
+            #region Name helper
+
+            [SuppressMessage("ReSharper", "MemberHidesStaticFromOuterClass")]
+            public static class Names
             {
-                ItemListNoItems,
-                ItemListLoading,
-                ItemListLoadError,
-                ItemReceiveError
-            }
-
-            private struct NotificationWindowState
-            {
-                public bool              IsOpen;
-                public NotificationType  Type;
-                public string            Text;
-                public Builder.RustColor Color;
-
-                public bool              HasButton;
-                public string            ButtonText;
-                public Builder.RustColor ButtonColor;
-            }
-
-            private struct MainWindowState
-            {
-                public bool IsOpen;
-                public bool IsPrevBtnAvailable;
-                public bool IsNextBtnAvailable;
-            }
-
-            private struct ItemListState
-            {
-                public bool IsVisible;
-            }
-
-            private struct ItemListEntryState
-            {
-                public int    Index;
-                public string Name;
-
-                public InventoryEntryType EntryType;
-
-                // IconId and ItemId are interchangeable
-                // in the way that if IconId is used if present,
-                // ItemId is used if IconId is absent and the good only represents one item,
-                // and default icon is used otherwise
-                public string IconId;
-                public int?   ItemId;
-                public float  ConditionBarPercentage;
-                public int    ItemAmount;
-
-                public RedeemButtonState RedeemButtonState;
-            }
-
-            private struct RedeemButtonState
-            {
-                public bool                  IsVisible;
-                public RedeemButtonStateType Type;
-                public Builder.RustColor     Color;
-
-                public string Text;
-
-                // EntryID corresponds to the argument of the receive item command,
-                // so it needs to be updated every time the item ItemListEntryState
-                // represents changes
-                public string EntryId;
-            }
-
-            private enum RedeemButtonStateType
-            {
-                Unavailable,
-                Available,
-                InProgress,
-                Error
-            }
-
-            private static class Builder
-            {
-                public const  int   COLUMN_COUNT   = 7;
-                public const  int   ROW_COUNT      = 3;
-                public const  int   ITEMS_PER_PAGE = COLUMN_COUNT * ROW_COUNT;
-                private const float COLUMN_GAP     = .005f;
-                private const float ROW_GAP        = .01f;
-
-                private const string DEFAULT_ICON_URL =
-                "https://api.gmonetize.ru/static/v2/image/plugin/icons/rust_94773.png";
-
-                public static string GetRedeemingButton(string id)
+                public static class MainContainer
                 {
-                    Names.ItemList.ItemListCard ncard = Names.ItemList.Card(id);
+                    public const string SELF = "gmonetize.mainContainer";
 
-                    return CuiHelper.ToJson(
-                        new List<CuiElement> {
-                            new CuiElement {
-                                Parent = ncard.Container,
-                                Name   = ncard.RedeemButton,
-                                Components = {
-                                    new CuiButtonComponent { Color = "0.4 0.4 0.4 0.5" },
-                                    GetTransform(
-                                        .05f,
-                                        .02f,
-                                        .95f,
-                                        .18f
-                                    )
+                    public static class HeaderContainer
+                    {
+                        public const string SELF = MainContainer.SELF + ".headerContainer";
+
+                        public static class CloseButton
+                        {
+                            public const string SELF = HeaderContainer.SELF + ".closeButton";
+                            public const string TEXT = SELF + ":text";
+                        }
+
+                        public static class PaginationButtonsContainer
+                        {
+                            public const string SELF = HeaderContainer.SELF + ".paginationButtonsContainer";
+
+                            public static class Prev
+                            {
+                                public const string SELF = PaginationButtonsContainer.SELF + ".prev";
+
+                                public const string TEXT = SELF + ":text";
+                            }
+
+                            public static class Next
+                            {
+                                public const string SELF = PaginationButtonsContainer.SELF + ".next";
+
+                                public const string TEXT = SELF + ":text";
+                            }
+                        }
+                    }
+
+                    public static class ItemListContainer
+                    {
+                        public const string SELF = MainContainer.SELF + ".itemListContainer";
+
+                        // ReSharper disable once CommentTypo
+                        /*
+                         * Note on this implementation:
+                         * I considered caching of ItemCards in an ID=>ItemCard map,
+                         * but this would require use of some (probably sophisticated) cleaning algorithm,
+                         * since card id's are all UUIDS, which are practically unique,
+                         * which would overcomplexify the code. So structs it is.
+                         */
+
+                        public static ItemCard Card(int index) => new ItemCard(index);
+
+                        public struct ItemCard
+                        {
+                            public string Self { get; }
+                            public ItemCardHeaderContainer Header { get; }
+                            public ItemCardCenterContainer Center { get; }
+                            public ItemCardFooterContainer Footer { get; }
+
+                            public ItemCard(int index)
+                            {
+                                // ReSharper disable once ArrangeStaticMemberQualifier // for clarity
+                                Self = SELF + $".itemCard[{index}]";
+
+                                Header = default(ItemCardHeaderContainer);
+                                Center = default(ItemCardCenterContainer);
+                                Footer = default(ItemCardFooterContainer);
+
+                                Header = new ItemCardHeaderContainer(this);
+                                Center = new ItemCardCenterContainer(this);
+                                Footer = new ItemCardFooterContainer(this);
+                            }
+
+                            public struct ItemCardHeaderContainer
+                            {
+                                public string Self { get; }
+
+                                // ReSharper disable once UnusedAutoPropertyAccessor.Local
+                                public string ItemType { get; }
+                                public string ItemName { get; }
+
+                                public ItemCardHeaderContainer(ItemCard card)
+                                {
+                                    Self = card.Self + ".headerContainer";
+                                    ItemType = Self + ".itemType";
+                                    ItemName = Self + ".itemName";
                                 }
-                            },
-                            new CuiElement {
-                                Parent = ncard.RedeemButton,
-                                Name   = ncard.RedeemButtonLabel,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Text = "REDEEMING...",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color =
-                                        "0.6 0.6 0.6 0.8"
+                            }
+
+                            public struct ItemCardCenterContainer
+                            {
+                                public string Self { get; }
+                                public string Image { get; }
+                                public string ConditionBar { get; }
+                                public string Amount { get; }
+
+                                public ItemCardCenterContainer(ItemCard card)
+                                {
+                                    Self = card.Self + ".centerContainer";
+                                    Image = Self + ".image";
+                                    ConditionBar = Self + ".conditionBar";
+                                    Amount = Self + ".amount";
+                                }
+                            }
+
+                            public struct ItemCardFooterContainer
+                            {
+                                public string Self { get; }
+                                public ItemCardButton Button { get; }
+
+                                public ItemCardFooterContainer(ItemCard card)
+                                {
+                                    Self = card.Self + ".bottomContainer";
+                                    Button = default(ItemCardButton);
+                                    Button = new ItemCardButton(this);
+                                }
+
+                                public struct ItemCardButton
+                                {
+                                    public string Self { get; }
+                                    public string Text { get; }
+
+                                    public ItemCardButton(ItemCardFooterContainer footerContainer)
+                                    {
+                                        Self = footerContainer.Self + ".button";
+                                        Text = Self + ":text";
                                     }
                                 }
                             }
                         }
-                    );
-                }
+                    }
 
-                public static string GetMainContainer()
-                {
-                    return CuiHelper.ToJson(
-                        new List<CuiElement> {
-                            new CuiElement {
-                                Parent = "Hud",
-                                Name   = Names.Main.CONTAINER,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color = Colors.Build(
-                                            0.4f,
-                                            0.4f,
-                                            0.4f,
-                                            0.4f
-                                        ),
-                                        Material = Materials.BLUR
-                                    },
-                                    GetTransform(
-                                        0.013f,
-                                        0.14f,
-                                        0.987f,
-                                        0.95f
-                                    )
-                                }
-                            },
-                            new CuiElement {
-                                Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.CLOSE,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color = Colors.Build(
-                                            0.8f,
-                                            0.3f,
-                                            0.3f,
-                                            0.6f
-                                        ),
-                                        Command = "gmonetize.close"
-                                    },
-                                    GetTransform(
-                                        0.95f,
-                                        0.95f,
-                                        0.995f,
-                                        0.99f
-                                    )
-                                }
-                            },
-                            new CuiElement {
-                                Parent = Names.Main.Button.CLOSE,
-                                Name   = Names.Main.Label.CLOSE_TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color = Colors.Build(
-                                            0.8f,
-                                            0.8f,
-                                            0.8f,
-                                            0.5f
-                                        ),
-                                        Align    = TextAnchor.MiddleCenter,
-                                        Text     = "CLOSE",
-                                        FontSize = 15
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            new CuiElement {
-                                Parent     = Names.Main.CONTAINER,
-                                Name       = Names.Main.CONTAINER + ":needscursor",
-                                Components = { new CuiNeedsCursorComponent() }
+                    public static class NotificationContainer
+                    {
+                        public const string SELF = MainContainer.SELF + ".notificationContainer";
+
+                        public static class HeaderContainer
+                        {
+                            public const string SELF = NotificationContainer.SELF + ".headerContainer";
+
+                            public const string TITLE = SELF + ".title";
+                        }
+
+                        public static class MessageContainer
+                        {
+                            public const string SELF = NotificationContainer.SELF + ".messageContainer";
+
+                            public const string MESSAGE = SELF + ".message";
+
+                            public static class Button
+                            {
+                                public const string SELF = MessageContainer.SELF + ".button";
+                                public const string TEXT = SELF + ":text";
                             }
                         }
-                    );
+                    }
                 }
+            }
 
-                public static string GetMainContainerNotification(string message, string color)
-                {
-                    return CuiHelper.ToJson(
-                        new List<CuiElement> {
-                            new CuiElement {
-                                Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Label.NOTIFICATION_TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color = color,
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        FontSize = 18,
-                                        Text     = message
-                                    },
-                                    GetTransform(yMax: 0.95f)
-                                }
-                            }
-                        }
-                    );
-                }
+            #endregion
 
-                public static string GetItemListButtons(bool hasPrevPage, bool hasNextPage)
-                {
-                    const string COLOR_DISABLED = "0.4 0.4 0.4 0.5";
-                    const string COLOR_ENABLED  = "0.7 0.7 0.7 0.35";
-                    const string COLOR_TEXT     = "0.8 0.8 0.8 0.4";
+            private static class Materials
+            {
+                public const string BLUR = "assets/content/ui/uibackgroundblur.mat";
+            }
 
-                    string prevButtonColor = hasPrevPage ? COLOR_ENABLED : COLOR_DISABLED;
-                    string nextButtonColor = hasNextPage ? COLOR_ENABLED : COLOR_DISABLED;
+            [SuppressMessage("ReSharper", "MemberCanBePrivate.Local")]
+            public struct RustColor
+            {
+                /*x00 -> x99 goes from darkest to lightest*/
 
-                    return CuiHelper.ToJson(
-                        new List<CuiElement> {
-                            new CuiElement {
-                                Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.PREV,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = prevButtonColor,
-                                        Command = hasPrevPage ? "gmonetize.prevpage" : string.Empty
-                                    },
-                                    GetTransform(
-                                        0.005f,
-                                        0.95f,
-                                        0.05f,
-                                        0.99f
-                                    )
-                                }
-                            },
-                            new CuiElement {
-                                Parent = Names.Main.Button.PREV,
-                                Name   = Names.Main.Button.PREV + ":text",
-                                Components = {
-                                    new CuiTextComponent {
-                                        Text = "PREVIOUS",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color    = COLOR_TEXT,
-                                        FontSize = 12
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            new CuiElement {
-                                Parent = Names.Main.CONTAINER,
-                                Name   = Names.Main.Button.NEXT,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = nextButtonColor,
-                                        Command = hasNextPage ? "gmonetize.nextpage" : string.Empty
-                                    },
-                                    GetTransform(
-                                        0.055f,
-                                        0.95f,
-                                        0.1f,
-                                        0.99f
-                                    )
-                                }
-                            },
-                            new CuiElement {
-                                Parent = Names.Main.Button.NEXT,
-                                Name   = Names.Main.Button.NEXT + ":text",
-                                Components = {
-                                    new CuiTextComponent {
-                                        Text = "NEXT",
-                                        Align =
-                                        TextAnchor.MiddleCenter,
-                                        Color    = COLOR_TEXT,
-                                        FontSize = 12
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                        }
-                    );
-                }
+                public static readonly RustColor White = new RustColor(1f);
+                public static readonly RustColor Black = new RustColor(0f);
 
-                public static string GetItemListContainer()
-                {
-                    return CuiHelper.ToJson(
-                        new List<CuiElement> {
-                            new CuiElement {
-                                Parent = Names.Main.CONTAINER,
-                                Name =
-                                Names.ItemList.CONTAINER,
-                                Components = {
-                                    new CuiImageComponent { Color = "0.4 0.4 0.4 0.5" },
-                                    GetTransform(
-                                        0.005f,
-                                        0.01f,
-                                        0.995f,
-                                        0.94f
-                                    )
-                                }
-                            }
-                        }
-                    );
-                }
+                // ReSharper disable once IdentifierTypo
+                public static readonly RustColor Transp  = new RustColor(0, 0f);
+                public static readonly RustColor Bg00    = new RustColor(0.1f);
+                public static readonly RustColor Bg01    = new RustColor(0.3f);
+                public static readonly RustColor Bg02    = new RustColor(0.5f);
+                public static readonly RustColor Bg03    = new RustColor(0.6f);
+                public static readonly RustColor Fg00    = new RustColor(0.7f);
+                public static readonly RustColor Fg01    = new RustColor(0.8f);
+                public static readonly RustColor Fg02    = new RustColor(0.85f);
+                public static readonly RustColor Fg03    = new RustColor(0.9f);
+                public static readonly RustColor Success = new RustColor(0.28f, 0.4f, 0.2f);
+                public static readonly RustColor Warn    = new RustColor(0.7f, 0.6f, 0.2f);
+                public static readonly RustColor Error   = new RustColor(0.6f, 0.2f, 0.1f);
 
-                public static IEnumerable<CuiElement> GetCardButton(
-                    string cardId,
-                    bool isDisabled,
-                    string text,
-                    string command
+                public readonly float Red, Green, Blue, Alpha;
+
+                private string _serialized;
+
+                public RustColor(
+                    float red,
+                    float green,
+                    float blue,
+                    float alpha = 1f
                 )
                 {
-                    CuiRectTransformComponent buttonTransform = GetTransform(
-                        .05f,
-                        .02f,
-                        .95f,
-                        .18f
-                    );
-
-                    string buttonColor = isDisabled ? "0.4 0.4 0.4 0.5" : "0.25 0.5 0.3 0.5";
-
-                    CuiElement button = new CuiElement {
-                        Parent = Names.ItemList.Card(cardId).Container,
-                        Name   = Names.ItemList.Card(cardId).RedeemButton,
-                        Components = {
-                            new CuiButtonComponent {
-                                Command = isDisabled ? null : command,
-                                Color   = buttonColor
-                            },
-                            buttonTransform
-                        }
-                    };
-
-                    CuiElement buttonLabel = new CuiElement {
-                        Parent = Names.ItemList.Card(cardId).RedeemButton,
-                        Name   = Names.ItemList.Card(cardId).RedeemButtonLabel,
-                        Components = {
-                            new CuiTextComponent {
-                                Text  = text,
-                                Color = "0.6 0.6 0.6 0.8",
-                                Align = TextAnchor.MiddleCenter
-                            },
-                            GetTransform()
-                        }
-                    };
-
-                    return new List<CuiElement> {
-                        button,
-                        buttonLabel
-                    };
+                    NormalizeRange(ref red);
+                    NormalizeRange(ref green);
+                    NormalizeRange(ref blue);
+                    NormalizeRange(ref alpha);
+                    Red = red;
+                    Green = green;
+                    Blue = blue;
+                    Alpha = alpha;
+                    _serialized = null;
                 }
 
-                public static IEnumerable<CuiElement> GetCard(
-                    int indexOnPage,
-                    Api.InventoryEntry inventoryEntry
+                public RustColor(float cChannels, float alpha = 1f) : this(
+                    cChannels,
+                    cChannels,
+                    cChannels,
+                    alpha
+                ) { }
+
+                public RustColor(
+                    byte red,
+                    byte green,
+                    byte blue,
+                    float alpha = 1f
+                ) : this(
+                    NormalizeByte(red),
+                    NormalizeByte(green),
+                    NormalizeByte(blue),
+                    alpha
+                ) { }
+
+                public RustColor(byte cChannels, float alpha = 1f) : this(
+                    cChannels,
+                    cChannels,
+                    cChannels,
+                    alpha
+                ) { }
+
+                public static implicit operator string(RustColor rc) => rc.ToString();
+
+                public static float NormalizeByte(byte b) => b / (float)byte.MaxValue;
+
+                private static void NormalizeRange(ref float value)
+                {
+                    value = Math.Max(Math.Min(value, 1f), 0);
+                }
+
+                public override string ToString() =>
+                    _serialized ?? (_serialized = $"{Red} {Green} {Blue} {Alpha}");
+
+                [System.Diagnostics.Contracts.Pure]
+                public RustColor With(
+                    float? r = null,
+                    float? g = null,
+                    float? b = null,
+                    float? a = null
                 )
                 {
-                    Names.ItemList.ItemListCard ncard = Names.ItemList.Card(inventoryEntry.Id);
+                    return new RustColor(
+                        r.GetValueOrDefault(Red),
+                        g.GetValueOrDefault(Green),
+                        b.GetValueOrDefault(Blue),
+                        a.GetValueOrDefault(Alpha)
+                    );
+                }
 
-                    CuiElementContainer container = new CuiElementContainer {
+                [System.Diagnostics.Contracts.Pure]
+                public RustColor With(
+                    byte? r = null,
+                    byte? g = null,
+                    byte? b = null,
+                    float? a = null
+                )
+                {
+                    float fR = r.HasValue ? NormalizeByte(r.Value) : Red;
+                    float fG = g.HasValue ? NormalizeByte(g.Value) : Green;
+                    float fB = b.HasValue ? NormalizeByte(b.Value) : Green;
+
+                    return new RustColor(
+                        fR,
+                        fG,
+                        fB,
+                        a.GetValueOrDefault(Alpha)
+                    );
+                }
+
+                [System.Diagnostics.Contracts.Pure]
+                public RustColor WithAlpha(float alpha) => new RustColor(
+                    Red,
+                    Green,
+                    Blue,
+                    alpha
+                );
+
+                public static class ComponentColors
+                {
+                    public static readonly RustColor PanelBase = Bg00.WithAlpha(0.4f);
+                    public static readonly RustColor PanelFg   = Bg01.WithAlpha(0.5f);
+
+
+                    public static readonly RustColor TextWhite    = Fg01.WithAlpha(0.6f);
+                    public static readonly RustColor TextSemiDark = Fg00.WithAlpha(0.4f);
+
+                    public static readonly RustColor TextDefault  = Fg00.WithAlpha(0.4f);
+                    public static readonly RustColor TextDisabled = Fg00.WithAlpha(0.2f);
+
+                    public static readonly RustColor ButtonDefault  = Bg03.WithAlpha(0.3f);
+                    public static readonly RustColor ButtonDisabled = Bg03.WithAlpha(0.2f);
+                    public static readonly RustColor ButtonSuccess  = Success.WithAlpha(0.7f);
+                    public static readonly RustColor ButtonError    = Error.WithAlpha(0.7f);
+                }
+            }
+
+            private static class ComponentBuilder
+            {
+                private const string DEFAULT_ICON_URL =
+                    "https://api.gmonetize.ru/static/v2/image/plugin/icons/rust_94773.png";
+
+                private static readonly Dictionary<ValueTuple<float, float, float, float>, CuiRectTransformComponent>
+                    s_RectTransformCache =
+                        new Dictionary<ValueTuple<float, float, float, float>, CuiRectTransformComponent>();
+
+
+                /// <summary>
+                /// Builds main container along with it's header and close button
+                /// </summary>
+                /// <returns></returns>
+                public static IEnumerable<CuiElement> MainContainer()
+                {
+                    return new[] {
+                        /*main container*/
                         new CuiElement {
-                            Parent = Names.ItemList.CONTAINER,
-                            Name   = ncard.Container,
+                            Parent = "Hud",
+                            Name = Names.MainContainer.SELF,
                             Components = {
-                                new CuiImageComponent { Color = "0.4 0.4 0.4 0.6" },
-                                GetGridTransform(indexOnPage)
-                            }
-                        },
-                        new CuiElement {
-                            Parent = ncard.Container,
-                            Name   = ncard.InnerContainer,
-                            Components = {
-                                new CuiImageComponent { Color = "0 0 0 0" },
+                                new CuiImageComponent {
+                                    Color = RustColor.ComponentColors.PanelBase,
+                                    Material = Materials.BLUR
+                                },
+                                new CuiNeedsCursorComponent(),
                                 GetTransform(
-                                    .03f,
-                                    .2f,
-                                    .97f,
-                                    .90f
+                                    0.0135f,
+                                    0.9865f,
+                                    0.139f,
+                                    0.95f
                                 )
                             }
                         },
+                        /*header container*/
                         new CuiElement {
-                            Parent = ncard.Container,
-                            Name   = ncard.NameLabel + ":container",
+                            Parent = Names.MainContainer.SELF,
+                            Name = Names.MainContainer.HeaderContainer.SELF,
                             Components = {
-                                new CuiImageComponent { Color = "0.7 0.7 0.7 0.25" },
-                                GetTransform(yMin: 0.91f, yMax: 1f)
+                                new CuiImageComponent {Color = RustColor.ComponentColors.PanelFg},
+                                GetTransform(yMin: 0.95f)
                             }
                         },
+                        /*close button*/
                         new CuiElement {
-                            Parent = ncard.NameLabel + ":container",
-                            Name   = ncard.NameLabel,
+                            Parent = Names.MainContainer.HeaderContainer.SELF,
+                            Name = Names.MainContainer.HeaderContainer.CloseButton.SELF,
+                            Components = {
+                                new CuiButtonComponent {
+                                    Color = RustColor.ComponentColors.ButtonError,
+                                    Command = CMD_CLOSE
+                                },
+                                GetTransform(
+                                    0.94f,
+                                    0.9965f,
+                                    0.098f,
+                                    0.88f
+                                )
+                            }
+                        },
+                        /*close button text*/
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.CloseButton.SELF,
+                            Name = Names.MainContainer.HeaderContainer.CloseButton.TEXT,
                             Components = {
                                 new CuiTextComponent {
-                                    Text = string.IsNullOrEmpty(inventoryEntry.Name)
-                                           ? "ITEM"
-                                           : inventoryEntry.Name,
+                                    Text = "CLOSE",
+                                    Color = RustColor.ComponentColors.TextSemiDark,
+                                    Align = TextAnchor.MiddleCenter
+                                },
+                                GetTransform()
+                            }
+                        },
+                        /*pagination buttons container*/
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.SELF,
+                            Name = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
+                            Components = {
+                                new CuiImageComponent {
+                                    Color = RustColor.Transp,
+                                },
+                                GetTransform(
+                                    0.0035f,
+                                    0.1f,
+                                    0.098f,
+                                    0.84f
+                                ) // w=0,0565
+                            }
+                        }
+                    };
+                }
+
+                public static void PaginationButtons(bool prev, bool next, List<CuiElement> componentList)
+                {
+                    RustColor colorEnabled = RustColor.ComponentColors.ButtonDefault;
+                    RustColor colorDisabled = RustColor.ComponentColors.ButtonDisabled;
+
+                    RustColor textColorEnabled = RustColor.ComponentColors.TextDefault;
+                    RustColor textColorDisabled = RustColor.ComponentColors.TextDisabled;
+
+                    RustColor prevBtnColor = prev ? colorEnabled : colorDisabled;
+                    RustColor prevBtnTextColor = prev ? textColorEnabled : textColorDisabled;
+                    string prevBtnCmd = prev ? CMD_PREVP : null;
+
+                    RustColor nextBtnColor = next ? colorEnabled : colorDisabled;
+                    RustColor nextBtnTextColor = next ? textColorEnabled : textColorDisabled;
+                    string nextBtnCmd = next ? CMD_NEXTP : null;
+
+                    /*prev btn*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
+                            Name = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev.SELF,
+                            Components = {
+                                new CuiButtonComponent {
+                                    Color = prevBtnColor,
+                                    Command = prevBtnCmd
+                                },
+                                GetTransform(xMax: 0.48f)
+                            }
+                        }
+                    );
+
+                    /*prev btn text*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev.SELF,
+                            Name = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev.TEXT,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = prevBtnTextColor,
+                                    Text = "PREVIOUS",
                                     Align = TextAnchor.MiddleCenter,
-                                    Color = "0.8 0.8 0.8 0.4"
+                                    FontSize = 12
                                 },
                                 GetTransform()
                             }
                         }
-                    };
-                    CuiElement iconEl = new CuiElement {
-                        Parent     = ncard.InnerContainer,
-                        Name       = ncard.Icon,
-                        Components = { GetTransform() }
-                    };
-
-                    LogDebug(
-                        "Iconid for good {0}: {1}",
-                        inventoryEntry.Name,
-                        inventoryEntry.IconId
                     );
-                    if ( string.IsNullOrEmpty(inventoryEntry.IconId) )
-                    {
-                        switch (inventoryEntry.Type)
-                        {
-                            case Api.InventoryEntry.EntryType.ITEM:
-                                iconEl.Components.Insert(
-                                    0,
-                                    new CuiImageComponent {
-                                        ItemId = inventoryEntry.Item.ItemId,
-                                        Color  = "1 1 1 0.8"
-                                    }
-                                );
-                                break;
 
-                            case Api.InventoryEntry.EntryType.KIT:
-                                iconEl.Components.Insert(
-                                    0,
-                                    new CuiImageComponent {
-                                        ItemId = inventoryEntry.Items[0].ItemId,
-                                        Color  = "1 1 1 0.8"
-                                    }
-                                );
-                                break;
-
-                            default:
-                                iconEl.Components.Insert(
-                                    0,
-                                    new CuiRawImageComponent {
-                                        Url   = DEFAULT_ICON_URL,
-                                        Color = "1 1 1 0.8"
-                                    }
-                                );
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        iconEl.Components.Insert(
-                            0,
-                            new CuiRawImageComponent {
-                                Url = Instance._api.GetIconUrl(inventoryEntry.IconId)
+                    /*next btn*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
+                            Name = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next.SELF,
+                            Components = {
+                                new CuiButtonComponent {
+                                    Color = nextBtnColor,
+                                    Command = nextBtnCmd
+                                },
+                                GetTransform(xMin: 0.52f)
                             }
-                        );
-                    }
+                        }
+                    );
 
-                    container.Add(iconEl);
-
-                    return container;
+                    /*next btn text*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next.SELF,
+                            Name = Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next.TEXT,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = nextBtnTextColor,
+                                    Text = "NEXT",
+                                    Align = TextAnchor.MiddleCenter,
+                                    FontSize = 12
+                                },
+                                GetTransform()
+                            }
+                        }
+                    );
                 }
 
-                public static IEnumerable<CuiElement> GetNotificationWindow(
-                    string text,
-                    string color
+                public static void Notification(List<CuiElement> componentList, NotificationType type)
+                {
+                    /*notification container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.SELF,
+                            Components = {
+                                new CuiImageComponent {
+                                    Color = RustColor.ComponentColors.PanelFg,
+                                },
+                                GetTransform(
+                                    xMin: 0.35f,
+                                    xMax: 0.65f,
+                                    yMin: 0.3f,
+                                    yMax: 0.6f
+                                )
+                            }
+                        }
+                    );
+
+                    /*notification header container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.HeaderContainer.SELF,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.Bg01.WithAlpha(0.5f)},
+                                GetTransform(yMin: 0.9f, xMax: 0.998f, yMax: 0.998f)
+                            }
+                        }
+                    );
+
+                    /*notification title*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.HeaderContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.HeaderContainer.TITLE,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = RustColor.ComponentColors.TextWhite.WithAlpha(0.4f),
+                                    Text = "NOTIFICATION",
+                                    Align = TextAnchor.MiddleCenter
+                                },
+                                GetTransform()
+                            }
+                        }
+                    );
+
+                    /*notification message container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.MessageContainer.SELF,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.Transp},
+                                GetTransform(yMax: 0.9f)
+                            }
+                        }
+                    );
+
+                    float notificationMessageYMin = type == NotificationType.ItemsLoadError ? 0.3f : 0f;
+
+                    string text;
+
+                    switch (type)
+                    {
+                        case NotificationType.LoadingItems:
+                            text = "LOADING ITEMS...";
+                            break;
+                        case NotificationType.ItemsLoadError:
+                            text = "FAILED TO LOAD ITEMS";
+                            break;
+                        case NotificationType.InventoryEmpty:
+                            text = "INVENTORY IS EMPTY";
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(type), type, null);
+                    }
+
+                    /*notification message text*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.MessageContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.MessageContainer.MESSAGE,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = RustColor.ComponentColors.TextSemiDark,
+                                    Text = text,
+                                    Align = TextAnchor.MiddleCenter
+                                },
+                                GetTransform(yMin: notificationMessageYMin)
+                            }
+                        }
+                    );
+
+                    AddNotificationButton(componentList, type);
+                }
+
+                private static void AddNotificationButton(List<CuiElement> componentList, NotificationType type)
+                {
+                    if (type != NotificationType.ItemsLoadError)
+                        return;
+
+                    string text = "RETRY";
+                    string cmd = CMD_RETRY_LOAD;
+
+                    /*notification message dismiss btn*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.MessageContainer.SELF,
+                            Name = Names.MainContainer.NotificationContainer.MessageContainer.Button.SELF,
+                            Components = {
+                                new CuiButtonComponent {
+                                    Color = RustColor.ComponentColors.ButtonError,
+                                    Command = cmd
+                                },
+                                GetTransform(yMax: 0.3f)
+                            }
+                        }
+                    );
+
+                    /*notification message dismiss btn text*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.NotificationContainer.MessageContainer.Button.SELF,
+                            Name = Names.MainContainer.NotificationContainer.MessageContainer.Button.TEXT,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = RustColor.ComponentColors.TextWhite,
+                                    Text = text
+                                },
+                                GetTransform()
+                            }
+                        }
+                    );
+                }
+
+                public static CuiElement ItemListContainer()
+                {
+                    return new CuiElement {
+                        Parent = Names.MainContainer.SELF,
+                        Name = Names.MainContainer.ItemListContainer.SELF,
+                        Components = {
+                            new CuiImageComponent {
+                                Color = RustColor.Transp,
+                            },
+                            GetTransform(
+                                0.0035f,
+                                0.9965f,
+                                0.006f,
+                                0.944f
+                            )
+                        }
+                    };
+                }
+
+                public static void ItemCard(
+                    int index,
+                    gAPI.InventoryEntry inventoryEntry,
+                    RedeemButtonState buttonState,
+                    List<CuiElement> componentList
                 )
                 {
-                    return new[] {
-                        new CuiElement {
-                            Parent = Names.Main.CONTAINER,
-                            Name =
-                            "gm_main_notification_container",
-                            Components = {
-                                new CuiImageComponent {
-                                    Color = "0.6 0.6 0.6 0.7",
-                                },
-                                new CuiRectTransformComponent {
-                                    AnchorMin = "0.35 0.3",
-                                    AnchorMax = "0.65 0.7"
-                                }
-                            }
-                        },
-                        new CuiElement {
-                            Parent = "gm_main_notification_container",
-                            Name   = "gm_main_notification_header",
-                            Components = {
-                                new CuiImageComponent {
-                                    Color = "0.6 0.6 0.6 0.9",
-                                },
-                                new CuiRectTransformComponent {
-                                    AnchorMin = "0 0.9",
-                                    AnchorMax = "1 1"
-                                }
-                            }
-                        },
-                        new CuiElement {
-                            Parent = "gm_main_notification_header",
-                            Name   = "gm_main_notification_header:text",
-                            Components = {
-                                new CuiTextComponent {
-                                    Text = "Notification",
-                                    Align =
-                                    TextAnchor.MiddleCenter
-                                },
-                                new CuiRectTransformComponent {
-                                    AnchorMin = "0 0",
-                                    AnchorMax = "1 1"
-                                }
-                            }
-                        },
-                        new CuiElement {
-                            Parent = "gm_main_notification_container",
-                            Name   = "gm_main_notification_container:text",
-                            Components = {
-                                new CuiTextComponent {
-                                    Text  = text,
-                                    Color = color
-                                },
-                                new CuiRectTransformComponent {
-                                    AnchorMin = "0 0",
-                                    AnchorMax = "1 0.9"
-                                }
-                            }
-                        }
-                    };
-                }
-
-                public static class Names
-                {
-                    public static class MainContainer
-                    {
-                        public const string SELF = "gmonetize.mainContainer";
-
-                        public static class HeaderContainer
-                        {
-                            public const string SELF = MainContainer.SELF + ".headerContainer";
-
-                            public static class CloseButton
-                            {
-                                public const string SELF = HeaderContainer.SELF + ".closeButton";
-                                public const string TEXT = SELF + ":text";
-                            }
-
-                            public static class PaginationButtonsContainer
-                            {
-                                public const string SELF =
-                                HeaderContainer.SELF + ".paginationButtonsContainer";
-
-                                public static class Prev
-                                {
-                                    public const string SELF =
-                                    PaginationButtonsContainer.SELF + ".prev";
-
-                                    public const string TEXT = SELF + ":text";
-                                }
-
-                                public static class Next
-                                {
-                                    public const string SELF =
-                                    PaginationButtonsContainer.SELF + ".next";
-
-                                    public const string TEXT = SELF + ":text";
-                                }
-                            }
-                        }
-
-                        public static class ItemListContainer
-                        {
-                            public const string SELF = MainContainer.SELF + ".itemListContainer";
-
-                            /*
-                             * Note on this implementation:
-                             * I considered caching of ItemCards in an ID=>ItemCard map,
-                             * but this would require use of some (probably sophisticated) cleaning algorithm,
-                             * since card id's are all UUIDS, which are practically unique,
-                             * which would overcomplexify the code. So structs it is.
-                             */
-
-                            public static ItemCard Card(int index) => new ItemCard(index);
-
-                            public struct ItemCard
-                            {
-                                public string Self { get; }
-                                public ItemCardHeaderContainer Header { get; }
-                                public ItemCardCenterContainer Center { get; }
-                                public ItemCardFooterContainer Footer { get; }
-
-                                public ItemCard(int index)
-                                {
-                                    // ReSharper disable once ArrangeStaticMemberQualifier // for clarity
-                                    Self = ItemListContainer.SELF + $".itemCard[{index}]";
-
-                                    Header = default(ItemCardHeaderContainer);
-                                    Center = default(ItemCardCenterContainer);
-                                    Footer = default(ItemCardFooterContainer);
-
-                                    Header = new ItemCardHeaderContainer(this);
-                                    Center = new ItemCardCenterContainer(this);
-                                    Footer = new ItemCardFooterContainer(this);
-                                }
-
-                                public struct ItemCardHeaderContainer
-                                {
-                                    public string Self { get; }
-
-                                    public string ItemType { get; }
-                                    public string ItemName { get; }
-
-                                    public ItemCardHeaderContainer(ItemCard card)
-                                    {
-                                        Self     = card.Self + ".headerContainer";
-                                        ItemType = Self + ".itemType";
-                                        ItemName = Self + ".itemName";
-                                    }
-                                }
-
-                                public struct ItemCardCenterContainer
-                                {
-                                    public string Self { get; }
-                                    public string Image { get; }
-                                    public string ConditionBar { get; }
-                                    public string Amount { get; }
-
-                                    public ItemCardCenterContainer(ItemCard card)
-                                    {
-                                        Self         = card.Self + ".centerContainer";
-                                        Image        = Self + ".image";
-                                        ConditionBar = Self + ".conditionBar";
-                                        Amount       = Self + ".amount";
-                                    }
-                                }
-
-                                public struct ItemCardFooterContainer
-                                {
-                                    public string Self { get; }
-                                    public ItemCardButton Button { get; }
-
-                                    public ItemCardFooterContainer(ItemCard card)
-                                    {
-                                        Self   = card.Self + ".bottomContainer";
-                                        Button = default(ItemCardButton);
-                                        Button = new ItemCardButton(this);
-                                    }
-
-                                    public struct ItemCardButton
-                                    {
-                                        public string Self { get; }
-                                        public string Text { get; }
-
-                                        public ItemCardButton(
-                                            ItemCardFooterContainer footerContainer
-                                        )
-                                        {
-                                            Self = footerContainer.Self + ".button";
-                                            Text = Self + ":text";
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        public static class NotificationContainer
-                        {
-                            public const string SELF =
-                            MainContainer.SELF + ".notificationContainer";
-
-                            public static class HeaderContainer
-                            {
-                                public const string SELF =
-                                NotificationContainer.SELF + ".headerContainer";
-
-                                public const string TITLE = SELF + ".title";
-                            }
-
-                            public static class MessageContainer
-                            {
-                                public const string SELF =
-                                NotificationContainer.SELF + ".messageContainer";
-
-                                public const string MESSAGE = SELF + ".message";
-
-                                public static class Button
-                                {
-                                    public const string SELF = MessageContainer.SELF + ".button";
-                                    public const string TEXT = SELF + ":text";
-                                }
-                            }
-                        }
-                    }
-                }
-
-                private static class Materials
-                {
-                    public const string BLUR = "assets/content/ui/uibackgroundblur.mat";
-                }
-
-                public struct RustColor
-                {
-                    /*x00 -> x99 goes from darkest to lightest*/
-
-                    public static readonly RustColor White   = new RustColor(1f);
-                    public static readonly RustColor Black   = new RustColor(0f);
-                    public static readonly RustColor Transp  = new RustColor(0, 0f);
-                    public static readonly RustColor Bg00    = new RustColor(0.3f);
-                    public static readonly RustColor Bg01    = new RustColor(0.4f);
-                    public static readonly RustColor Bg02    = new RustColor(0.5f);
-                    public static readonly RustColor Bg03    = new RustColor(0.6f);
-                    public static readonly RustColor Fg00    = new RustColor(0.7f);
-                    public static readonly RustColor Fg01    = new RustColor(0.8f);
-                    public static readonly RustColor Fg02    = new RustColor(0.85f);
-                    public static readonly RustColor Fg03    = new RustColor(0.9f);
-                    public static readonly RustColor Success = new RustColor(0.2f, 0.8f, 0.3f);
-                    public static readonly RustColor Warn    = new RustColor(0.7f, 0.6f, 0.2f);
-                    public static readonly RustColor Error   = new RustColor(0.8f, 0.3f, 0.2f);
-
-                    public readonly float Red,
-                                          Green,
-                                          Blue,
-                                          Alpha;
-
-                    private string _serialized;
-
-                    public RustColor(
-                        float red,
-                        float green,
-                        float blue,
-                        float alpha = 1f
-                    )
-                    {
-                        NormalizeRange(ref red);
-                        NormalizeRange(ref green);
-                        NormalizeRange(ref blue);
-                        NormalizeRange(ref alpha);
-                        Red         = red;
-                        Green       = green;
-                        Blue        = blue;
-                        Alpha       = alpha;
-                        _serialized = null;
-                    }
-
-                    public RustColor(float cChannels, float alpha = 1f) : this(
-                        cChannels,
-                        cChannels,
-                        cChannels,
-                        alpha
-                    ) { }
-
-                    public RustColor(
-                        byte red,
-                        byte green,
-                        byte blue,
-                        float alpha = 1f
-                    ) : this(
-                        NormalizeByte(red),
-                        NormalizeByte(green),
-                        NormalizeByte(blue),
-                        alpha
-                    ) { }
-
-                    public RustColor(byte cChannels, float alpha = 1f) : this(
-                        cChannels,
-                        cChannels,
-                        cChannels,
-                        alpha
-                    ) { }
-
-                    public static implicit operator string(RustColor rc) => rc.ToString();
-
-                    public static float NormalizeByte(byte b) => b / (float) byte.MaxValue;
-
-                    private static void NormalizeRange(ref float value)
-                    {
-                        value = Math.Max(Math.Min(value, 1f), 0);
-                    }
-
-                    public override string ToString() =>
-                    _serialized ?? (_serialized = $"{Red} {Green} {Blue} {Alpha}");
-
-                    [Pure]
-                    public RustColor With(
-                        float? r = null,
-                        float? g = null,
-                        float? b = null,
-                        float? a = null
-                    )
-                    {
-                        return new RustColor(
-                            r.GetValueOrDefault(Red),
-                            g.GetValueOrDefault(Green),
-                            b.GetValueOrDefault(Blue),
-                            a.GetValueOrDefault(Alpha)
-                        );
-                    }
-
-                    [Pure]
-                    public RustColor With(
-                        byte? r = null,
-                        byte? g = null,
-                        byte? b = null,
-                        float? a = null
-                    )
-                    {
-                        float fR,
-                              fG,
-                              fB;
-
-                        fR = r.HasValue ? NormalizeByte(r.Value) : Red;
-                        fG = g.HasValue ? NormalizeByte(g.Value) : Green;
-                        fB = b.HasValue ? NormalizeByte(b.Value) : Green;
-
-                        return new RustColor(
-                            fR,
-                            fG,
-                            fB,
-                            a.GetValueOrDefault(Alpha)
-                        );
-                    }
-
-                    [Pure]
-                    public RustColor WithAlpha(float alpha) => new RustColor(
-                        Red,
-                        Green,
-                        Blue,
-                        alpha
+                    CuiRectTransformComponent gridTransform = GetGridTransform(
+                        COLUMN_COUNT,
+                        ROW_COUNT,
+                        COLUMN_GAP,
+                        ROW_GAP,
+                        index
                     );
 
-                    public static class ComponentColors
-                    {
-                        public static readonly RustColor PanelBase = Bg01.WithAlpha(0.4f);
-                        public static readonly RustColor PanelDark = Bg02.WithAlpha(0.4f);
+                    Debug.Log($"Item {index} grid transform: {gridTransform.AnchorMin} ; {gridTransform.AnchorMax}");
 
-                        public static readonly RustColor ButtonError = Error.WithAlpha(0.3f);
+                    Names.MainContainer.ItemListContainer.ItemCard nCard =
+                        Names.MainContainer.ItemListContainer.Card(index);
 
-                        public static readonly RustColor TextWhite = Fg01.WithAlpha(0.8f);
-
-                        public static readonly RustColor ButtonDefault  = Bg02;
-                        public static readonly RustColor ButtonDisabled = Bg00;
-                    }
-                }
-
-                public static class ComponentBuilder
-                {
-                    private static readonly
-                    Dictionary<ValueTuple<float, float, float, float>, CuiRectTransformComponent>
-                    s_RectTransformCache =
-                    new Dictionary<ValueTuple<float, float, float, float>,
-                        CuiRectTransformComponent>();
-
-                    /// <summary>
-                    /// Builds main container along with it's header and close button
-                    /// </summary>
-                    /// <returns></returns>
-                    public static IEnumerable<CuiElement> MainContainer()
-                    {
-                        return new[] {
-                            /*main container*/
-                            new CuiElement {
-                                Parent = "Hud",
-                                Name   = Names.MainContainer.SELF,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color    = RustColor.ComponentColors.PanelBase,
-                                        Material = Materials.BLUR
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            /*header container*/
-                            new CuiElement {
-                                Parent = Names.MainContainer.SELF,
-                                Name   = Names.MainContainer.HeaderContainer.SELF,
-                                Components = {
-                                    new CuiImageComponent { Color = RustColor.Transp },
-                                    GetTransform(yMin: 0.9f)
-                                }
-                            },
-                            /*close button*/
-                            new CuiElement {
-                                Parent = Names.MainContainer.HeaderContainer.SELF,
-                                Name   = Names.MainContainer.HeaderContainer.CloseButton.SELF,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = RustColor.ComponentColors.ButtonError,
-                                        Command = CMD_CLOSE
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            /*close button text*/
-                            new CuiElement {
-                                Parent = Names.MainContainer.HeaderContainer.CloseButton.SELF,
-                                Name   = Names.MainContainer.HeaderContainer.CloseButton.TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Text  = "CLOSE",
-                                        Color = RustColor.ComponentColors.TextWhite
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            /*pagination buttons container*/
-                            new CuiElement {
-                                Parent = Names.MainContainer.HeaderContainer.SELF,
-                                Name = Names.MainContainer.HeaderContainer
-                                            .PaginationButtonsContainer
-                                            .SELF,
-                                Components = { }
+                    /*root*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = Names.MainContainer.ItemListContainer.SELF,
+                            Name = nCard.Self,
+                            Components = {
+                                new CuiImageComponent {
+                                    Color = RustColor.ComponentColors.PanelFg,
+                                },
+                                gridTransform
                             }
-                        };
-                    }
-
-                    public static IEnumerable<CuiElement> PaginationButtons(
-                        bool hasPrev,
-                        bool hasNext
-                    )
-                    {
-                        RustColor prevBtnColor =
-                                  hasPrev
-                                  ? RustColor.ComponentColors.ButtonDefault
-                                  : RustColor.ComponentColors.ButtonDisabled,
-                                  nextBtnColor =
-                                  hasNext
-                                  ? RustColor.ComponentColors.ButtonDefault
-                                  : RustColor.ComponentColors.ButtonDisabled;
-
-                        return new[] {
-                            /*prev pagination btn*/
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
-                                Name = Names.MainContainer.HeaderContainer
-                                            .PaginationButtonsContainer.Prev.SELF,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = prevBtnColor,
-                                        Command = CMD_PREVP
-                                    },
-                                    GetTransform(xMax: 0.48f)
-                                }
-                            },
-                            /*prev pagination btn text*/
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev
-                                     .SELF,
-                                Name =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Prev
-                                     .TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color    = RustColor.ComponentColors.TextWhite,
-                                        Text     = "PREVIOUS",
-                                        Align    = TextAnchor.MiddleCenter,
-                                        FontSize = 16
-                                    },
-                                    GetTransform()
-                                }
-                            },
-                            /*next pagination btn*/
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.SELF,
-                                Name = Names.MainContainer.HeaderContainer
-                                            .PaginationButtonsContainer.Next.SELF,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = nextBtnColor,
-                                        Command = CMD_NEXTP
-                                    },
-                                    GetTransform(xMin: 0.52f)
-                                }
-                            },
-                            /*next pagination btn text*/
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next
-                                     .SELF,
-                                Name =
-                                Names.MainContainer.HeaderContainer.PaginationButtonsContainer.Next
-                                     .TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color    = RustColor.ComponentColors.TextWhite,
-                                        Text     = "NEXT",
-                                        Align    = TextAnchor.MiddleCenter,
-                                        FontSize = 18
-                                    },
-                                    GetTransform()
-                                }
+                        }
+                    );
+                    /*header container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Self,
+                            Name = nCard.Header.Self,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.ComponentColors.PanelFg.WithAlpha(0.5f)},
+                                GetTransform(yMin: 0.9f, yMax: 0.99f, xMax: 0.995f)
                             }
-                        };
-                    }
-
-                    public static IEnumerable<CuiElement> Notification(
-                        ref NotificationWindowState windowState
-                    )
-                    {
-                        List<CuiElement> componentList = Pool.GetList<CuiElement>();
-
-                        /*notification container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = Names.MainContainer.SELF,
-                                Name   = Names.MainContainer.NotificationContainer.SELF,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color = RustColor.ComponentColors.PanelBase,
-                                    },
-                                    GetTransform(
-                                        xMin: 0.2f,
-                                        xMax: 0.8f,
-                                        yMin: 0.3f,
-                                        yMax: 0.7f
-                                    )
-                                }
-                            }
-                        );
-
-                        /*notification header container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = Names.MainContainer.NotificationContainer.SELF,
-                                Name = Names.MainContainer.NotificationContainer.HeaderContainer
-                                            .SELF,
-                                Components = {
-                                    new CuiImageComponent { Color = RustColor.Transp },
-                                    GetTransform(yMin: 0.9f)
-                                }
-                            }
-                        );
-
-                        /*notification title*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = Names.MainContainer.NotificationContainer.HeaderContainer
-                                              .SELF,
-                                Name = Names.MainContainer.NotificationContainer.HeaderContainer
-                                            .TITLE,
-                                Components = {
-                                    new CuiTextComponent { Text = "NOTIFICATION" },
-                                    GetTransform()
-                                }
-                            }
-                        );
-
-                        /*notification message container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = Names.MainContainer.NotificationContainer.SELF,
-                                Name = Names.MainContainer.NotificationContainer.MessageContainer
-                                            .SELF,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color = RustColor.ComponentColors.PanelDark
-                                    },
-                                    GetTransform(yMax: 0.9f)
-                                }
-                            }
-                        );
-
-                        /*notification message text*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.NotificationContainer.MessageContainer.SELF,
-                                Name =
-                                Names.MainContainer.NotificationContainer.MessageContainer.MESSAGE,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color = RustColor.ComponentColors.TextWhite,
-                                        Text  = windowState.Text
-                                    },
-                                    GetTransform(yMin: 0.3f)
-                                }
-                            }
-                        );
-
-                        if ( windowState.HasButton )
-                            AddNotificationButton(ref windowState, componentList);
-
-                        return componentList;
-                    }
-
-                    private static void AddNotificationButton(
-                        ref NotificationWindowState windowState,
-                        List<CuiElement> componentList
-                    )
-                    {
-                        /*notification message dismiss btn*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.NotificationContainer.MessageContainer.SELF,
-                                Name =
-                                Names.MainContainer.NotificationContainer.MessageContainer.Button
-                                     .SELF,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = RustColor.ComponentColors.ButtonError,
-                                        Command = "gmonetize.dismiss_notification"
-                                    },
-                                    GetTransform(yMax: 0.3f)
-                                }
-                            }
-                        );
-
-                        /*notification message dismiss btn text*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent =
-                                Names.MainContainer.NotificationContainer.MessageContainer.Button
-                                     .SELF,
-                                Name =
-                                Names.MainContainer.NotificationContainer.MessageContainer.Button
-                                     .TEXT,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color = RustColor.ComponentColors.TextWhite,
-                                        Text  = "DISMISS"
-                                    },
-                                    GetTransform()
-                                }
-                            }
-                        );
-                    }
-
-                    public static List<CuiElement> ItemCard(
-                        string id,
-                        CuiRectTransformComponent transform,
-                        InventoryEntryResponse inventoryEntry
-                    )
-                    {
-                        Names.MainContainer.ItemListContainer.ItemCard nCard =
-                        new Names.MainContainer.ItemListContainer.ItemCard(id);
-
-                        List<CuiElement> componentList = Facepunch.Pool.GetList<CuiElement>();
-
-                        /*root*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = Names.MainContainer.ItemListContainer.SELF,
-                                Name   = nCard.Self,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color = RustColor.ComponentColors.PanelBase,
-                                    },
-                                    transform
-                                }
-                            }
-                        );
-                        /*header container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent     = nCard.Self,
-                                Name       = nCard.Header.Self,
-                                Components = { }
-                            }
-                        );
-                        /*listing name*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent     = nCard.Header.Self,
-                                Name       = nCard.Header.ItemName,
-                                Components = { }
-                            }
-                        );
+                        }
+                    );
+                    /*listing name*/
+                    componentList.Add(
+                        LabelBuilder.Create(nCard.Header.Self, nCard.Header.ItemName)
+                                    .WithText(inventoryEntry.Name)
+                                    .WithFontSize(12)
+                                    .Centered()
+                                    .WithColor(RustColor.ComponentColors.TextWhite.WithAlpha(0.5f))
+                                    .WithTransform(GetTransform())
+                                    .ToCuiElement()
+                    );
 
 #if F_UI_LISTINGTYPE
                         /*listing type*/
@@ -2428,226 +1829,287 @@ namespace Oxide.Plugins
                             Components = {  }
                         })
 #endif
-                        /*center container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent     = nCard.Self,
-                                Name       = nCard.Center.Self,
-                                Components = { }
+                    /*center container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Self,
+                            Name = nCard.Center.Self,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.Transp},
+                                GetTransform(
+                                    0f,
+                                    1f,
+                                    0.2f,
+                                    0.9f
+                                )
                             }
-                        );
-                        /*item image*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = nCard.Center.Self,
-                                Name   = nCard.Center.Image,
+                        }
+                    );
+                    /*item image*/
+                    /*componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Center.Self,
+                            Name = nCard.Center.Image,
+                            Components = {
+                                new CuiImageComponent {ItemId = -253079493},
+                                GetTransform()
                             }
-                        );
-                        /*item amount*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = nCard.Center.Image,
-                                Name   = nCard.Center.Amount
-                            }
-                        );
-                        /*conditionBar*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent     = nCard.Center.Image,
-                                Name       = nCard.Center.ConditionBar,
-                                Components = { }
-                            }
-                        );
-                        /*footer container*/
-                        componentList.Add(
-                            new CuiElement {
-                                Parent     = nCard.Self,
-                                Name       = nCard.Footer.Self,
-                                Components = { }
-                            }
-                        );
+                        }
+                    );*/
 
-                        AddRedeemButton(
-                            ref nCard,
-                            componentList,
-                            inventoryEntry.Id,
-                            true // FIXME
+                    CuiElement iconElement = new CuiElement {
+                        Parent = nCard.Center.Self,
+                        Name = nCard.Center.Image
+                    };
+
+                    componentList.Add(iconElement);
+
+                    if (!string.IsNullOrEmpty(inventoryEntry.IconId))
+                    {
+                        iconElement.Components.Add(
+                            new CuiRawImageComponent {Url = gAPI.GetIconUrl(inventoryEntry.IconId)}
                         );
+                    }
+                    else if (inventoryEntry.Type == gAPI.InventoryEntry.InventoryEntryType.ITEM)
+                    {
+                        iconElement.Components.Add(new CuiImageComponent {ItemId = inventoryEntry.Item.ItemId});
+                    }
+                    else
+                    {
+                        iconElement.Components.Add(new CuiRawImageComponent {Url = DEFAULT_ICON_URL});
+                    }
+
+                    /*item amount*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Center.Image,
+                            Name = nCard.Center.Amount,
+                            Components = {
+                                new CuiTextComponent {
+                                    Text = "x100",
+                                    Align = TextAnchor.MiddleCenter,
+                                    Color = RustColor.ComponentColors.TextSemiDark.WithAlpha(0.5f)
+                                },
+                                GetTransform(xMax: 0.3f, yMax: 0.2f)
+                            }
+                        }
+                    );
+                    /*footer container*/
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Self,
+                            Name = nCard.Footer.Self,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.Transp},
+                                GetTransform(yMax: 0.16f)
+                            }
+                        }
+                    );
+
+                    RedeemButton(
+                        nCard,
+                        index,
+                        inventoryEntry.Id,
+                        buttonState,
+                        componentList
+                    );
+
 #if F_UI_CONDITIONBAR
                         AddConditionBar(ref nCard, componentList, 1f );
 #endif
+                }
 
-                        return componentList;
-                    }
+                public static void RedeemButton(
+                    Names.MainContainer.ItemListContainer.ItemCard nCard,
+                    int index,
+                    string entryId,
+                    RedeemButtonState state,
+                    List<CuiElement> componentList
+                )
+                {
+                    RustColor btnColor;
+                    string btnText;
 
-                    private static void AddConditionBar(
-                        ref Names.MainContainer.ItemListContainer.ItemCard nCard,
-                        List<CuiElement> componentList,
-                        float condition
-                    )
+                    switch (state)
                     {
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = nCard.Center.Image,
-                                Name   = nCard.Center.ConditionBar,
-                                Components = {
-                                    new CuiImageComponent {
-                                        Color = RustColor.Error.WithAlpha(0.1f)
-                                    },
-                                    GetTransform(yMax: Mathf.Clamp01(condition))
-                                }
-                            }
-                        );
-                    }
-
-                    private static void AddRedeemButton(
-                        ref Names.MainContainer.ItemListContainer.ItemCard nCard,
-                        List<CuiElement> componentList,
-                        string id,
-                        bool isRedeemAvailable
-                    )
-                    {
-                        RustColor btnColor;
-                        string    btnText;
-
-                        if ( isRedeemAvailable )
-                        {
-                            btnColor = RustColor.Success.WithAlpha(0.4f);
-                            btnText  = "REDEEM";
-                        }
-                        else
-                        {
+                        case RedeemButtonState.InvalidItem:
+                            btnText = "REDEEM";
+                            btnColor = RustColor.ComponentColors.ButtonSuccess;
+                            break;
+                        case RedeemButtonState.InventoryFull:
+                            btnText = "INV. FULL";
                             btnColor = RustColor.ComponentColors.ButtonDisabled;
-                            btnText  = "CANNOT REDEEM";
-                        }
+                            break;
+                        case RedeemButtonState.ResearchComplete:
+                            btnText = "RESEARCHED";
+                            btnColor = RustColor.ComponentColors.ButtonDisabled;
+                            break;
+                        case RedeemButtonState.Error:
+                            btnText = "ERROR";
+                            btnColor = RustColor.ComponentColors.ButtonError;
+                            break;
+                        case RedeemButtonState.Available:
+                            btnText = "REDEEM";
+                            btnColor = RustColor.ComponentColors.ButtonSuccess;
+                            break;
+                        case RedeemButtonState.Redeeming:
+                            btnText = "REDEEMING...";
+                            btnColor = RustColor.ComponentColors.ButtonDisabled;
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(state), state, null);
+                    }
 
-                        componentList.Add(
-                            new CuiElement {
-                                Parent = nCard.Footer.Self,
-                                Name   = nCard.Footer.Button.Self,
-                                Components = {
-                                    new CuiButtonComponent {
-                                        Color   = btnColor,
-                                        Command = CMD_REDEEM + ' ' + id
-                                    },
-                                    GetTransform()
-                                }
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Footer.Self,
+                            Name = nCard.Footer.Button.Self,
+                            Components = {
+                                new CuiButtonComponent {
+                                    Color = btnColor,
+                                    Command = string.Join(
+                                        " ",
+                                        CMD_REDEEM,
+                                        entryId,
+                                        index
+                                    )
+                                },
+                                GetTransform(
+                                    0.02f,
+                                    0.97f,
+                                    0.11f,
+                                    0.9f
+                                )
                             }
-                        );
+                        }
+                    );
 
-                        componentList.Add(
-                            /*new CuiElement {
-                                Parent = nCard.Footer.Button.Self,
-                                Name   = nCard.Footer.Button.Text,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color = RustColor.ComponentColors.TextWhite,
-                                        Text  = btnText
-                                    },
-                                    GetTransform()
-                                }
-                            }*/
-                            LabelBuilder.Create(nCard.Footer.Button.Self, nCard.Footer.Button.Text)
-                                        .WithColor(RustColor.ComponentColors.TextWhite)
-                                        .WithText(btnText)
-                                        .FullSize()
-                                        .ToCuiElement()
-                        );
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Footer.Button.Self,
+                            Name = nCard.Footer.Button.Text,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = RustColor.ComponentColors.TextSemiDark,
+                                    Align = TextAnchor.MiddleCenter,
+                                    Text = btnText
+                                },
+                                GetTransform()
+                            }
+                        }
+                    );
+                }
+
+                private static void AddConditionBar(
+                    ref Names.MainContainer.ItemListContainer.ItemCard nCard,
+                    List<CuiElement> componentList,
+                    float condition
+                )
+                {
+                    componentList.Add(
+                        new CuiElement {
+                            Parent = nCard.Center.Image,
+                            Name = nCard.Center.ConditionBar,
+                            Components = {
+                                new CuiImageComponent {Color = RustColor.Error.WithAlpha(0.1f)},
+                                GetTransform(yMax: Mathf.Clamp01(condition))
+                            }
+                        }
+                    );
+                }
+
+                private static CuiRectTransformComponent GetGridTransform(
+                    int cols,
+                    int rows,
+                    float colGap,
+                    float rowGap,
+                    int itemIndex
+                )
+                {
+                    float totalColumnGap = colGap * (cols - 1);
+                    float totalRowGap = rowGap * (rows - 1);
+
+                    float cardWidth = (0.999f - totalColumnGap) / cols;
+                    float cardHeight = (0.997f - totalRowGap) / rows;
+
+                    int rowIndex = itemIndex / cols;
+                    int columnIndex = itemIndex % cols;
+
+                    float columnGapSum = colGap * columnIndex;
+                    float cardWidthSum = cardWidth * columnIndex;
+                    float xPosition = columnGapSum + cardWidthSum;
+
+                    float rowGapSum = rowGap * rowIndex;
+                    float cardHeightSum = cardHeight * (rowIndex + 1);
+                    float yPosition = 0.997f - (rowGapSum + cardHeightSum);
+
+                    return GetTransform(
+                        xPosition,
+                        xPosition + cardWidth,
+                        yPosition,
+                        yPosition + cardHeight
+                    );
+                }
+
+                private static CuiRectTransformComponent GetTransform(
+                    float xMin = 0f,
+                    float xMax = 1f,
+                    float yMin = 0f,
+                    float yMax = 1f
+                )
+                {
+                    ValueTuple<float, float, float, float> key = ValueTuple.Create(
+                        xMin,
+                        yMin,
+                        xMax,
+                        yMax
+                    );
+
+                    CuiRectTransformComponent transform;
+
+                    if (!s_RectTransformCache.TryGetValue(key, out transform))
+                    {
+                        transform = new CuiRectTransformComponent {
+                            AnchorMin = $"{xMin} {yMin}",
+                            AnchorMax = $"{xMax} {yMax}"
+                        };
+
+                        s_RectTransformCache[key] = transform;
                     }
 
-                    private static CuiRectTransformComponent GetGridTransform(
-                        int cols,
-                        int rows,
-                        float colGap,
-                        float rowGap,
-                        int itemIndex
+                    return transform;
+                }
+
+                private struct LabelBuilder
+                {
+                    public  string                    Parent;
+                    public  string                    Name;
+                    public  string                    Text;
+                    public  RustColor                 TextColor;
+                    public  TextAnchor                Align;
+                    public  int                       FontSize;
+                    private CuiRectTransformComponent Transform;
+
+                    public LabelBuilder(
+                        string parent,
+                        string name,
+                        string text,
+                        RustColor textColor,
+                        TextAnchor align,
+                        int fontSize,
+                        CuiRectTransformComponent transform
                     )
                     {
-                        float totalColumnGap = colGap * (cols - 1);
-                        float totalRowGap    = rowGap * (rows - 1);
-
-                        float cardWidth  = (0.999f - totalColumnGap) / cols;
-                        float cardHeight = (0.998f - totalRowGap) / rows;
-
-                        int rowIndex    = itemIndex / cols;
-                        int columnIndex = itemIndex % cols;
-
-                        float columnGapSum = colGap * columnIndex;
-                        float cardWidthSum = cardWidth * columnIndex;
-                        float xPosition    = columnGapSum + cardWidthSum;
-
-                        float rowGapSum     = rowGap * rowIndex;
-                        float cardHeightSum = cardHeight * (rowIndex + 1);
-
-                        float yPosition = 0.998f - (rowGapSum + cardHeightSum);
-
-                        return GetTransform(
-                            xPosition,
-                            yPosition,
-                            xPosition + cardWidth,
-                            yPosition + cardHeight
-                        );
+                        Name = name;
+                        Parent = parent;
+                        Text = text;
+                        TextColor = textColor;
+                        Align = align;
+                        FontSize = fontSize;
+                        Transform = transform;
                     }
 
-                    private static CuiRectTransformComponent GetTransform(
-                        float xMin = 0f,
-                        float xMax = 1f,
-                        float yMin = 0f,
-                        float yMax = 1f
-                    )
-                    {
-                        ValueTuple<float, float, float, float> key = ValueTuple.Create(
-                            xMin,
-                            yMin,
-                            xMax,
-                            yMax
-                        );
-
-                        CuiRectTransformComponent transform;
-
-                        if ( !s_RectTransformCache.TryGetValue(key, out transform) )
-                        {
-                            transform = new CuiRectTransformComponent {
-                                AnchorMin = $"{xMin} {yMin}",
-                                AnchorMax = $"{xMax} {yMax}"
-                            };
-
-                            s_RectTransformCache[key] = transform;
-                        }
-
-                        return transform;
-                    }
-
-                    private struct LabelBuilder
-                    {
-                        public  string                    Parent;
-                        public  string                    Name;
-                        public  string                    Text;
-                        public  RustColor                 TextColor;
-                        public  TextAnchor                Align;
-                        public  int                       FontSize;
-                        private CuiRectTransformComponent Transform;
-
-                        public LabelBuilder(
-                            string parent,
-                            string name,
-                            string text,
-                            RustColor textColor,
-                            TextAnchor align,
-                            int fontSize,
-                            CuiRectTransformComponent transform
-                        )
-                        {
-                            Name      = name;
-                            Parent    = parent;
-                            Text      = text;
-                            TextColor = textColor;
-                            Align     = align;
-                            FontSize  = fontSize;
-                            Transform = transform;
-                        }
-
-                        public static LabelBuilder Create(string parent, string name) =>
+                    public static LabelBuilder Create(string parent, string name) =>
                         new LabelBuilder(
                             parent,
                             name,
@@ -2658,58 +2120,57 @@ namespace Oxide.Plugins
                             GetTransform()
                         );
 
-                        public LabelBuilder WithText(string text)
-                        {
-                            Text = text;
-                            return this;
-                        }
+                    public LabelBuilder WithText(string text)
+                    {
+                        Text = text;
+                        return this;
+                    }
 
-                        public LabelBuilder WithColor(RustColor color)
-                        {
-                            TextColor = color;
-                            return this;
-                        }
+                    public LabelBuilder WithColor(RustColor color)
+                    {
+                        TextColor = color;
+                        return this;
+                    }
 
-                        public LabelBuilder WithAlign(TextAnchor align)
-                        {
-                            Align = align;
-                            return this;
-                        }
+                    public LabelBuilder WithAlign(TextAnchor align)
+                    {
+                        Align = align;
+                        return this;
+                    }
 
-                        public LabelBuilder Centered() => WithAlign(TextAnchor.MiddleCenter);
-                        public LabelBuilder FromLeft() => WithAlign(TextAnchor.MiddleLeft);
-                        public LabelBuilder FromRight() => WithAlign(TextAnchor.MiddleRight);
+                    public LabelBuilder Centered() => WithAlign(TextAnchor.MiddleCenter);
+                    public LabelBuilder FromLeft() => WithAlign(TextAnchor.MiddleLeft);
+                    public LabelBuilder FromRight() => WithAlign(TextAnchor.MiddleRight);
 
-                        public LabelBuilder WithFontSize(int size)
-                        {
-                            FontSize = size;
-                            return this;
-                        }
+                    public LabelBuilder WithFontSize(int size)
+                    {
+                        FontSize = size;
+                        return this;
+                    }
 
-                        public LabelBuilder WithTransform(CuiRectTransformComponent transform)
-                        {
-                            Transform = transform;
-                            return this;
-                        }
+                    public LabelBuilder WithTransform(CuiRectTransformComponent transform)
+                    {
+                        Transform = transform;
+                        return this;
+                    }
 
-                        public LabelBuilder FullSize() => WithTransform(GetTransform());
+                    public LabelBuilder FullSize() => WithTransform(GetTransform());
 
-                        public CuiElement ToCuiElement()
-                        {
-                            return new CuiElement {
-                                Parent = Parent,
-                                Name   = Name,
-                                Components = {
-                                    new CuiTextComponent {
-                                        Color    = TextColor,
-                                        Text     = Text,
-                                        Align    = Align,
-                                        FontSize = FontSize
-                                    },
-                                    Transform
-                                }
-                            };
-                        }
+                    public CuiElement ToCuiElement()
+                    {
+                        return new CuiElement {
+                            Parent = Parent,
+                            Name = Name,
+                            Components = {
+                                new CuiTextComponent {
+                                    Color = TextColor,
+                                    Text = Text,
+                                    Align = Align,
+                                    FontSize = FontSize
+                                },
+                                Transform
+                            }
+                        };
                     }
                 }
             }
@@ -2721,17 +2182,13 @@ namespace Oxide.Plugins
             private const string STATIC_API_PATH = "/static/v2";
 
             private static readonly JsonSerializerSettings s_SerializerSettings =
-            new JsonSerializerSettings {
-                ContractResolver = new CamelCasePropertyNamesContractResolver()
-            };
+                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()};
 
             private static gMonetize                  s_PluginInstance;
             private static Dictionary<string, string> s_RequestHeaders;
 
             public static bool IsReady => s_PluginInstance &&
-                                          !string.IsNullOrEmpty(
-                                              s_PluginInstance._configuration.ApiKey
-                                          ) &&
+                                          !string.IsNullOrEmpty(s_PluginInstance._configuration.ApiKey) &&
                                           s_PluginInstance._configuration.ApiKey !=
                                           PluginConfiguration.GetDefault().ApiKey &&
                                           !string.IsNullOrEmpty(ApiBaseUrl) &&
@@ -2749,8 +2206,8 @@ namespace Oxide.Plugins
             {
                 s_PluginInstance = pluginInstance;
                 s_RequestHeaders = new Dictionary<string, string> {
-                    { "Content-Type", "application/json" },
-                    { "Authorization", "ApiKey " + s_PluginInstance._configuration.ApiKey }
+                    {"Content-Type", "application/json"},
+                    {"Authorization", "ApiKey " + s_PluginInstance._configuration.ApiKey}
                 };
             }
 
@@ -2763,40 +2220,46 @@ namespace Oxide.Plugins
                 WebRequests.Enqueue(
                     url,
                     payloadJson,
-                    (code, body) => {
-                        HeartbeatApiResult result = new HeartbeatApiResult(code, request);
-
-                        if ( OnHeartbeat != null )
-                        {
-                            OnHeartbeat(result);
-                        }
-                    },
-                    Instance,
-                    RequestMethod.POST
+                    (code, body) => OnHeartbeat?.Invoke(new HeartbeatApiResult(code, request)),
+                    s_PluginInstance,
+                    RequestMethod.POST,
+                    s_RequestHeaders
                 );
             }
 
-            public static void GetInventory(
-                string userId,
-                ref IList inventory,
-                Action handleSuccess = null,
-                Action<int> handleFail = null
-            ) { }
+            public static void GetInventory(string userId)
+            {
+                string url = GetInventoryUrl(userId);
 
-            public static void RedeemItem(
-                string userId,
-                string inventoryEntryId,
-                Action handleSuccess,
-                Action<int> handleFail
-            ) { }
+                WebRequests.Enqueue(
+                    url,
+                    null,
+                    (code, body) => OnReceiveInventory?.Invoke(
+                        new InventoryApiResult(code, userId, JsonConvert.DeserializeObject<List<InventoryEntry>>(body))
+                    ),
+                    s_PluginInstance,
+                    RequestMethod.GET,
+                    s_RequestHeaders
+                );
+            }
+
+            public static void RedeemItem(string userId, string inventoryEntryId)
+            {
+                string url = GetRedeemUrl(userId, inventoryEntryId);
+
+                WebRequests.Enqueue(
+                    url,
+                    null,
+                    (code, body) => OnRedeemItem?.Invoke(new RedeemItemApiResult(code, userId, inventoryEntryId)),
+                    s_PluginInstance,
+                    RequestMethod.POST,
+                    s_RequestHeaders
+                );
+            }
 
             private static string GetInventoryUrl(string userId)
             {
-                return string.Concat(
-                    ApiBaseUrl,
-                    MAIN_API_PATH,
-                    $"/customer/STEAM/{userId}/inventory"
-                );
+                return string.Concat(ApiBaseUrl, MAIN_API_PATH, $"/customer/STEAM/{userId}/inventory");
             }
 
             private static string GetRedeemUrl(string userId, string inventoryEntryId)
@@ -2814,7 +2277,7 @@ namespace Oxide.Plugins
                 return string.Concat(ApiBaseUrl, MAIN_API_PATH, hbPath);
             }
 
-            private static string GetIconUrl(string iconId)
+            public static string GetIconUrl(string iconId)
             {
                 const string imagePath = "/image/";
                 return string.Concat(
@@ -2826,8 +2289,173 @@ namespace Oxide.Plugins
             }
 
             private static bool IsSuccessStatusCode(int statusCode) =>
-            statusCode >= 200 && statusCode < 300;
+                statusCode >= 200 && statusCode < 300;
+
+            private class DurationTimeSpanJsonConverter : JsonConverter
+            {
+                public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+                {
+                    throw new NotImplementedException();
+                }
+
+                public override object ReadJson(
+                    JsonReader reader,
+                    Type objectType,
+                    object existingValue,
+                    JsonSerializer serializer
+                )
+                {
+                    string stringValue = reader.Value as string;
+
+                    if (string.IsNullOrEmpty(stringValue))
+                    {
+                        LogMessage("TimeSpan stringValue is null");
+                        return null;
+                    }
+
+                    var ts = XmlConvert.ToTimeSpan(stringValue);
+
+                    LogMessage("Converting to timeSpan: {0}=>{1}", stringValue, ts);
+
+                    return ts;
+                }
+
+                public override bool CanConvert(Type objectType)
+                {
+                    return objectType == typeof(TimeSpan?);
+                }
+            }
+
+            #region DTOs
+
+            public class InventoryEntry
+            {
+                public string Id { get; set; }
+
+                [JsonConverter(typeof(StringEnumConverter))]
+                public InventoryEntryType Type { get; set; }
+
+                public string Name { get; set; }
+                public string IconId { get; set; }
+
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan? WipeBlockDuration { get; set; }
+
+                public ItemGood Item { get; set; }
+                public List<KitGood> Contents { get; set; }
+                public ResearchGood Research { get; set; }
+                public RankGood Rank { get; set; }
+                public PermissionGood Permission { get; set; }
+                public CustomGood[] Commands { get; set; }
+
+                public enum InventoryEntryType
+                {
+                    ITEM,
+                    KIT,
+                    RESEARCH,
+                    RANK,
+                    PERMISSION,
+                    CUSTOM
+                }
+            }
+
+            public class ItemGood
+            {
+                public int ItemId { get; set; }
+                public int Amount { get; set; }
+                public ItemGoodMeta Meta { get; set; }
+
+                public ItemDefinition FindItemDefinition()
+                {
+                    return ItemManager.FindItemDefinition(ItemId);
+                }
+
+                public class ItemGoodMeta
+                {
+                    public ulong? SkinId { get; set; }
+                    public float Condition { get; set; }
+                }
+            }
+
+            public class ResearchGood
+            {
+                public int ResearchId { get; set; }
+
+                public ItemDefinition FindItemDefinition()
+                {
+                    return ItemManager.FindItemDefinition(ResearchId);
+                }
+            }
+
+            public class PermissionGood
+            {
+                public string Value { get; set; }
+
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan Duration { get; set; }
+            }
+
+            public class RankGood
+            {
+                public string GroupName { get; set; }
+
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan Duration { get; set; }
+            }
+
+            public class CustomGood
+            {
+                public string Value { get; set; }
+            }
+
+            public class KitGood
+            {
+                [JsonConverter(typeof(StringEnumConverter))]
+                public KitGoodType Type { get; set; }
+
+                /*item*/
+                public string ItemId { get; set; }
+                public int Amount { get; set; }
+
+                public ItemGood.ItemGoodMeta Meta { get; set; }
+
+                /*research*/
+                public string ResearchId { get; set; }
+
+                /*permission/command*/
+                public string Value { get; set; }
+
+                /*permission/rank*/
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan Duration { get; set; }
+
+                /*rank*/
+                public string GroupName { get; set; }
+
+                public ItemDefinition FindItemDefinition()
+                {
+                    if (Type != KitGoodType.ITEM)
+                    {
+                        throw new InvalidOperationException();
+                    }
+
+                    return ItemManager.FindItemDefinition(ItemId);
+                }
+
+                public enum KitGoodType
+                {
+                    ITEM,
+                    RESEARCH,
+                    RANK,
+                    PERMISSION,
+                    COMMAND
+                }
+            }
+
+            #endregion
         }
+
+        #region API RESULTS
 
         public abstract class ApiResult
         {
@@ -2844,9 +2472,7 @@ namespace Oxide.Plugins
         {
             public ServerHeartbeatRequest Request { get; }
 
-            public HeartbeatApiResult(int statusCode, ServerHeartbeatRequest request) : base(
-                statusCode
-            )
+            public HeartbeatApiResult(int statusCode, ServerHeartbeatRequest request) : base(statusCode)
             {
                 Request = request;
             }
@@ -2857,13 +2483,9 @@ namespace Oxide.Plugins
             public string UserId { get; }
             public string InventoryEntryId { get; }
 
-            public RedeemItemApiResult(
-                int statusCode,
-                string userId,
-                string inventoryEntryId
-            ) : base(statusCode)
+            public RedeemItemApiResult(int statusCode, string userId, string inventoryEntryId) : base(statusCode)
             {
-                UserId           = userId;
+                UserId = userId;
                 InventoryEntryId = inventoryEntryId;
             }
         }
@@ -2871,47 +2493,51 @@ namespace Oxide.Plugins
         private class InventoryApiResult : ApiResult
         {
             public string UserId { get; }
-            public List<object> Inventory { get; }
+            public List<gAPI.InventoryEntry> Inventory { get; }
 
-            public InventoryApiResult(int statusCode, string userId, List<object> inventory) : base(
+            public InventoryApiResult(int statusCode, string userId, List<gAPI.InventoryEntry> inventory) : base(
                 statusCode
             )
             {
-                UserId    = userId;
+                UserId = userId;
                 Inventory = inventory;
             }
         }
 
         private class ServerHeartbeatRequest
         {
-            [JsonProperty("motd")] public string Description { get; }
+            [JsonProperty("motd")]
+            public string Description { get; }
 
-            [JsonProperty("map")] public ServerMapRequest Map { get; }
+            [JsonProperty("map")]
+            public ServerMapRequest Map { get; }
 
-            [JsonProperty("players")] public ServerPlayersRequest Players { get; }
+            [JsonProperty("players")]
+            public ServerPlayersRequest Players { get; }
 
-            public ServerHeartbeatRequest(
-                string description,
-                ServerMapRequest map,
-                ServerPlayersRequest players
-            )
+            public ServerHeartbeatRequest(string description, ServerMapRequest map, ServerPlayersRequest players)
             {
                 Description = description;
-                Map         = map;
-                Players     = players;
+                Map = map;
+                Players = players;
             }
 
             public class ServerMapRequest
             {
-                [JsonProperty("name")] public string Name { get; }
+                [JsonProperty("name")]
+                public string Name { get; }
 
-                [JsonProperty("width")] public uint Width { get; }
+                [JsonProperty("width")]
+                public uint Width { get; }
 
-                [JsonProperty("height")] public uint Height { get; }
+                [JsonProperty("height")]
+                public uint Height { get; }
 
-                [JsonProperty("seed")] public uint Seed { get; }
+                [JsonProperty("seed")]
+                public uint Seed { get; }
 
-                [JsonProperty("lastWipe")] public string LastWipe { get; }
+                [JsonProperty("lastWipe")]
+                public string LastWipe { get; }
 
                 public ServerMapRequest(
                     string name,
@@ -2920,86 +2546,177 @@ namespace Oxide.Plugins
                     DateTime lastWipeDate
                 )
                 {
-                    Name     = name;
-                    Width    = Height = size;
-                    Seed     = seed;
+                    Name = name;
+                    Width = Height = size;
+                    Seed = seed;
                     LastWipe = lastWipeDate.ToString("O").TrimEnd('Z');
                 }
             }
 
             public class ServerPlayersRequest
             {
-                [JsonProperty("online")] public int Online { get; }
+                [JsonProperty("online")]
+                public int Online { get; }
 
-                [JsonProperty("max")] public int Max { get; }
+                [JsonProperty("max")]
+                public int Max { get; }
 
                 public ServerPlayersRequest(int online, int max)
                 {
                     Online = online;
-                    Max    = max;
+                    Max = max;
                 }
             }
         }
 
-        private class InventoryEntryResponse
+        #endregion
+
+        #region Configuration class
+
+        private class PluginConfiguration
         {
-            public string Id { get; set; }
-            public InventoryEntryType Type { get; set; }
+            [JsonProperty("API key")]
+            public string ApiKey { get; set; }
+
+            [JsonProperty("Api base URL")]
+            public string ApiBaseUrl { get; set; }
+
+            [JsonProperty("Chat commands")]
+            public string[] ChatCommands { get; set; }
+
+            public static PluginConfiguration GetDefault() => new PluginConfiguration {
+                ApiKey = "Change me",
+                ApiBaseUrl = "https://api.gmonetize.ru",
+                ChatCommands = new[] {"shop"}
+            };
+        }
+
+        #endregion
+
+        private class TimedRank
+        {
             public string Name { get; set; }
-            public string IconId { get; set; }
-            public TimeSpan? WipeBlockDuration { get; set; }
+            public RankType Type { get; set; }
+            public DateTime StartedAt { get; set; }
+            public TimeSpan Duration { get; set; }
 
-            public RustItemResponse Item { get; set; }
-            public List<RustItemResponse> Items { get; set; }
-            public PermissionResponse Permission { get; set; }
-            public GroupResponse Group { get; set; }
-            public List<RoulettePrizeResponse> Prizes { get; set; }
-        }
-
-        private class RustItemResponse
-        {
-            public string ItemId { get; set; }
-            public uint Amount { get; set; }
-            public RustItemMetaResponse Meta { get; set; }
-
-            public class RustItemMetaResponse
+            public static TimedRank CreateFrom(gAPI.PermissionGood good)
             {
-                public ulong? SkinId { get; set; }
-                public float Condition { get; set; }
+                return new TimedRank {
+                    Name = good.Value,
+                    Type = RankType.Permission,
+                    StartedAt = DateTime.UtcNow,
+                    Duration = good.Duration
+                };
             }
-        }
 
-        private class PermissionResponse
-        {
-            public string Value { get; set; }
-            public TimeSpan Duration { get; set; }
-        }
+            public static TimedRank CreateFrom(gAPI.RankGood good)
+            {
+                return new TimedRank {
+                    Name = good.GroupName,
+                    Type = RankType.Group,
+                    StartedAt = DateTime.UtcNow,
+                    Duration = good.Duration
+                };
+            }
 
-        private class GroupResponse
-        {
-            public string GroupName { get; set; }
-            public TimeSpan Duration { get; set; }
-        }
+            public static TimedRank CreateFrom(gAPI.KitGood good)
+            {
+                switch (good.Type)
+                {
+                    case gAPI.KitGood.KitGoodType.PERMISSION:
+                        return new TimedRank {
+                            Name = good.Value,
+                            Type = RankType.Permission,
+                            StartedAt = DateTime.UtcNow,
+                            Duration = good.Duration
+                        };
+                        break;
 
-        private class RoulettePrizeResponse { }
+                    case gAPI.KitGood.KitGoodType.RANK:
+                        return new TimedRank {
+                            Name = good.GroupName,
+                            Type = RankType.Group,
+                            StartedAt = DateTime.UtcNow,
+                            Duration = good.Duration
+                        };
+                        break;
 
-        private enum InventoryEntryType
-        {
-            ITEM,
-            KIT,
-            PERMISSION,
-            RANK,
-            RESEARCH,
-            ROULETTE
-        }
+                    default: throw new ArgumentException();
+                }
+            }
 
-        private enum GoodObjectType
-        {
-            ITEM,
-            RANK,
-            COMMAND,
-            RESEARCH,
-            PERMISSION
+            public TimeSpan TimeLeft()
+            {
+                TimeSpan timePassed = DateTime.UtcNow - StartedAt;
+
+                return Duration - timePassed;
+            }
+
+            public void Add(TimedRank other)
+            {
+                if (Name != other.Name)
+                {
+                    throw new ArgumentException(
+                        $"Other rank Name does not match this rank name ({other.Name} != {Name})",
+                        nameof(other.Name)
+                    );
+                }
+
+                if (Type != other.Type)
+                {
+                    throw new ArgumentException(
+                        $"Other rank Type does not match this rank type ({other.Type:G} != {Type:G})",
+                        nameof(other.Type)
+                    );
+                }
+
+                if (other.TimeLeft() <= TimeSpan.Zero)
+                {
+                    LogMessage("Adding rank with timeleft <= 0");
+                    return;
+                }
+
+                Duration = Duration.Add(other.TimeLeft());
+            }
+
+            public void Set(IPlayer player)
+            {
+                switch (Type)
+                {
+                    case RankType.Permission:
+                        LogMessage("Setting player {0} permission {1} for {2}", player, Name, Duration.ToString("g"));
+                        player.GrantPermission(Name);
+                        break;
+                    case RankType.Group:
+                        LogMessage("Adding player {0} to group {1} for {2}", player, Name, Duration.ToString("g"));
+                        player.AddToGroup(Name);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(Type));
+                }
+            }
+
+            public void Unset(IPlayer player)
+            {
+                switch (Type)
+                {
+                    case RankType.Permission:
+                        player.RevokePermission(Name);
+                        break;
+                    case RankType.Group:
+                        player.RemoveFromGroup(Name);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(Type));
+                }
+            }
+
+            public enum RankType
+            {
+                Permission,
+                Group
+            }
         }
     }
 }
