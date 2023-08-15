@@ -10,7 +10,6 @@ using System.Xml;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
-using Newtonsoft.Json.Serialization;
 using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
@@ -27,7 +26,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.1.0")]
+    [Info("gMonetize", "2CHEVSKII", "1.1.1")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -462,7 +461,7 @@ namespace Oxide.Plugins
 
         #region CanReceiveItem helpers
 
-        private bool CanRedeemItem(
+        /*private bool CanRedeemItem(
             BasePlayer player,
             gAPI.InventoryEntry inventoryEntry,
             CannotRedeemItemReason? reason
@@ -490,7 +489,7 @@ namespace Oxide.Plugins
             }
 
             return true; // FIXME
-        }
+        }*/
 
         private int GetAvailableInventorySlots(BasePlayer player)
         {
@@ -524,166 +523,156 @@ namespace Oxide.Plugins
 
         private void RedeemInventoryEntry(BasePlayer player, gAPI.InventoryEntry entry)
         {
-            switch (entry.Type)
+            switch (entry.type)
             {
                 case gAPI.InventoryEntry.InventoryEntryType.ITEM:
-                    RedeemItem(player, entry.Id, entry.Item);
+                    RedeemItem(player, entry.item);
                     break;
                 case gAPI.InventoryEntry.InventoryEntryType.KIT:
-                    RedeemKit(player, entry.Id, entry.Contents);
+                    RedeemKitOrCustom(player, entry.contents);
                     break;
                 case gAPI.InventoryEntry.InventoryEntryType.RESEARCH:
-                    ItemDefinition itemDef = entry.Research.FindItemDefinition();
-
-                    if (!itemDef)
-                    {
-                        LogMessage("Failed to find item definition({0}) for research entry {1}", entry.Research.ResearchId, entry.Id);
-                        return;
-                    }
-
-                    player.blueprints.Unlock(itemDef);
-                    LogMessage("Unlocking item {0} on player {1}", itemDef.itemid, player.UserIDString);
+                    RedeemResearch(player, entry.research);
                     break;
                 case gAPI.InventoryEntry.InventoryEntryType.RANK:
+                    RedeemRankOrPermission(player, rankDto: entry.rank);
+                    break;
                 case gAPI.InventoryEntry.InventoryEntryType.PERMISSION:
-                    List<TimedRank> ranksList;
-                    if (!_timedRanks.TryGetValue(player.UserIDString, out ranksList))
-                    {
-                        ranksList = new List<TimedRank>();
-                        _timedRanks.Add(player.UserIDString, ranksList);
-                    }
-
-                    TimedRank rank;
-
-                    if (entry.Type == gAPI.InventoryEntry.InventoryEntryType.RANK)
-                    {
-                        rank = TimedRank.CreateFrom(entry.Rank);
-                    }
-                    else
-                    {
-                        rank = TimedRank.CreateFrom(entry.Permission);
-                    }
-
-                    var exRank = ranksList.Find(r => r.Name == rank.Name);
-
-                    if (exRank != null)
-                    {
-                        exRank.Add(rank);
-                    }
-                    else
-                    {
-                        ranksList.Add(rank);
-                        rank.Set(player.IPlayer);
-                    }
-
+                    RedeemRankOrPermission(player, entry.permission);
                     break;
                 case gAPI.InventoryEntry.InventoryEntryType.CUSTOM:
-                    foreach (string command in entry.Commands.Select(
-                            c => c.Value.Replace("${userId}", player.UserIDString)
-                                  .Replace("${userName}", player.displayName)
-                        ))
-                    {
-                        LogMessage("Executing command {0} on player {1}", command, player.UserIDString);
-                        server.Command(command);
-                    }
+                    RedeemKitOrCustom(player, entry.contents);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
 
-        private void RedeemItem(BasePlayer player, string entryId, gAPI.ItemGood good)
+        private void RedeemItem(BasePlayer player, gAPI.ItemDto itemDto)
         {
-            ItemDefinition itemDef = good.FindItemDefinition();
+            ItemDefinition itemDef = itemDto.FindItemDefinition();
 
             if (!itemDef)
             {
-                LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
+                LogMessage("ItemDefinition({0}) not found", itemDto.itemId);
                 return;
             }
 
-            Item item = ItemManager.Create(
-                itemDef,
-                good.Amount,
-                good.Meta.SkinId.HasValue ? good.Meta.SkinId.Value : 0ul
-            );
+            Item item = ItemManager.Create(itemDef, (int)itemDto.amount, itemDto.meta.skinId ?? 0ul);
 
+            LogMessage("Giving item {0} to player {1}", itemDto.itemId, player.UserIDString);
             player.GiveItem(item);
         }
 
-        private void RedeemKit(BasePlayer player, string entryId, List<gAPI.KitGood> goods)
+        private void RedeemResearch(BasePlayer player, gAPI.ResearchDto researchDto)
         {
-            for (int i = 0; i < goods.Count; i++)
+            ItemDefinition itemDef = researchDto.FindItemDefinition();
+
+            if (!itemDef)
             {
-                gAPI.KitGood good = goods[i];
-                switch (good.Type)
+                LogMessage(
+                    "ItemDefinition({0}) was not found while attempting to receive item by player {1}",
+                    researchDto.researchId,
+                    player.UserIDString
+                );
+                return;
+            }
+
+            if (player.blueprints.IsUnlocked(itemDef))
+            {
+                LogMessage("Player {0} already has unlocked research {1}", player.UserIDString, researchDto.researchId);
+            }
+            else
+            {
+                LogMessage("Unlocking item {0} for player {1}", researchDto.researchId, player.UserIDString);
+                player.blueprints.Unlock(itemDef);
+            }
+        }
+
+        private void RedeemRankOrPermission(
+            BasePlayer player,
+            gAPI.PermissionDto permissionDto = null,
+            gAPI.RankDto rankDto = null
+        )
+        {
+            TimedRank timedRank;
+            if (permissionDto != null)
+            {
+                Debug.Assert(rankDto == null);
+                timedRank = TimedRank.CreateFrom(permissionDto);
+            }
+            else
+            {
+                Debug.Assert(permissionDto == null);
+                Debug.Assert(rankDto != null);
+
+                timedRank = TimedRank.CreateFrom(rankDto);
+            }
+
+            List<TimedRank> ranksList;
+            if (!_timedRanks.TryGetValue(player.UserIDString, out ranksList))
+            {
+                ranksList = new List<TimedRank>();
+                _timedRanks.Add(player.UserIDString, ranksList);
+            }
+
+            var exRank = ranksList.Find(r => r.Name == timedRank.Name && r.Type == timedRank.Type);
+
+            if (exRank == null)
+            {
+                LogMessage(
+                    "Creating new TimedRank for player {0}: {1}/{2}",
+                    player.UserIDString,
+                    timedRank.Name,
+                    timedRank.Duration
+                );
+                timedRank.Set(player.IPlayer);
+                ranksList.Add(timedRank);
+                return;
+            }
+
+            LogMessage(
+                "Updating existing rank for player {0}: Adding {1} to duration of {2}",
+                player.UserIDString,
+                timedRank.Duration,
+                exRank.Duration
+            );
+            exRank.Duration = exRank.Duration.Add(timedRank.Duration);
+        }
+
+        private void RedeemKitOrCustom(BasePlayer player, gAPI.GoodObjectImpl[] contents)
+        {
+            foreach (gAPI.GoodObjectImpl goodObjectImpl in contents)
+            {
+                switch (goodObjectImpl.type)
                 {
-                    case gAPI.KitGood.KitGoodType.ITEM:
-                    {
-                        ItemDefinition itemDef = good.FindItemDefinition();
-                        if (!itemDef)
-                        {
-                            LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
-                            return;
-                        }
-
-                        Item item = ItemManager.Create(
-                            itemDef,
-                            good.Amount,
-                            good.Meta.SkinId.HasValue ? good.Meta.SkinId.Value : 0ul
-                        );
-
-                        player.GiveItem(item);
-                    }
+                    case gAPI.GoodObjectImpl.GoodObjectType.ITEM:
+                        RedeemItem(player, goodObjectImpl.ToItem());
                         break;
-                    case gAPI.KitGood.KitGoodType.RESEARCH:
-                    {
-                        ItemDefinition itemDef = good.FindItemDefinition();
-                        if (!itemDef)
-                        {
-                            LogMessage("ItemDefinition({0}) not found for InventoryEntry({1})", good.ItemId, entryId);
-                            return;
-                        }
-
-                        player.blueprints.Unlock(itemDef);
-                    }
+                    case gAPI.GoodObjectImpl.GoodObjectType.RANK:
+                        RedeemRankOrPermission(player, rankDto: goodObjectImpl.ToRank());
                         break;
-
-                    case gAPI.KitGood.KitGoodType.RANK:
-                    case gAPI.KitGood.KitGoodType.PERMISSION:
-                    {
-                        List<TimedRank> ranksList;
-                        if (!_timedRanks.TryGetValue(player.UserIDString, out ranksList))
-                        {
-                            ranksList = new List<TimedRank>();
-                            _timedRanks.Add(player.UserIDString, ranksList);
-                        }
-
-                        var rank = TimedRank.CreateFrom(good);
-
-                        var exRank = ranksList.Find(r => r.Name == rank.Name);
-
-                        if (exRank != null)
-                        {
-                            exRank.Add(rank);
-                        }
-                        else
-                        {
-                            ranksList.Add(rank);
-                            rank.Set(player.IPlayer);
-                        }
-                    }
+                    case gAPI.GoodObjectImpl.GoodObjectType.COMMAND:
+                        RedeemCommand(player, goodObjectImpl.ToCommand());
                         break;
-                    case gAPI.KitGood.KitGoodType.COMMAND:
-                        string effectiveCmd = good.Value.Replace("${userId}", player.UserIDString)
-                                                  .Replace("${userName}", player.displayName);
-
-                        server.Command(effectiveCmd);
+                    case gAPI.GoodObjectImpl.GoodObjectType.RESEARCH:
+                        RedeemResearch(player, goodObjectImpl.ToResearch());
+                        break;
+                    case gAPI.GoodObjectImpl.GoodObjectType.PERMISSION:
+                        RedeemRankOrPermission(player, goodObjectImpl.ToPermission());
                         break;
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
             }
+        }
+
+        private void RedeemCommand(BasePlayer player, gAPI.CommandDto commandDto)
+        {
+            var effectiveCommand = commandDto.value.Replace("${userI}", player.UserIDString)
+                                             .Replace("${userName}", player.displayName);
+
+            server.Command(effectiveCommand);
         }
 
         private class Ui : MonoBehaviour
@@ -835,7 +824,7 @@ namespace Oxide.Plugins
                 ComponentBuilder.RedeemButton(
                     nCard,
                     index,
-                    entry.Id,
+                    entry.id,
                     RedeemButtonState.Redeeming,
                     list
                 );
@@ -877,7 +866,7 @@ namespace Oxide.Plugins
 
             private void gMonetize_RedeemItemOk(string entryId)
             {
-                int entryIndex = _inventory.FindIndex(e => e.Id == entryId);
+                int entryIndex = _inventory.FindIndex(e => e.id == entryId);
 
                 gAPI.InventoryEntry entry = _inventory[entryIndex];
 
@@ -1813,7 +1802,7 @@ namespace Oxide.Plugins
                     /*listing name*/
                     componentList.Add(
                         LabelBuilder.Create(nCard.Header.Self, nCard.Header.ItemName)
-                                    .WithText(inventoryEntry.Name)
+                                    .WithText(inventoryEntry.name)
                                     .WithFontSize(12)
                                     .Centered()
                                     .WithColor(RustColor.ComponentColors.TextWhite.WithAlpha(0.5f))
@@ -1864,15 +1853,15 @@ namespace Oxide.Plugins
 
                     componentList.Add(iconElement);
 
-                    if (!string.IsNullOrEmpty(inventoryEntry.IconId))
+                    if (!string.IsNullOrEmpty(inventoryEntry.iconId))
                     {
                         iconElement.Components.Add(
-                            new CuiRawImageComponent {Url = gAPI.GetIconUrl(inventoryEntry.IconId)}
+                            new CuiRawImageComponent {Url = gAPI.GetIconUrl(inventoryEntry.iconId)}
                         );
                     }
-                    else if (inventoryEntry.Type == gAPI.InventoryEntry.InventoryEntryType.ITEM)
+                    else if (inventoryEntry.type == gAPI.InventoryEntry.InventoryEntryType.ITEM)
                     {
-                        iconElement.Components.Add(new CuiImageComponent {ItemId = inventoryEntry.Item.ItemId});
+                        iconElement.Components.Add(new CuiImageComponent {ItemId = inventoryEntry.item.itemId});
                     }
                     else
                     {
@@ -1909,7 +1898,7 @@ namespace Oxide.Plugins
                     RedeemButton(
                         nCard,
                         index,
-                        inventoryEntry.Id,
+                        inventoryEntry.id,
                         buttonState,
                         componentList
                     );
@@ -2181,9 +2170,6 @@ namespace Oxide.Plugins
             private const string MAIN_API_PATH   = "/main/v3/plugin";
             private const string STATIC_API_PATH = "/static/v2";
 
-            private static readonly JsonSerializerSettings s_SerializerSettings =
-                new JsonSerializerSettings {ContractResolver = new CamelCasePropertyNamesContractResolver()};
-
             private static gMonetize                  s_PluginInstance;
             private static Dictionary<string, string> s_RequestHeaders;
 
@@ -2330,126 +2316,147 @@ namespace Oxide.Plugins
 
             public class InventoryEntry
             {
-                public string Id { get; set; }
+                public string id;
 
                 [JsonConverter(typeof(StringEnumConverter))]
-                public InventoryEntryType Type { get; set; }
+                public InventoryEntryType type;
 
-                public string Name { get; set; }
-                public string IconId { get; set; }
+                public string name;
+                public string iconId;
 
                 [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
-                public TimeSpan? WipeBlockDuration { get; set; }
+                public TimeSpan? wipeBlockDuration;
 
-                public ItemGood Item { get; set; }
-                public List<KitGood> Contents { get; set; }
-                public ResearchGood Research { get; set; }
-                public RankGood Rank { get; set; }
-                public PermissionGood Permission { get; set; }
-                public CustomGood[] Commands { get; set; }
+                public ItemDto          item;
+                public ResearchDto      research;
+                public RankDto          rank;
+                public PermissionDto    permission;
+                public GoodObjectImpl[] contents;
+
+                public bool HasCustomIcon()
+                {
+                    return !string.IsNullOrEmpty(iconId);
+                }
 
                 public enum InventoryEntryType
                 {
                     ITEM,
                     KIT,
-                    RESEARCH,
                     RANK,
-                    PERMISSION,
-                    CUSTOM
+                    RESEARCH,
+                    CUSTOM,
+                    PERMISSION
                 }
             }
 
-            public class ItemGood
-            {
-                public int ItemId { get; set; }
-                public int Amount { get; set; }
-                public ItemGoodMeta Meta { get; set; }
-
-                public ItemDefinition FindItemDefinition()
-                {
-                    return ItemManager.FindItemDefinition(ItemId);
-                }
-
-                public class ItemGoodMeta
-                {
-                    public ulong? SkinId { get; set; }
-                    public float Condition { get; set; }
-                }
-            }
-
-            public class ResearchGood
-            {
-                public int ResearchId { get; set; }
-
-                public ItemDefinition FindItemDefinition()
-                {
-                    return ItemManager.FindItemDefinition(ResearchId);
-                }
-            }
-
-            public class PermissionGood
-            {
-                public string Value { get; set; }
-
-                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
-                public TimeSpan Duration { get; set; }
-            }
-
-            public class RankGood
-            {
-                public string GroupName { get; set; }
-
-                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
-                public TimeSpan Duration { get; set; }
-            }
-
-            public class CustomGood
-            {
-                public string Value { get; set; }
-            }
-
-            public class KitGood
+            public class GoodObjectImpl
             {
                 [JsonConverter(typeof(StringEnumConverter))]
-                public KitGoodType Type { get; set; }
+                public GoodObjectType type;
 
-                /*item*/
-                public string ItemId { get; set; }
-                public int Amount { get; set; }
+                public int    researchId;
+                public string groupName;
+                public string value;
 
-                public ItemGood.ItemGoodMeta Meta { get; set; }
-
-                /*research*/
-                public string ResearchId { get; set; }
-
-                /*permission/command*/
-                public string Value { get; set; }
-
-                /*permission/rank*/
                 [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
-                public TimeSpan Duration { get; set; }
+                public TimeSpan duration;
 
-                /*rank*/
-                public string GroupName { get; set; }
+                public int          itemId;
+                public uint         amount;
+                public RustItemMeta meta;
+
+                public ItemDto ToItem()
+                {
+                    return new ItemDto {
+                        itemId = itemId,
+                        amount = amount,
+                        meta = meta
+                    };
+                }
+
+                public ResearchDto ToResearch()
+                {
+                    return new ResearchDto {researchId = researchId};
+                }
+
+                public PermissionDto ToPermission()
+                {
+                    return new PermissionDto {
+                        value = value,
+                        duration = duration
+                    };
+                }
+
+                public RankDto ToRank()
+                {
+                    return new RankDto {
+                        groupName = groupName,
+                        duration = duration
+                    };
+                }
+
+                public CommandDto ToCommand()
+                {
+                    return new CommandDto {value = value};
+                }
+
+                public enum GoodObjectType
+                {
+                    ITEM,
+                    RANK,
+                    COMMAND,
+                    RESEARCH,
+                    PERMISSION
+                }
+            }
+
+            public class RustItemMeta
+            {
+                public ulong? skinId;
+                public float  condition;
+            }
+
+            public class ItemDto
+            {
+                public int          itemId;
+                public uint         amount;
+                public RustItemMeta meta;
 
                 public ItemDefinition FindItemDefinition()
                 {
-                    if (Type != KitGoodType.ITEM)
-                    {
-                        throw new InvalidOperationException();
-                    }
-
-                    return ItemManager.FindItemDefinition(ItemId);
+                    return ItemManager.FindItemDefinition(itemId);
                 }
+            }
 
-                public enum KitGoodType
+            public class ResearchDto
+            {
+                public int researchId;
+
+                public ItemDefinition FindItemDefinition()
                 {
-                    ITEM,
-                    RESEARCH,
-                    RANK,
-                    PERMISSION,
-                    COMMAND
+                    return ItemManager.FindItemDefinition(researchId);
                 }
+            }
+
+            public class RankDto
+            {
+                public string groupName;
+
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan duration;
+            }
+
+            public class PermissionDto
+            {
+                public string value;
+
+                [JsonConverter(typeof(DurationTimeSpanJsonConverter))]
+                public TimeSpan duration;
+            }
+
+            public class CommandDto
+            {
+                public string value;
             }
 
             #endregion
@@ -2600,49 +2607,47 @@ namespace Oxide.Plugins
             public DateTime StartedAt { get; set; }
             public TimeSpan Duration { get; set; }
 
-            public static TimedRank CreateFrom(gAPI.PermissionGood good)
+            public static TimedRank CreateFrom(gAPI.PermissionDto permissionDto)
             {
                 return new TimedRank {
-                    Name = good.Value,
+                    Name = permissionDto.value,
                     Type = RankType.Permission,
                     StartedAt = DateTime.UtcNow,
-                    Duration = good.Duration
+                    Duration = permissionDto.duration
                 };
             }
 
-            public static TimedRank CreateFrom(gAPI.RankGood good)
+            public static TimedRank CreateFrom(gAPI.RankDto rankDto)
             {
                 return new TimedRank {
-                    Name = good.GroupName,
+                    Name = rankDto.groupName,
                     Type = RankType.Group,
                     StartedAt = DateTime.UtcNow,
-                    Duration = good.Duration
+                    Duration = rankDto.duration
                 };
             }
 
-            public static TimedRank CreateFrom(gAPI.KitGood good)
+            public static TimedRank CreateFrom(gAPI.GoodObjectImpl goodObject)
             {
-                switch (good.Type)
+                switch (goodObject.type)
                 {
-                    case gAPI.KitGood.KitGoodType.PERMISSION:
+                    case gAPI.GoodObjectImpl.GoodObjectType.PERMISSION:
                         return new TimedRank {
-                            Name = good.Value,
+                            Name = goodObject.value,
                             Type = RankType.Permission,
                             StartedAt = DateTime.UtcNow,
-                            Duration = good.Duration
+                            Duration = goodObject.duration
                         };
-                        break;
 
-                    case gAPI.KitGood.KitGoodType.RANK:
+                    case gAPI.GoodObjectImpl.GoodObjectType.RANK:
                         return new TimedRank {
-                            Name = good.GroupName,
+                            Name = goodObject.groupName,
                             Type = RankType.Group,
                             StartedAt = DateTime.UtcNow,
-                            Duration = good.Duration
+                            Duration = goodObject.duration
                         };
-                        break;
 
-                    default: throw new ArgumentException();
+                    default: throw new ArgumentOutOfRangeException(nameof(goodObject.type));
                 }
             }
 
@@ -2685,11 +2690,21 @@ namespace Oxide.Plugins
                 switch (Type)
                 {
                     case RankType.Permission:
-                        LogMessage("Setting player {0} permission {1} for {2}", player, Name, Duration.ToString("g"));
+                        LogMessage(
+                            "Setting player {0} permission {1} for {2}",
+                            player,
+                            Name,
+                            Duration.ToString("g")
+                        );
                         player.GrantPermission(Name);
                         break;
                     case RankType.Group:
-                        LogMessage("Adding player {0} to group {1} for {2}", player, Name, Duration.ToString("g"));
+                        LogMessage(
+                            "Adding player {0} to group {1} for {2}",
+                            player,
+                            Name,
+                            Duration.ToString("g")
+                        );
                         player.AddToGroup(Name);
                         break;
                     default:
