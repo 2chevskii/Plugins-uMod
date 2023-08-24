@@ -26,7 +26,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.1.1")]
+    [Info("gMonetize", "2CHEVSKII", "1.1.3")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -669,8 +669,17 @@ namespace Oxide.Plugins
 
         private void RedeemCommand(BasePlayer player, gAPI.CommandDto commandDto)
         {
-            var effectiveCommand = commandDto.value.Replace("${userI}", player.UserIDString)
-                                             .Replace("${userName}", player.displayName);
+            string effectiveCommand = commandDto.value
+                                                .Replace(
+                                                    "${userId}",
+                                                    player.UserIDString,
+                                                    StringComparison.OrdinalIgnoreCase
+                                                )
+                                                .Replace(
+                                                    "${userName}",
+                                                    player.displayName,
+                                                    StringComparison.OrdinalIgnoreCase
+                                                );
 
             server.Command(effectiveCommand);
         }
