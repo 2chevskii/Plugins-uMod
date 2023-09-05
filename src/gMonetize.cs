@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
-using System.Xml;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -26,7 +25,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.1.3")]
+    [Info("gMonetize", "2CHEVSKII", "1.1.4")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -2308,7 +2307,7 @@ namespace Oxide.Plugins
                         return null;
                     }
 
-                    var ts = XmlConvert.ToTimeSpan(stringValue);
+                    var ts = ParseDuration(stringValue);
 
                     LogMessage("Converting to timeSpan: {0}=>{1}", stringValue, ts);
 
@@ -2318,6 +2317,63 @@ namespace Oxide.Plugins
                 public override bool CanConvert(Type objectType)
                 {
                     return objectType == typeof(TimeSpan?);
+                }
+
+                public static TimeSpan ParseDuration(string input)
+                {
+                    int tIndex = input.IndexOf('T');
+
+                    int timePortionIndex = tIndex != -1 ? tIndex+1 : 0;
+
+                    int partStart = timePortionIndex;
+                    int hours = 0, minutes = 0, seconds = 0;
+                    for (int i = timePortionIndex; i < input.Length; i++)
+                    {
+                        char c = input[i];
+
+                        string partBuf;
+
+                        switch (c)
+                        {
+                            case 'H':
+                                partBuf = input.Substring(partStart, i - partStart);
+                                hours = int.Parse(partBuf);
+                                partStart = i + 1;
+                                break;
+                            case 'M':
+                                partBuf = input.Substring(partStart, i - partStart);
+                                minutes = int.Parse(partBuf);
+                                partStart = i + 1;
+                                break;
+                            case 'S':
+                            case 'Z':
+                                partBuf = input.Substring(partStart, i - partStart);
+                                seconds = int.Parse(partBuf);
+                                partStart = i + 1;
+                                if (c == 'Z')
+                                {
+                                    i = input.Length;
+                                }
+
+                                break;
+
+                            default:
+                                if (i == input.Length - 1)
+                                {
+                                    partBuf = input.Substring(partStart, i - partStart + 1);
+                                    seconds = int.Parse(partBuf);
+                                }
+
+                                break;
+                        }
+                    }
+
+                    return new TimeSpan(
+                        0,
+                        hours,
+                        minutes,
+                        seconds
+                    );
                 }
             }
 
