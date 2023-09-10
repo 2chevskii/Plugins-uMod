@@ -10,6 +10,7 @@ using System.Reflection;
 using Network;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Libraries;
 using Oxide.Core.Libraries.Covalence;
@@ -26,7 +27,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.1.5")]
+    [Info("gMonetize", "2CHEVSKII", "1.2.0")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -683,6 +684,45 @@ namespace Oxide.Plugins
 
             server.Command(effectiveCommand);
         }
+
+        #region Public API
+
+        private void gMonetize_GetCustomerBalance(string userId, Action<long> onBalanceReceived, Action<int> onError)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                throw new ArgumentNullException(nameof(userId), "Customer ID cannot be empty");
+            }
+
+            if (onBalanceReceived == null)
+            {
+                throw new ArgumentNullException(nameof(onBalanceReceived), "Balance received callback cannot be null");
+            }
+
+            gAPI.GetCustomerBalance(userId, onBalanceReceived, onError);
+        }
+
+        private void gMonetize_SetCustomerBalance(string userId, long value, Action onOk, Action<int> onError)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                throw new ArgumentNullException(nameof(userId), "Customer ID cannot be empty");
+            }
+
+            if (value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), "Balance value cannot be negative");
+            }
+
+            gAPI.SetCustomerBalance(
+                userId,
+                value,
+                onOk,
+                onError
+            );
+        }
+
+        #endregion
 
         private class Ui : MonoBehaviour
         {
@@ -2206,6 +2246,51 @@ namespace Oxide.Plugins
                 };
             }
 
+            public static void GetCustomerBalance(string userId, Action<long> balanceCb, Action<int> errCb)
+            {
+                string url = GetBalanceUrl(userId);
+
+                WebRequests.Enqueue(
+                    url,
+                    null,
+                    (code, body) =>
+                    {
+                        JObject obj = JObject.Parse(body);
+
+                        if (code != 200)
+                        {
+                            errCb?.Invoke(code);
+                        }
+                        else
+                        {
+                            balanceCb(obj.Value<long>("value"));
+                        }
+                    },
+                    s_PluginInstance,
+                    headers: s_RequestHeaders
+                );
+            }
+
+            public static void SetCustomerBalance(string userId, long value, Action okCb, Action<int> errCb)
+            {
+                string url = GetBalanceUrl(userId);
+
+                string payload = JsonConvert.SerializeObject(new {value});
+
+                WebRequests.Enqueue(url,payload,
+                    (code, body) =>
+                    {
+                        if (code != 200)
+                        {
+                            errCb?.Invoke(code);
+                        }
+                        else if(okCb != null)
+                        {
+                            okCb();
+                        }
+                    }, s_PluginInstance, RequestMethod.PATCH, s_RequestHeaders);
+            }
+
             public static void SendHeartbeat(ServerHeartbeatRequest request)
             {
                 string payloadJson = JsonConvert.SerializeObject(request);
@@ -2274,6 +2359,11 @@ namespace Oxide.Plugins
                 return string.Concat(ApiBaseUrl, MAIN_API_PATH, hbPath);
             }
 
+            private static string GetBalanceUrl(string userId)
+            {
+                return string.Concat(ApiBaseUrl, MAIN_API_PATH, $"/customer/STEAM/{userId}/balance");
+            }
+
             public static string GetIconUrl(string iconId)
             {
                 const string imagePath = "/image/";
@@ -2326,7 +2416,7 @@ namespace Oxide.Plugins
                 {
                     int tIndex = input.IndexOf('T');
 
-                    int timePortionIndex = tIndex != -1 ? tIndex+1 : 0;
+                    int timePortionIndex = tIndex != -1 ? tIndex + 1 : 0;
 
                     int partStart = timePortionIndex;
                     int hours = 0, minutes = 0, seconds = 0;
