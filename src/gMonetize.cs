@@ -1,4 +1,5 @@
 ﻿#define UNITY_ASSERTIONS
+// #define DEBUG
 
 using System;
 using System.Collections.Generic;
@@ -25,7 +26,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.1.4")]
+    [Info("gMonetize", "2CHEVSKII", "1.1.5")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -615,7 +616,7 @@ namespace Oxide.Plugins
                 _timedRanks.Add(player.UserIDString, ranksList);
             }
 
-            var exRank = ranksList.Find(r => r.Name == timedRank.Name && r.Type == timedRank.Type);
+            TimedRank exRank = ranksList.Find(r => r.Name == timedRank.Name && r.Type == timedRank.Type);
 
             if (exRank == null)
             {
@@ -2211,6 +2212,8 @@ namespace Oxide.Plugins
 
                 string url = GetHeartbeatUrl();
 
+                LogMessage("Sending server heartbeat to {0}:\n{1}", url, payloadJson);
+
                 WebRequests.Enqueue(
                     url,
                     payloadJson,
@@ -2307,7 +2310,7 @@ namespace Oxide.Plugins
                         return null;
                     }
 
-                    var ts = ParseDuration(stringValue);
+                    TimeSpan ts = ParseDuration(stringValue);
 
                     LogMessage("Converting to timeSpan: {0}=>{1}", stringValue, ts);
 
