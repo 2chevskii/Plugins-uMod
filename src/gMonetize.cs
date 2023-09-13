@@ -27,7 +27,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.2.0")]
+    [Info("gMonetize", "2CHEVSKII", "1.2.1")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -221,16 +221,6 @@ namespace Oxide.Plugins
 
         private void HandleOnReceiveInventory(InventoryApiResult result)
         {
-            if (!result.IsSuccess)
-            {
-                LogMessage(
-                    "HandleOnReceiveInventory: Failed to receive inventory for player {0}, request failed with code {1}",
-                    result.UserId,
-                    result.StatusCode
-                );
-                return;
-            }
-
             LogMessage("HandleOnReceiveInventory: Inventory received for player {0}", result.UserId);
 
             IPlayer player = players.FindPlayerById(result.UserId);
@@ -248,7 +238,23 @@ namespace Oxide.Plugins
             }
 
             BasePlayer basePlayer = (BasePlayer)player.Object;
-            basePlayer.SendMessage("gMonetize_InventoryLoaded", result.Inventory, SendMessageOptions.RequireReceiver);
+            if (result.IsSuccess)
+            {
+                basePlayer.SendMessage(
+                    "gMonetize_InventoryLoaded",
+                    result.Inventory,
+                    SendMessageOptions.RequireReceiver
+                );
+            }
+            else
+            {
+                LogMessage(
+                    "HandleOnReceiveInventory: Failed to receive inventory for player {0}, request failed with code {1}",
+                    result.UserId,
+                    result.StatusCode
+                );
+                basePlayer.SendMessage("gMonetize_InventoryLoadError", SendMessageOptions.RequireReceiver);
+            }
         }
 
         private void HandleOnRedeemItem(RedeemItemApiResult result)
@@ -522,6 +528,8 @@ namespace Oxide.Plugins
 
         #endregion
 
+        #region Redeem handlers
+
         private void RedeemInventoryEntry(BasePlayer player, gAPI.InventoryEntry entry)
         {
             switch (entry.type)
@@ -685,6 +693,8 @@ namespace Oxide.Plugins
             server.Command(effectiveCommand);
         }
 
+        #endregion
+
         #region Public API
 
         private void gMonetize_GetCustomerBalance(string userId, Action<long> onBalanceReceived, Action<int> onError)
@@ -702,7 +712,12 @@ namespace Oxide.Plugins
             gAPI.GetCustomerBalance(userId, onBalanceReceived, onError);
         }
 
-        private void gMonetize_SetCustomerBalance(string userId, long value, Action onOk, Action<int> onError)
+        private void gMonetize_SetCustomerBalance(
+            string userId,
+            long value,
+            Action onOk,
+            Action<int> onError
+        )
         {
             if (string.IsNullOrWhiteSpace(userId))
             {
@@ -1918,20 +1933,24 @@ namespace Oxide.Plugins
                     }
 
                     /*item amount*/
-                    componentList.Add(
-                        new CuiElement {
-                            Parent = nCard.Center.Image,
-                            Name = nCard.Center.Amount,
-                            Components = {
-                                new CuiTextComponent {
-                                    Text = "x100",
-                                    Align = TextAnchor.MiddleCenter,
-                                    Color = RustColor.ComponentColors.TextSemiDark.WithAlpha(0.5f)
-                                },
-                                GetTransform(xMax: 0.3f, yMax: 0.2f)
+                    if (inventoryEntry.type == gAPI.InventoryEntry.InventoryEntryType.ITEM)
+                    {
+                        componentList.Add(
+                            new CuiElement {
+                                Parent = nCard.Center.Image,
+                                Name = nCard.Center.Amount,
+                                Components = {
+                                    new CuiTextComponent {
+                                        Text = inventoryEntry.item.amount.ToString(),
+                                        Align = TextAnchor.MiddleCenter,
+                                        Color = RustColor.ComponentColors.TextSemiDark.WithAlpha(0.5f)
+                                    },
+                                    GetTransform(xMax: 0.3f, yMax: 0.2f)
+                                }
                             }
-                        }
-                    );
+                        );
+                    }
+
                     /*footer container*/
                     componentList.Add(
                         new CuiElement {
@@ -2271,24 +2290,35 @@ namespace Oxide.Plugins
                 );
             }
 
-            public static void SetCustomerBalance(string userId, long value, Action okCb, Action<int> errCb)
+            public static void SetCustomerBalance(
+                string userId,
+                long value,
+                Action okCb,
+                Action<int> errCb
+            )
             {
                 string url = GetBalanceUrl(userId);
 
                 string payload = JsonConvert.SerializeObject(new {value});
 
-                WebRequests.Enqueue(url,payload,
+                WebRequests.Enqueue(
+                    url,
+                    payload,
                     (code, body) =>
                     {
                         if (code != 200)
                         {
                             errCb?.Invoke(code);
                         }
-                        else if(okCb != null)
+                        else if (okCb != null)
                         {
                             okCb();
                         }
-                    }, s_PluginInstance, RequestMethod.PATCH, s_RequestHeaders);
+                    },
+                    s_PluginInstance,
+                    RequestMethod.PATCH,
+                    s_RequestHeaders
+                );
             }
 
             public static void SendHeartbeat(ServerHeartbeatRequest request)
