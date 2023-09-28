@@ -27,7 +27,7 @@ using Server = ConVar.Server;
 namespace Oxide.Plugins
 {
     // ReSharper disable once ClassNeverInstantiated.Global
-    [Info("gMonetize", "2CHEVSKII", "1.2.1")]
+    [Info("gMonetize", "2CHEVSKII", "1.3.0")]
     public class gMonetize : CovalencePlugin
     {
         private const string PERM_USE = "gmonetize.use";
@@ -1340,7 +1340,7 @@ namespace Oxide.Plugins
 
             private static class Materials
             {
-                public const string BLUR = "assets/content/ui/uibackgroundblur.mat";
+                public const string BLUR = "assets/content/ui/uibackgroundblur-ingamemenu.mat";
             }
 
             [SuppressMessage("ReSharper", "MemberCanBePrivate.Local")]
@@ -1511,7 +1511,7 @@ namespace Oxide.Plugins
                             Name = Names.MainContainer.SELF,
                             Components = {
                                 new CuiImageComponent {
-                                    Color = RustColor.ComponentColors.PanelBase,
+                                    Color = new RustColor(0.4f,0.4f,0.4f, 0.8f), // RustColor.ComponentColors.PanelBase,
                                     Material = Materials.BLUR
                                 },
                                 new CuiNeedsCursorComponent(),
@@ -1529,7 +1529,7 @@ namespace Oxide.Plugins
                             Name = Names.MainContainer.HeaderContainer.SELF,
                             Components = {
                                 new CuiImageComponent {Color = RustColor.ComponentColors.PanelFg},
-                                GetTransform(yMin: 0.95f)
+                                GetTransform(yMin: 0.95f, yMax: 0.998f)
                             }
                         },
                         /*close button*/
