@@ -253,6 +253,19 @@ class Build : NukeBuild
 
     Target SetupWorkspace => _ => _.DependsOn(UpdateRustLibs, UpdateOxideLibs);
 
+    Target Compile =>
+        _ =>
+            _.DependsOn(SetupWorkspace)
+                .Executes(() =>
+                {
+                    DotNetTasks.DotNetBuild(
+                        settings =>
+                            settings
+                                .SetProjectFile(RootDirectory / "src/Oxide.Plugins.csproj")
+                                .SetConfiguration("Debug")
+                    );
+                });
+
     public static int Main() => Execute<Build>(x => x.SetupWorkspace);
 
     protected override void OnBuildInitialized()
