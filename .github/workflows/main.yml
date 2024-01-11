@@ -4,7 +4,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v3
+      - uses: crazy-max/ghaction-chocolatey@v3
         with:
-          dotnet-version: "4.8"
+          args: install -y netfx-4.8-devpack
       - run: ./build.sh compile
