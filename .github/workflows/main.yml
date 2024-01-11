@@ -7,4 +7,4 @@ jobs:
       - uses: crazy-max/ghaction-chocolatey@v3
         with:
           args: install -y netfx-4.8-devpack
-      - run: ./build.sh compile
+      - run: ./build.ps1 compile
