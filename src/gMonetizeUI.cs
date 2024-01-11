@@ -25,6 +25,8 @@ namespace Oxide.Plugins
         }
 
 
+        #region Oxide hooks
+
         private void OnServerInitialized()
         {
             foreach (var player in players.Connected)
@@ -81,6 +83,8 @@ namespace Oxide.Plugins
 
             LogDebug("De-initialized UI on player {0}", player);
         }
+
+        #endregion
 
         [Conditional("DEBUG")]
         private void RunDebugRender()
@@ -244,8 +248,8 @@ namespace Oxide.Plugins
                         {
                             new CuiImageComponent
                             {
-                                Material = "assets/content/ui/uibackgroundblur-ingamemenu.mat",
-                                Color = "0.1 0.1 0.1 0.9"
+                                Material = "assets/content/ui/uibackgroundblur.mat",
+                                Color = "0.05 0.05 0.05 0.9"
                             },
                             new CuiRectTransformComponent
                             {
@@ -283,7 +287,7 @@ namespace Oxide.Plugins
                             },
                             new CuiRectTransformComponent
                             {
-                                AnchorMin = "0 0.93",
+                                AnchorMin = "0 0.94",
                                 AnchorMax = "1 1",
                             }
                         }
@@ -297,7 +301,6 @@ namespace Oxide.Plugins
                             new CuiImageComponent
                             {
                                 Color = "0.5 0.5 0.5 0.5",
-                                Material = "assets/content/ui/namefontmaterial.mat"
                             },
                             new CuiRectTransformComponent
                             {
@@ -315,7 +318,6 @@ namespace Oxide.Plugins
                             new CuiButtonComponent
                             {
                                 Color = "0.5 0.5 0.5 0.5",
-                                Material = "assets/content/ui/namefontmaterial.mat"
                             },
                             new CuiRectTransformComponent
                             {
@@ -351,7 +353,6 @@ namespace Oxide.Plugins
                             new CuiButtonComponent
                             {
                                 Color = "0.6 0.6 0.6 0.2",
-                                Material = "assets/content/ui/namefontmaterial.mat"
                             },
                             new CuiRectTransformComponent
                             {
@@ -387,7 +388,6 @@ namespace Oxide.Plugins
                             new CuiButtonComponent
                             {
                                 Color = "0.5 0.2 0.2 0.6",
-                                Material = "assets/content/ui/namefontmaterial.mat"
                             },
                             new CuiRectTransformComponent
                             {
@@ -427,7 +427,7 @@ namespace Oxide.Plugins
                             new CuiRectTransformComponent
                             {
                                 AnchorMin = "0 0",
-                                AnchorMax = "1 0.92"
+                                AnchorMax = "1 0.93"
                             }
                         }
                     },
@@ -440,12 +440,11 @@ namespace Oxide.Plugins
                             new CuiImageComponent
                             {
                                 Color = "0.5 0.5 0.5 0.5",
-                                Material = "assets/content/ui/namefontmaterial.mat"
                             },
                             new CuiRectTransformComponent
                             {
-                                AnchorMin = "0 0.6",
-                                AnchorMax = "0.15 1"
+                                AnchorMin = "0 0.7",
+                                AnchorMax = "0.14 1"
                             }
                         }
                     },
@@ -461,7 +460,7 @@ namespace Oxide.Plugins
                             },
                             new CuiRectTransformComponent
                             {
-                                AnchorMin = "0.05 0.04",
+                                AnchorMin = "0.05 0.03",
                                 AnchorMax = "0.95 0.2"
                             }
                         }
@@ -483,7 +482,7 @@ namespace Oxide.Plugins
                             new CuiRectTransformComponent
                             {
                                 AnchorMin = "0 0.5",
-                                AnchorMax = "0.5 1"
+                                AnchorMax = "0.8 1"
                             }
                         }
                     },
@@ -503,7 +502,7 @@ namespace Oxide.Plugins
                             new CuiRectTransformComponent
                             {
                                 AnchorMin = "0 0",
-                                AnchorMax = "0.5 0.5"
+                                AnchorMax = "0.8 0.5"
                             }
                         }
                     },
@@ -515,32 +514,11 @@ namespace Oxide.Plugins
                         {
                             new CuiButtonComponent
                             {
-                                Color = "0.65 0.8 0.2 0.2",
-                                Material = "assets/content/ui/namefontmaterial.mat"
+                                Color = "0.7 0.8 0.35 0.3",
                             },
                             new CuiRectTransformComponent
                             {
-                                AnchorMin = "0.5 0",
-                                AnchorMax = "1 1"
-                            }
-                        }
-                    },
-                    new CuiElement
-                    {
-                        Parent = "gmonetize/itemcard/claimbtn",
-                        Name = "gmonetize/itemcard/claimbtn/text",
-                        Components =
-                        {
-                            new CuiTextComponent
-                            {
-                                Text = "Забрать",
-                                Color = "0.75 0.9 0.3 0.4",
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = 12
-                            },
-                            new CuiRectTransformComponent
-                            {
-                                AnchorMin = "0.25 0",
+                                AnchorMin = "0.8 0",
                                 AnchorMax = "1 1"
                             }
                         }
@@ -553,13 +531,13 @@ namespace Oxide.Plugins
                         {
                             new CuiRawImageComponent
                             {
-                                Url = "https://i.imgur.com/xEwbjZ0.png",
-                                Color = "0.75 0.9 0.3 0.4"
+                                Url = "https://i.imgur.com/Gq3GKTE.png",
+                                Color = "0.75 0.9 0.3 0.3"
                             },
                             new CuiRectTransformComponent
                             {
-                                AnchorMin = "0.03 0.12",
-                                AnchorMax = "0.3 0.88"
+                                AnchorMin = "0.1 0.1",
+                                AnchorMax = "0.9 0.9",
                             }
                         }
                     },
@@ -586,14 +564,86 @@ namespace Oxide.Plugins
 
         private static class Names
         {
-            private const string BASE = "gmonetizeui";
+            public const string MAIN_CONTAINER = "gmonetize/maincontainer";
+            public const string INNER_CONTAINER = "gmonetize/innercontainer";
+            public const string HEADER_CONTAINER = "gmonetize/headercontainer";
+            public const string TITLE_CONTAINER = "gmonetize/titlecontainer";
+            public const string CLOSE_BTN = "gmonetize/closebtn";
+            public const string CLOSE_BTN_ICON = "gmonetize/closebtn/icon";
+            public const string PREV_BTN = "gmonetize/prevbtn";
+            public const string PREV_BTN_ICON = "gmonetize/prevbtn/icon";
+            public const string NEXT_BTN = "gmonetize/nextbtn";
+            public const string NEXT_BTN_ICON = "gmonetize/nextbtn/icon";
+            public const string ITEMLIST_CONTAINER = "gmonetize/itemlistcontainer";
 
-            public static class Main
+            public class ItemCardNames
             {
-                public const string CONTAINER = SELF + "/container";
-                public const string BACKGROUND = CONTAINER + "/background";
-                public const string NOISE_UNDERLAY = CONTAINER + "/noise_underlay";
-                private const string SELF = BASE + "/main";
+                private readonly string _id;
+
+                public ItemCardNames(string id)
+                {
+                    _id = id;
+                }
+
+                public static implicit operator string(ItemCardNames icn)
+                {
+                    return icn.Self();
+                }
+
+                public string Self()
+                {
+                    return $"gmonetize/itemcard[{_id}]";
+                }
+
+                public string InnerContainer()
+                {
+                    return Self() + "/innercontainer";
+                }
+
+                public string Icon()
+                {
+                    return Self() + "/icon";
+                }
+
+                public string FooterContainer()
+                {
+                    return Self() + "/footercontainer";
+                }
+
+                public string ItemName()
+                {
+                    return Self() + "/itemname";
+                }
+
+                public string ItemAmount()
+                {
+                    return Self() + "/itemamount";
+                }
+
+                public class ItemCardButtonNames
+                {
+                    private readonly ItemCardNames _itemCardNames;
+
+                    public ItemCardButtonNames(ItemCardNames icn)
+                    {
+                        _itemCardNames = icn;
+                    }
+
+                    public static implicit operator string(ItemCardButtonNames icbn)
+                    {
+                        return icbn.Self();
+                    }
+
+                    public string Self()
+                    {
+                        return _itemCardNames + "/claimbtn";
+                    }
+
+                    public string Text()
+                    {
+                        return Self() + "/text";
+                    }
+                }
             }
         }
     }
